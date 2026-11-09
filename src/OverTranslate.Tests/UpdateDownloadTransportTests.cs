@@ -62,12 +62,103 @@ public sealed class UpdateDownloadTransportTests
     }
 
     [Fact]
-    public async Task RepeatedTruncationFailsAfterTwoAttempts()
+    public async Task RepeatedTruncationFailsAfterThreeAttempts()
     {
         using var proxy = new DownloadProxy((_, stream, token) => Respond(stream, 200, Payload[..10000], Payload.Length, token));
         await WithDownload(proxy, async (downloader, file) =>
         {
             await Assert.ThrowsAnyAsync<IOException>(() => downloader.DownloadFile(PackageUrl, file, _ => { }, null, 0.1, default));
+            Assert.Equal(3, proxy.Requests.Count);
+        });
+    }
+
+    [Fact]
+    public async Task RepeatedInterruptionsResumeOnlyWithMatchingStrongValidatorAndRange()
+    {
+        using var proxy = new DownloadProxy((attempt, headers, stream, token) =>
+        {
+            var offset = (attempt - 1) * 10000;
+            if (attempt > 1)
+            {
+                Assert.Contains($"Range: bytes={offset}-", headers);
+                Assert.Contains("If-Range: \"fixture-v1\"", headers);
+            }
+            return Respond(stream, attempt == 1 ? 200 : 206,
+                attempt < 3 ? Payload[offset..(offset + 10000)] : Payload[offset..], Payload.Length - offset, token,
+                "ETag: \"fixture-v1\"\r\n" + (attempt == 1 ? "" : $"Content-Range: bytes {offset}-{Payload.Length - 1}/{Payload.Length}\r\n"));
+        });
+        await WithDownload(proxy, async (downloader, file) =>
+        {
+            await downloader.DownloadFile(PackageUrl, file, _ => { }, null, 0.1, default);
+            Assert.Equal(Payload, await File.ReadAllBytesAsync(file));
+            Assert.Equal(3, proxy.Requests.Count);
+        });
+    }
+
+    [Fact]
+    public async Task IgnoredRangeRestartsRatherThanAppendingAFullResponse()
+    {
+        using var proxy = new DownloadProxy((attempt, headers, stream, token) =>
+        {
+            if (attempt == 2) Assert.Contains("Range: bytes=10000-", headers);
+            return Respond(stream, 200, attempt == 1 ? Payload[..10000] : Payload, Payload.Length, token, "ETag: \"fixture-v1\"\r\n");
+        });
+        await WithDownload(proxy, async (downloader, file) =>
+        {
+            await downloader.DownloadFile(PackageUrl, file, _ => { }, null, 0.1, default);
+            Assert.Equal(Payload, await File.ReadAllBytesAsync(file));
+            Assert.Equal(2, proxy.Requests.Count);
+        });
+    }
+
+    [Theory]
+    [InlineData("offset")]
+    [InlineData("etag")]
+    [InlineData("total")]
+    [InlineData("content-length")]
+    public async Task InconsistentResumeMetadataIsRejected(string mismatch)
+    {
+        using var proxy = new DownloadProxy((attempt, _, stream, token) =>
+            Respond(stream, attempt == 1 ? 200 : 206, attempt == 1 ? Payload[..10000] : Payload[10000..],
+                attempt == 1 ? Payload.Length : Payload.Length - 10000 - (mismatch == "content-length" ? 1 : 0), token,
+                $"ETag: \"{(attempt == 1 || mismatch != "etag" ? "fixture-v1" : "changed")}\"\r\n" +
+                (attempt == 1 ? "" : $"Content-Range: bytes {(mismatch == "offset" ? 9999 : 10000)}-{Payload.Length - 1}/{Payload.Length + (mismatch == "total" ? 1 : 0)}\r\n")));
+        await WithDownload(proxy, async (downloader, file) =>
+        {
+            await Assert.ThrowsAsync<InvalidDataException>(() => downloader.DownloadFile(PackageUrl, file, _ => { }, null, 0.1, default));
+            Assert.Equal(2, proxy.Requests.Count);
+        });
+    }
+
+    [Fact]
+    public async Task WeakValidatorCannotAuthorizeAppending()
+    {
+        using var proxy = new DownloadProxy((attempt, headers, stream, token) =>
+        {
+            Assert.DoesNotContain("Range:", headers);
+            return Respond(stream, 200, attempt == 1 ? Payload[..10000] : Payload, Payload.Length, token, "ETag: W/\"weak\"\r\n");
+        });
+        await WithDownload(proxy, async (downloader, file) =>
+        {
+            await downloader.DownloadFile(PackageUrl, file, _ => { }, null, 0.1, default);
+            Assert.Equal(Payload, await File.ReadAllBytesAsync(file));
+            Assert.Equal(2, proxy.Requests.Count);
+        });
+    }
+
+    [Fact]
+    public async Task RetryDoesNotResetTheTotalDeadline()
+    {
+        using var proxy = new DownloadProxy(async (attempt, stream, token) =>
+        {
+            await Task.Delay(attempt == 1 ? 200 : 600, token);
+            await Respond(stream, 200, attempt == 1 ? Payload[..10000] : Payload, Payload.Length, token);
+        });
+        await WithDownload(proxy, async (downloader, file) =>
+        {
+            var download = downloader.DownloadFile(PackageUrl, file, _ => { }, null, 0.015, default);
+            await Assert.ThrowsAsync<TimeoutException>(() => download.WaitAsync(TimeSpan.FromSeconds(3)));
+            Assert.True(download.IsCompleted);
             Assert.Equal(2, proxy.Requests.Count);
         });
     }
@@ -134,9 +225,9 @@ public sealed class UpdateDownloadTransportTests
         finally { NetworkProxyService.Apply(new()); root.Delete(true); }
     }
 
-    private static async Task Respond(NetworkStream stream, int status, byte[] body, int length, CancellationToken token)
+    private static async Task Respond(NetworkStream stream, int status, byte[] body, int length, CancellationToken token, string extraHeaders = "")
     {
-        var header = Encoding.ASCII.GetBytes($"HTTP/1.1 {status} Fixture\r\nContent-Length: {length}\r\nConnection: close\r\n\r\n");
+        var header = Encoding.ASCII.GetBytes($"HTTP/1.1 {status} Fixture\r\nContent-Length: {length}\r\n{extraHeaders}Connection: close\r\n\r\n");
         await stream.WriteAsync(header, token);
         await stream.WriteAsync(body, token);
         await stream.FlushAsync(token);
@@ -152,6 +243,9 @@ public sealed class UpdateDownloadTransportTests
         public string Address { get; }
 
         public DownloadProxy(Func<int, NetworkStream, CancellationToken, Task> respond)
+            : this((attempt, _, stream, token) => respond(attempt, stream, token)) { }
+
+        public DownloadProxy(Func<int, string, NetworkStream, CancellationToken, Task> respond)
         {
             _listener.Start();
             Address = $"http://127.0.0.1:{((IPEndPoint)_listener.LocalEndpoint).Port}";
@@ -170,7 +264,7 @@ public sealed class UpdateDownloadTransportTests
                         while (!string.IsNullOrEmpty(line = await reader.ReadLineAsync(_stop.Token))) headers.Add(line);
                         Headers.Enqueue(string.Join("\n", headers));
                         Requests.Enqueue(request!);
-                        await respond(Requests.Count, stream, _stop.Token);
+                        await respond(Requests.Count, string.Join("\n", headers), stream, _stop.Token);
                     }
                 }
                 catch (OperationCanceledException) when (_stop.IsCancellationRequested) { }
