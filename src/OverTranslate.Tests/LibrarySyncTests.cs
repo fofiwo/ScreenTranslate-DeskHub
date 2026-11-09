@@ -1,9 +1,4 @@
-using System.Buffers.Binary;
-using System.Net;
-using System.Net.Sockets;
-using System.Security.Cryptography;
-using System.Text;
-using System.Text.Json;
+﻿using System.Text.Json;
 using OverTranslate.Services;
 using OverTranslate.Services.Library;
 using Xunit;
@@ -14,7 +9,6 @@ public sealed class LibrarySyncTests : IDisposable
 {
     private readonly string _directory = Path.Combine(Path.GetTempPath(), "ScreenTranslate-sync-tests-" + Guid.NewGuid());
     private LibraryStore Store(string name) => new(Path.Combine(_directory, name, "library.json"));
-    private static byte[] Key() => LibrarySyncTransport.ParseCode(LibrarySyncTransport.GenerateCode());
     private static void Exchange(LibraryStore a, LibraryStore b)
     { b.MergeSync(a.ExportSync()); a.MergeSync(b.ExportSync()); b.MergeSync(a.ExportSync()); }
 
@@ -161,91 +155,6 @@ public sealed class LibrarySyncTests : IDisposable
     }
 
     [Fact]
-    public async Task ActualTcpExchangeSynchronizesBothWaysAndRestartsFromDisk()
-    {
-        var key = Key(); var a = Store("a"); var b = Store("b");
-        a.SavePrompt(new() { Content = "a" }); b.SavePrompt(new() { Content = "b" });
-        await using (var server = new LibrarySyncService(a, new() { Port = 0 }, key))
-        {
-            server.Start();
-            await LibrarySyncTransport.ExchangeAsync(b, new(IPAddress.Loopback, server.Port), key, CancellationToken.None);
-            Assert.Equal(2, a.Read().Prompts.Count); Assert.Equal(2, b.Read().Prompts.Count);
-        }
-        var pa = a.Read().Prompts.First(p => p.Content == "a"); pa.Content = "after restart"; a.SavePrompt(pa);
-        await using var restarted = new LibrarySyncService(Store("a"), new() { Port = 0 }, key);
-        restarted.Start();
-        await LibrarySyncTransport.ExchangeAsync(Store("b"), new(IPAddress.Loopback, restarted.Port), key, CancellationToken.None);
-        Assert.Contains(b.Read().Prompts, p => p.Content == "after restart");
-    }
-
-    [Fact]
-    public async Task AutomaticLoopPicksUpChangesWithoutOpeningLibraryWindow()
-    {
-        var key = Key(); var a = Store("a"); var b = Store("b");
-        await using var server = new LibrarySyncService(a, new() { Port = 0 }, key); server.Start();
-        await using var client = new LibrarySyncService(b, new() { Port = 0, Peers = [$"127.0.0.1:{server.Port}"] }, key); client.Start();
-        a.SavePrompt(new() { Content = "background" });
-        using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(8));
-        while (b.Read().Prompts.Count == 0) await Task.Delay(40, deadline.Token);
-        Assert.Equal("background", b.Read().Prompts.Single().Content);
-        var draft = b.Read().Prompts.Single(); draft.Content = "reverse"; b.SavePrompt(draft); client.SyncNow();
-        while (a.Read().Prompts.Single().Content != "reverse") await Task.Delay(40, deadline.Token);
-    }
-
-    [Fact]
-    public async Task WrongPairingCodeAndOversizedFrameCannotWriteData()
-    {
-        var a = Store("a"); var b = Store("b");
-        a.SavePrompt(new() { Content = "keep-a" }); b.SavePrompt(new() { Content = "keep-b" });
-        var before = File.ReadAllBytes(Path.Combine(_directory, "a", "library.json"));
-        await using var server = new LibrarySyncService(a, new() { Port = 0 }, Key()); server.Start();
-        await Assert.ThrowsAnyAsync<Exception>(() => LibrarySyncTransport.ExchangeAsync(b, new(IPAddress.Loopback, server.Port), Key(), CancellationToken.None));
-        Assert.Equal(before, File.ReadAllBytes(Path.Combine(_directory, "a", "library.json")));
-        using var client = new TcpClient(); await client.ConnectAsync(IPAddress.Loopback, server.Port);
-        var stream = client.GetStream(); await stream.ReadExactlyAsync(new byte[32]);
-        var header = new byte[4]; BinaryPrimitives.WriteInt32BigEndian(header, LibrarySyncTransport.MaxFrameBytes + 1);
-        await stream.WriteAsync(header); Assert.Equal(0, await stream.ReadAsync(new byte[1]));
-        Assert.Equal(before, File.ReadAllBytes(Path.Combine(_directory, "a", "library.json")));
-    }
-
-    [Fact]
-    public void EncryptionRejectsTamperingWrongKeysAndReplayedChallenges()
-    {
-        var key = Key(); var plain = Encoding.UTF8.GetBytes("synthetic-prompt-and-key");
-        var context = RandomNumberGenerator.GetBytes(32); var frame = LibrarySyncTransport.Seal(plain, key, context);
-        Assert.Equal(plain, LibrarySyncTransport.Open(frame, key, context));
-        Assert.DoesNotContain("synthetic", Encoding.UTF8.GetString(frame));
-        Assert.ThrowsAny<CryptographicException>(() => LibrarySyncTransport.Open(frame, Key(), context));
-        Assert.ThrowsAny<CryptographicException>(() => LibrarySyncTransport.Open(frame, key, RandomNumberGenerator.GetBytes(32)));
-        frame[^1] ^= 1; Assert.ThrowsAny<CryptographicException>(() => LibrarySyncTransport.Open(frame, key, context));
-    }
-
-    [Theory]
-    [InlineData("192.168.1.20:48539", true)]
-    [InlineData("10.0.0.2:48539", true)]
-    [InlineData("172.16.0.2:48539", true)]
-    [InlineData("8.8.8.8:48539", false)]
-    [InlineData("example.com:48539", false)]
-    [InlineData("127.0.0.1:0", false)]
-    [InlineData("[::1]:48539", false)]
-    public void PeerAddressesAreLimitedToExplicitLanIpv4AndValidPorts(string address, bool valid)
-    {
-        if (valid) Assert.NotNull(LibrarySyncOptions.ParsePeer(address));
-        else Assert.Throws<InvalidOperationException>(() => LibrarySyncOptions.ParsePeer(address));
-    }
-
-    [Fact]
-    public void PairingSettingsAreProtectedAndReloadable()
-    {
-        var code = LibrarySyncTransport.GenerateCode(); var path = Path.Combine(_directory, "sync.json");
-        new LibrarySyncOptions { Enabled = true, CodeProtected = LocalSecretStore.Protect(code), Peers = ["192.168.1.2:48539"] }.Save(path);
-        Assert.DoesNotContain(code, File.ReadAllText(path));
-        var options = LibrarySyncOptions.Load(path); options.Validate();
-        Assert.Equal(code, LocalSecretStore.Unprotect(options.CodeProtected));
-        Assert.Throws<InvalidOperationException>(() => LibrarySyncTransport.ParseCode("short-code"));
-    }
-
-    [Fact]
     public void CopiedDeviceMetadataGetsANewActorBeforeLocalEditing()
     {
         var a = Store("a"); var b = Store("b");
@@ -278,8 +187,8 @@ public sealed class LibrarySyncTests : IDisposable
     public void OversizedCombinedLibraryCannotPartiallyMerge()
     {
         var a = Store("a"); var b = Store("b");
-        a.SavePrompt(new() { Content = new string('a', LibrarySyncTransport.MaxFrameBytes / 2) });
-        b.SavePrompt(new() { Content = new string('b', LibrarySyncTransport.MaxFrameBytes / 2) });
+        a.SavePrompt(new() { Content = new string('a', (LibrarySyncSnapshot.MaxBytes + 28) / 2) });
+        b.SavePrompt(new() { Content = new string('b', (LibrarySyncSnapshot.MaxBytes + 28) / 2) });
         var path = Path.Combine(_directory, "b", "library.json"); var before = File.ReadAllBytes(path);
         Assert.Throws<InvalidDataException>(() => b.MergeSync(a.ExportSync()));
         Assert.Equal(before, File.ReadAllBytes(path)); Assert.Single(b.Read().Prompts);
@@ -326,71 +235,6 @@ public sealed class LibrarySyncTests : IDisposable
         Exchange(a, b);
         Assert.Equal("local-choice", a.Read().Connections.Single().LastCopiedModelId);
         Assert.Equal("", b.Read().Connections.Single().LastCopiedModelId);
-    }
-
-    private sealed class QueuedContext : SynchronizationContext
-    {
-        private readonly System.Collections.Concurrent.ConcurrentQueue<(SendOrPostCallback Callback, object? State)> _queue = new();
-        public override void Post(SendOrPostCallback callback, object? state) => _queue.Enqueue((callback, state));
-        public void Drain() { while (_queue.TryDequeue(out var work)) work.Callback(work.State); }
-    }
-
-    [Fact]
-    public async Task ShutdownCompletesWithoutPumpingTheCallingUiContext()
-    {
-        var key = Key(); var a = Store("a"); var b = Store("b"); b.SavePrompt(new() { Content = "trigger" });
-        var service = new LibrarySyncService(a, new() { Port = 0 }, key);
-        using var entered = new ManualResetEventSlim(); using var release = new ManualResetEventSlim();
-        service.Changed += () => { entered.Set(); release.Wait(TimeSpan.FromSeconds(5)); };
-        service.Start();
-        var exchange = LibrarySyncTransport.ExchangeAsync(b, new(IPAddress.Loopback, service.Port), key, CancellationToken.None);
-        Assert.True(await Task.Run(() => entered.Wait(TimeSpan.FromSeconds(4))));
-        var context = new QueuedContext(); var previous = SynchronizationContext.Current;
-        Task disposal;
-        try { SynchronizationContext.SetSynchronizationContext(context); disposal = service.DisposeAsync().AsTask(); }
-        finally { SynchronizationContext.SetSynchronizationContext(previous); }
-        release.Set();
-        try
-        {
-            await Task.Delay(300);
-            Assert.True(disposal.IsCompleted, "Shutdown must not depend on the UI thread processing a continuation.");
-        }
-        finally
-        {
-            context.Drain(); await disposal.WaitAsync(TimeSpan.FromSeconds(4));
-            try { await exchange; } catch (Exception) { }
-        }
-    }
-
-    [Fact]
-    public async Task RejectedSettingsKeepThePreviousServiceAndProtectedSettingsWorking()
-    {
-        using var free = new TcpListener(IPAddress.Loopback, 0); free.Start();
-        var port = ((IPEndPoint)free.LocalEndpoint).Port; free.Stop();
-        using var occupied = new TcpListener(IPAddress.Any, 0); occupied.Start();
-        var occupiedPort = ((IPEndPoint)occupied.LocalEndpoint).Port;
-        var store = Store("runtime"); var peer = Store("peer"); var key = Key();
-        var options = new LibrarySyncOptions { Enabled = true, Port = port, CodeProtected = LocalSecretStore.Protect(Convert.ToHexString(key)) };
-        var path = Path.Combine(_directory, "runtime-sync.json");
-        try
-        {
-            await LibrarySyncRuntime.ConfigureAsync(options, store: store, optionsPath: path);
-            var before = File.ReadAllBytes(path);
-            var changed = LibrarySyncMerge.Copy(options); changed.Port = occupiedPort;
-            await Assert.ThrowsAnyAsync<Exception>(() => LibrarySyncRuntime.ConfigureAsync(changed, store: store, optionsPath: path));
-            Assert.Equal(before, File.ReadAllBytes(path));
-            peer.SavePrompt(new() { Content = "still works after occupied port" });
-            await LibrarySyncTransport.ExchangeAsync(peer, new(IPAddress.Loopback, port), key, CancellationToken.None);
-            Assert.Single(store.Read().Prompts);
-            var invalidPath = Path.Combine(_directory, "directory-instead-of-settings"); Directory.CreateDirectory(invalidPath);
-            await Assert.ThrowsAnyAsync<Exception>(() => LibrarySyncRuntime.ConfigureAsync(options, store: store, optionsPath: invalidPath));
-            Assert.Equal(before, File.ReadAllBytes(path));
-            peer.SavePrompt(new() { Content = "still works after save failure" });
-            await LibrarySyncTransport.ExchangeAsync(peer, new(IPAddress.Loopback, port), key, CancellationToken.None);
-            Assert.Equal(2, store.Read().Prompts.Count);
-        }
-        finally { await LibrarySyncRuntime.StopAsync(); }
-        Assert.False(LibrarySyncRuntime.SyncNow());
     }
 
     [Fact]

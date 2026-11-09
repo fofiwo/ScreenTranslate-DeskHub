@@ -1,4 +1,4 @@
-using System.IO;
+﻿using System.IO;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -36,6 +36,8 @@ internal sealed class LibrarySyncItem
 
 internal sealed class LibrarySyncSnapshot
 {
+    internal const int MaxBytes = 8 * 1024 * 1024 - 28;
+
     public int Protocol { get; set; } = 2;
     public List<LibrarySyncItem> Items { get; set; } = [];
 }
@@ -356,7 +358,7 @@ internal sealed partial class LibraryStore
                 var bytes = JsonSerializer.SerializeToUtf8Bytes(merged);
                 try
                 {
-                    if (bytes.Length > LibrarySyncTransport.MaxFrameBytes - 28)
+                    if (bytes.Length > LibrarySyncSnapshot.MaxBytes)
                         throw new InvalidDataException("合并后的资料超过单次同步 8 MB 上限，未写入本次同步。");
                 }
                 finally { CryptographicOperations.ZeroMemory(bytes); }

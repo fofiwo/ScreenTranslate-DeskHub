@@ -1,4 +1,4 @@
-using System.ComponentModel;
+﻿using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
 using System.Windows;
@@ -527,8 +527,7 @@ public partial class ClipboardHistoryWindow : Window
 
     private void Menu_Click(object sender, RoutedEventArgs e)
     { MenuButton.ContextMenu.PlacementTarget = MenuButton; MenuButton.ContextMenu.IsOpen = true; }
-    private void Lan_Click(object sender, RoutedEventArgs e) { Dismiss(); LanTransferWindow.Open(); }
-    private void ShortcutSettings_Click(object sender, RoutedEventArgs e) { Dismiss(); ShellWindow.ShowOrActivate(ShellPage.Settings); }
+    private void ShortcutSettings_Click(object sender, RoutedEventArgs e) { Dismiss(); ShellWindow.ShowOrActivate(ShellPage.Settings).ShowQuickToolSettings(); }
     private void OpenFolder_Click(object sender, RoutedEventArgs e)
     {
         try { Directory.CreateDirectory(_store.Folder); Process.Start(new ProcessStartInfo(_store.Folder) { UseShellExecute = true }); }

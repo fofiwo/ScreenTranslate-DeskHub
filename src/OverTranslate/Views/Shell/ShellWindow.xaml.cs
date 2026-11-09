@@ -1,4 +1,4 @@
-using System.Reflection;
+﻿using System.Reflection;
 using System.Windows;
 using System.Windows.Automation;
 using System.Windows.Controls;
@@ -253,6 +253,8 @@ public partial class ShellWindow : Window
     }
 
     private void LibraryBtn_Click(object sender, RoutedEventArgs e) => _openLibrary();
+
+    private void Devices_Click(object sender, RoutedEventArgs e) => ClipboardHistory.LanTransferWindow.Open();
 
     private void ClipboardHistoryBtn_Click(object sender, RoutedEventArgs e) => ClipboardHistory.ClipboardHistoryWindow.Open();
 
@@ -571,7 +573,13 @@ public partial class ShellWindow : Window
         UpdateButton.ToolTip = UpdateNotifier.Available is null ? "启动及每 30 分钟自动检查，也可点击手动检查" : "下载并安装新版，个人数据保留";
         UpdateButton.FontWeight = UpdateNotifier.Available is null ? FontWeights.Normal : FontWeights.SemiBold;
     }
-    private async void UpdateButton_Click(object sender, RoutedEventArgs e) => await UpdateUi.CheckAndShowAsync();
+    private async void UpdateButton_Click(object sender, RoutedEventArgs e) => await UpdateUi.CheckAndShowAsync(UpdateButton);
+
+    public void ShowQuickToolSettings()
+    {
+        Navigate(ShellPage.Settings);
+        PreferencesPage.ShowQuickTools();
+    }
 
     public void ShowOcrSettings()
     {

@@ -340,7 +340,10 @@ public sealed partial class ScreenTranslateShellTests
         var root = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "lan-ui-" + Guid.NewGuid().ToString("N"));
         var path = System.IO.Path.Combine(root, "preferences.json");
         IReadOnlyList<System.Net.IPAddress> addresses = [];
-        var window = new LanTransferWindow(path, readAddresses: () => addresses)
+        System.Windows.DataObject? copied = null;
+        var failCopy = false;
+        var window = new LanTransferWindow(path, readAddresses: () => addresses, writeClipboard: data =>
+        { if (failCopy) throw new System.Runtime.InteropServices.ExternalException(); copied = data; })
         { Left = -10000, Top = -10000, ShowActivated = false, WindowStartupLocation = WindowStartupLocation.Manual };
         try
         {
@@ -357,6 +360,8 @@ public sealed partial class ScreenTranslateShellTests
             Assert.False(((Button)window.FindName("ChooseFilesButton")).IsEnabled);
             var sending = window.SendFilesAsync(["fixture.bin"]); PumpUntil(() => sending.IsCompleted);
             Assert.Contains("先配对", ((TextBlock)window.FindName("TransferStatus")).Text);
+            ((Expander)window.FindName("FileTransferSection")).IsExpanded = true;
+            window.UpdateLayout();
             var folder = System.IO.Path.Combine(root, "接收目录");
             ((System.Windows.Controls.TextBox)window.FindName("ReceiveFolderBox")).Text = folder;
             Visuals<Button>(window).Single(b => Equals(b.Content, "保存")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
@@ -375,6 +380,47 @@ public sealed partial class ScreenTranslateShellTests
             Assert.True(((CheckBox)window.FindName("LibrarySyncBox")).IsChecked);
             ((CheckBox)window.FindName("LibrarySyncBox")).IsChecked = false;
             Assert.False(OverTranslate.Services.Lan.LanPreferences.Load(path).AutoSyncLibrary);
+            var copyButton = (Button)window.FindName("CopyPairingButton");
+            Assert.False(copyButton.IsEnabled);
+            addresses = [System.Net.IPAddress.Loopback]; window.RefreshLocalAddresses();
+            ((Button)window.FindName("ListenButton")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            PumpUntil(() => copyButton.IsEnabled);
+            var info = (System.Windows.Controls.TextBox)window.FindName("PairingInfo");
+            Assert.Contains("对方地址：127.0.0.1:", info.Text);
+            Assert.Contains("提示词与模型库：暂停", info.Text);
+            Assert.Equal(5, info.Text.Split('\n').Length);
+            var originalInfo = info.Text;
+            addresses = [System.Net.IPAddress.Parse("192.168.2.30")]; window.RefreshLocalAddresses();
+            ((CheckBox)window.FindName("LibrarySyncBox")).IsChecked = true;
+            Assert.Contains("对方地址：127.0.0.1:", info.Text);
+            Assert.Contains("开启（含 API Key）", info.Text);
+            Assert.NotEqual(originalInfo, info.Text);
+            copyButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Assert.NotNull(copied); Assert.Equal(info.Text, copied.GetText());
+            Assert.True(copied.GetDataPresent("ExcludeClipboardContentFromMonitorProcessing"));
+            Assert.True(copied.GetDataPresent("CanUploadToCloudClipboard"));
+            Assert.Null(ClipboardContent.Capture(copied, "fixture"));
+            failCopy = true;
+            copyButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Assert.Contains("复制失败", ((TextBlock)window.FindName("PairingCopyStatus")).Text);
+            Assert.True(copyButton.IsEnabled);
+            Visuals<Button>(window).Single(b => Equals(b.Content, "断开连接")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            PumpUntil(() => !copyButton.IsEnabled && ((TextBlock)window.FindName("ConnectionStatus")).Text.Contains("已断开"));
+            Assert.DoesNotContain("完整配对码：", info.Text);
+            ((Expander)window.FindName("FileTransferSection")).IsExpanded = false;
+            // 视觉夹具只展示虚构配对信息，不保存实际监听期间的配对码。
+            info.Text = LanTransferWindow.BuildPairingInfo("我的电脑", "192.168.1.20:52000", "0123456789ABCDEF-0123456789ABCDEF", unified);
+            copyButton.IsEnabled = true;
+            ((TextBlock)window.FindName("ConnectionStatus")).Text = "等待另一台电脑连接";
+            ((TextBlock)window.FindName("PairingCopyStatus")).Text = "仅分享给自己的可信电脑";
+            window.Width = 880; window.Height = 790; window.UpdateLayout();
+            Render(window, "sync-pairing-desktop", 880, 790);
+            window.Width = 760; window.Height = 650; window.UpdateLayout();
+            Render(window, "sync-pairing-minimum", 760, 650);
+            ApplyTheme(System.Windows.Application.Current, "Dark");
+            Render(window, "sync-pairing-dark", 760, 650);
+            ApplyTheme(System.Windows.Application.Current, "Light");
+
             window.Close(); Assert.False(window.IsVisible);
         }
         finally

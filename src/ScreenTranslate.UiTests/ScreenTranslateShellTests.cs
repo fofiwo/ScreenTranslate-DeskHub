@@ -44,6 +44,38 @@ public sealed partial class ScreenTranslateShellTests
                     Source = new Uri("pack://application:,,,/ScreenTranslate;component/Resources/Strings.zh-Hans.xaml", UriKind.Absolute)
                 };
                 ApplyTheme(app, "Light");
+                if (Environment.GetEnvironmentVariable("SCREEN_TRANSLATE_LAYOUT_ONLY") == "1")
+                {
+                    shell = new ShellWindow(() => new LibraryState(), () => { });
+                    VerifyQuickToolSettings(shell);
+                    VerifyShortcutRecording();
+                    VerifyOcrSaveFailure();
+                    VerifyDpiLayout(shell);
+                    WithReviewLibrary((window, _, _) =>
+                    {
+                        Render(window, "library-tabs-organized", 880, 580);
+                        var libraryTabs = (TabControl)window.FindName("Tabs");
+                        libraryTabs.SelectedIndex = 1;
+                        Render(window, "library-models-organized", 880, 580);
+                        Assert.Equal(FontWeights.Normal, ((TextBox)window.FindName("ModelSearch")).FontWeight);
+                    });
+                    VerifySettingsMigrationReview();
+                    return;
+                }
+                if (Environment.GetEnvironmentVariable("SCREEN_TRANSLATE_SETTINGS_REVIEW_ONLY") == "1")
+                {
+                    VerifySettingsMigrationReview();
+                    return;
+                }
+                if (Environment.GetEnvironmentVariable("SCREEN_TRANSLATE_QUICK_TOOLS_ONLY") == "1")
+                {
+                    shell = new ShellWindow(() => new LibraryState(), () => { });
+                    VerifyQuickToolSettings(shell);
+                    VerifyShortcutRecording();
+                    VerifyDeletedPromptEditorKeepsInput();
+                    VerifyLanTransferSettings();
+                    return;
+                }
                 if (Environment.GetEnvironmentVariable("SCREEN_TRANSLATE_UPDATE_ONLY") == "1")
                 {
                     VerifyUpdateEntries();
@@ -129,7 +161,7 @@ public sealed partial class ScreenTranslateShellTests
 
                 tabs.SelectedIndex = 1;
                 Render(shell, "services");
-                tabs.SelectedIndex = 2;
+                tabs.SelectedIndex = 3;
                 var advanced = Assert.IsType<SettingsPage>(((ContentControl)preferences.FindName("AdvancedHost")).Content);
                 var formatting = (System.Windows.Controls.CheckBox)advanced.FindName("PreserveFormattingCheckBox");
                 var fallback = (System.Windows.Controls.CheckBox)advanced.FindName("AllowFallbackCheckBox");
@@ -144,7 +176,11 @@ public sealed partial class ScreenTranslateShellTests
                 fallback.IsChecked = false;
                 Assert.Equal(6, ((StackPanel)advanced.FindName("HotkeyRows")).Children.Count);
                 Render(shell, "advanced");
+                VerifyQuickToolSettings(shell);
+                VerifySettingsMigrationReview();
                 VerifyShortcutRecording();
+                VerifyOcrSaveFailure();
+                VerifyDpiLayout(shell);
 
                 var control = new OverTranslate.Views.Realtime.RealtimeControlWindow(new System.Drawing.Rectangle(0, 0, 1920, 1080));
                 try
@@ -187,7 +223,7 @@ public sealed partial class ScreenTranslateShellTests
                 VerifyHiddenShellReopens(shell);
                 VerifySystemClipboardHistory();
                 VerifyLibraryWindow();
-                VerifyLibrarySyncSettings();
+                VerifyDeletedPromptEditorKeepsInput();
                 shell.Close(); shell = null;
                 Assert.Null(ShellWindow.Current);
             }
@@ -302,6 +338,57 @@ public sealed partial class ScreenTranslateShellTests
         shell.Navigate(ShellPage.Home);
     }
 
+    private static void VerifyQuickToolSettings(ShellWindow shell)
+    {
+        shell.ShowQuickToolSettings();
+        var preferences = Assert.IsType<ScreenTranslatePreferencesPage>(((Border)shell.FindName("ContentHost")).Child);
+        var tabs = (TabControl)preferences.FindName("Tabs");
+        Assert.Equal("快捷键", ((TabItem)tabs.SelectedItem).Header);
+        var quick = Assert.IsType<SettingsPage>(((ContentControl)preferences.FindName("QuickToolsHost")).Content);
+        Assert.Equal(Visibility.Visible, ((FrameworkElement)quick.FindName("HotkeySection")).Visibility);
+        Assert.Equal(Visibility.Collapsed, ((FrameworkElement)quick.FindName("AdvancedOptions")).Visibility);
+        var quickRows = ((StackPanel)quick.FindName("HotkeyRows")).Children.Cast<Grid>().ToArray();
+        Assert.Equal(6, quickRows.Length);
+        Assert.All(quickRows, row => Assert.Equal(Visibility.Visible, row.Visibility));
+        Assert.Contains(quickRows, row => row.Children.OfType<TextBox>().Any(box => Equals(box.Tag, HotkeyAction.ClipboardHistory)));
+        Render(shell, "shortcuts", 1100, 680);
+        Assert.Equal(FontWeights.Normal, ((TextBlock)quick.FindName("HotkeyStatus")).FontWeight);
+        tabs.SelectedIndex = 3;
+        var advanced = Assert.IsType<SettingsPage>(((ContentControl)preferences.FindName("AdvancedHost")).Content);
+        Assert.Equal(Visibility.Collapsed, ((FrameworkElement)advanced.FindName("HotkeySection")).Visibility);
+        Assert.Equal(Visibility.Visible, ((FrameworkElement)advanced.FindName("AdvancedOptions")).Visibility);
+        Render(shell, "general", 1100, 680);
+        tabs.SelectedIndex = 1;
+        var services = Assert.IsType<SettingsPage>(((ContentControl)preferences.FindName("ServiceOptionsHost")).Content);
+        Assert.Equal(Visibility.Visible, ((FrameworkElement)services.FindName("ServiceOptions")).Visibility);
+        Assert.Equal(Visibility.Collapsed, ((FrameworkElement)services.FindName("AdvancedOptions")).Visibility);
+        Render(shell, "services-organized", 1100, 680);
+        shell.ShowOcrSettings();
+        var ocr = Assert.IsType<OcrSettingsPage>(((ContentControl)preferences.FindName("OcrHost")).Content);
+        Assert.Null(ocr.FindName("LiveOverlayBox"));
+        var recognition = Assert.IsType<SettingsPage>(((ContentControl)ocr.FindName("RecognitionOptionsHost")).Content);
+        Assert.Equal(Visibility.Visible, ((FrameworkElement)recognition.FindName("OcrOptions")).Visibility);
+        Render(shell, "ocr-organized", 1100, 680);
+        shell.Navigate(ShellPage.Home);
+        var home = Assert.IsType<HomePage>(((Border)shell.FindName("ContentHost")).Child);
+        var capture = Assert.IsType<SettingsPage>(((ContentControl)home.FindName("CaptureOptionsHost")).Content);
+        Assert.Equal(Visibility.Visible, ((FrameworkElement)capture.FindName("CaptureOptions")).Visibility);
+        Assert.Equal(Visibility.Collapsed, ((FrameworkElement)capture.FindName("OcrOptions")).Visibility);
+        var overlay = (System.Windows.Controls.CheckBox)capture.FindName("LiveOverlayCheckBox");
+        var oldOverlay = SettingsService.Instance.Current.LiveCaptureOverlay;
+        try
+        {
+            overlay.IsChecked = false;
+            Assert.Contains("冻结截图", ((TextBlock)home.FindName("StatusText")).Text);
+            overlay.IsChecked = true;
+            Assert.Contains("原位覆盖", ((TextBlock)home.FindName("StatusText")).Text);
+        }
+        finally { overlay.IsChecked = oldOverlay; }
+        Render(shell, "home-organized", 1100, 680);
+        shell.ShowQuickToolSettings();
+        Assert.Same(quick, ((ContentControl)preferences.FindName("QuickToolsHost")).Content);
+    }
+
     private static object? Field(object target, string name) => target.GetType()
         .GetField(name, BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(target);
 
@@ -326,7 +413,7 @@ public sealed partial class ScreenTranslateShellTests
         try
         {
             settings.HotkeyModifiers = 0; settings.HotkeyVirtualKey = 0x77; settings.HotkeyDisplay = "F8";
-            Click();
+            Press(System.Windows.Input.Key.Enter);
             Assert.Equal(new[] { true }, states);
             Press(System.Windows.Input.Key.F8);
             Assert.Contains("冲突", ((TextBlock)page.FindName("HotkeyStatus")).Text);
@@ -341,9 +428,9 @@ public sealed partial class ScreenTranslateShellTests
             retry.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Button.ClickEvent));
             Assert.Empty(((TextBlock)page.FindName("SaveStatus")).Text);
             Assert.Equal(Visibility.Collapsed, retry.Visibility);
-            Click(); Press(System.Windows.Input.Key.Escape);
+            Press(System.Windows.Input.Key.Enter); Press(System.Windows.Input.Key.Escape);
             Assert.Equal(new[] { true, false, true, false }, states);
-            Click(); page.RaiseEvent(new RoutedEventArgs(FrameworkElement.UnloadedEvent));
+            Click(); Press(System.Windows.Input.Key.Tab);
             Assert.Equal(new[] { true, false, true, false, true, false }, states);
         }
         finally
@@ -351,6 +438,32 @@ public sealed partial class ScreenTranslateShellTests
             (settings.HotkeyModifiers, settings.HotkeyVirtualKey, settings.HotkeyDisplay) = oldCapture;
             (settings.OcrHotkeyModifiers, settings.OcrHotkeyVirtualKey, settings.OcrHotkeyDisplay) = oldOcr;
         }
+    }
+
+    private static void VerifyOcrSaveFailure()
+    {
+        var settings = SettingsService.Instance.Current;
+        var previous = settings.Ocr;
+        bool succeeds = false;
+        var page = new OcrSettingsPage(() => succeeds);
+        try
+        {
+            ((ComboBox)page.FindName("OcrProviderBox")).SelectedIndex = 0;
+            ((TextBox)page.FindName("TimeoutBox")).Text = "37";
+            var save = typeof(OcrSettingsPage).GetMethod("SaveOptions", BindingFlags.NonPublic | BindingFlags.Instance)!;
+            Assert.False((bool)save.Invoke(page, null)!);
+            Assert.Same(previous, settings.Ocr);
+            Assert.Contains("保存失败", ((TextBlock)page.FindName("StatusText")).Text);
+            Assert.Equal("37", ((TextBox)page.FindName("TimeoutBox")).Text);
+            typeof(OcrSettingsPage).GetMethod("ClearCredentials_Click", BindingFlags.NonPublic | BindingFlags.Instance)!
+                .Invoke(page, [page, new RoutedEventArgs()]);
+            Assert.Contains("清除凭据保存失败", ((TextBlock)page.FindName("StatusText")).Text);
+            succeeds = true;
+            Assert.True((bool)save.Invoke(page, null)!);
+            Assert.Equal(37, settings.Ocr.TimeoutSeconds);
+            Assert.Contains("已保存", ((TextBlock)page.FindName("StatusText")).Text);
+        }
+        finally { settings.Ocr = previous; page.Teardown(); }
     }
 
     private static void AssertCaptureOrder(HomePage home)
@@ -364,16 +477,59 @@ public sealed partial class ScreenTranslateShellTests
         Assert.True(startTop + start.ActualHeight <= home.ActualHeight, "The primary action must be visible without scrolling.");
     }
 
-    private static void Render(Window shell, string name, int width = 1220, int height = 760)
+    private static void VerifyDpiLayout(ShellWindow shell)
+    {
+        try
+        {
+            foreach (var scale in new[] { 1.0, 1.25, 1.5, 2.0 })
+            {
+                shell.Navigate(ShellPage.Home);
+                var home = Assert.IsType<HomePage>(((Border)shell.FindName("ContentHost")).Child);
+                Render(shell, $"home-dpi-{scale * 100:0}", 1100, 680, scale);
+                AssertCaptureOrder(home);
+                Assert.Equal(scale, VisualTreeHelper.GetDpi(home).DpiScaleX, 2);
+                shell.ShowQuickToolSettings();
+                Render(shell, $"shortcuts-dpi-{scale * 100:0}", 1100, 680, scale);
+                var preferences = Assert.IsType<ScreenTranslatePreferencesPage>(((Border)shell.FindName("ContentHost")).Child);
+                var tabs = (TabControl)preferences.FindName("Tabs");
+                foreach (TabItem tab in tabs.Items)
+                {
+                    var bounds = tab.TransformToAncestor(tabs).TransformBounds(new Rect(tab.RenderSize));
+                    Assert.True(bounds.Left >= 0 && bounds.Right <= tabs.ActualWidth + 1);
+                    Assert.True(bounds.Top < 1, "Settings tabs must fit on one row at every DPI.");
+                }
+                var page = (SettingsPage)((ContentControl)preferences.FindName("QuickToolsHost")).Content;
+                foreach (Grid row in ((StackPanel)page.FindName("HotkeyRows")).Children)
+                {
+                    var field = row.Children.OfType<TextBox>().Single();
+                    var label = row.Children.OfType<System.Windows.Controls.CheckBox>().Single();
+                    var labelRight = label.TransformToAncestor(row).Transform(new Point(label.ActualWidth, 0)).X;
+                    var fieldLeft = field.TransformToAncestor(row).Transform(new Point()).X;
+                    Assert.True(labelRight <= fieldLeft + 1, "Shortcut names must not overlap their recording fields.");
+                }
+            }
+        }
+        finally { SetVisualDpi((FrameworkElement)shell.Content, 1); }
+    }
+
+    private static void SetVisualDpi(Visual visual, double scale)
+    {
+        // 已显示窗口的内容根仍有 Window 父级；仅对真正的视觉树根更新 DPI。
+        while (VisualTreeHelper.GetParent(visual) is Visual parent) visual = parent;
+        VisualTreeHelper.SetRootDpi(visual, new DpiScale(scale, scale));
+    }
+
+    private static void Render(Window shell, string name, int width = 1220, int height = 760, double dpiScale = 1)
     {
         // Render the actual WPF tree as test evidence; this does not automate the user's desktop.
         if (shell is LibraryWindow) { shell.Width = width; shell.Height = height; }
         var root = (FrameworkElement)shell.Content;
+        SetVisualDpi(root, dpiScale);
         root.Measure(new Size(width, height));
         root.Arrange(new Rect(0, 0, width, height));
         root.UpdateLayout();
         if (shell is LibraryWindow) Assert.True(root.ActualWidth <= width + 1 && root.ActualHeight <= height + 1, "The rendered library must fit the requested viewport, including after showing its HWND.");
-        var bitmap = new RenderTargetBitmap(width, height, 96, 96, PixelFormats.Pbgra32);
+        var bitmap = new RenderTargetBitmap((int)Math.Ceiling(width * dpiScale), (int)Math.Ceiling(height * dpiScale), 96 * dpiScale, 96 * dpiScale, PixelFormats.Pbgra32);
         bitmap.Render(root);
         var directory = System.IO.Path.Combine(AppContext.BaseDirectory, "ui-evidence");
         System.IO.Directory.CreateDirectory(directory);
@@ -624,7 +780,7 @@ public sealed partial class ScreenTranslateShellTests
             Assert.Equal(Visibility.Visible, ((TextBlock)window.FindName("ModelEmpty")).Visibility);
             tabs.SelectedIndex = 0;
             root.UpdateLayout();
-            Click("AI 整理设置");
+            window.ShowAiSettings();
             Render(window, "library-ai-settings", 1120, 740);
             ((TextBox)window.FindName("AiEndpoint")).Text = "invalid-address";
             ((System.Windows.Controls.Button)window.FindName("SaveButton")).RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Button.ClickEvent));

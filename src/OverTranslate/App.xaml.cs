@@ -121,7 +121,6 @@ public partial class App
         Services.ClipboardHistory.ClipboardHistoryRuntime.Start(Dispatcher);
         ShellWindow.ShowOrActivate();
         Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Background, Services.Lan.SyncSetupPrompt.ShowIfNeeded);
-        _ = Services.Library.LibrarySyncRuntime.StartSavedAsync();
         UpdateNotifier.StartPolling();
         _ = UpdateNotifier.CheckAsync();
 
@@ -168,7 +167,6 @@ public partial class App
     protected override void OnExit(ExitEventArgs e)
     {
         OriginalApplicationPaste.Stop();
-        Services.Library.LibrarySyncRuntime.StopAsync().GetAwaiter().GetResult();
         _activateEvent?.Dispose();
         base.OnExit(e);
     }

@@ -1,26 +1,8 @@
-<UserControl x:Class="OverTranslate.Views.Settings.ScreenTranslatePreferencesPage"
+﻿<UserControl x:Class="OverTranslate.Views.Settings.ScreenTranslatePreferencesPage"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
     <UserControl.Resources>
-        <Style TargetType="TabItem">
-            <Setter Property="Foreground" Value="{DynamicResource AppTextSecondary}"/>
-            <Setter Property="Background" Value="{DynamicResource ProductRailBg}"/>
-            <Setter Property="FocusVisualStyle" Value="{StaticResource ProductFocus}"/>
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="TabItem">
-                        <Border x:Name="Tab" Background="{TemplateBinding Background}" Padding="{TemplateBinding Padding}" CornerRadius="8" Margin="0,0,6,12">
-                            <ContentPresenter x:Name="HeaderPresenter" ContentSource="Header" TextElement.Foreground="{DynamicResource AppTextSecondary}"/>
-                        </Border>
-                        <ControlTemplate.Triggers>
-                            <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Tab" Property="Background" Value="{DynamicResource AppButtonHoverBg}"/></Trigger>
-                            <Trigger Property="IsSelected" Value="True"><Setter TargetName="HeaderPresenter" Property="TextElement.Foreground" Value="{DynamicResource AppAccentFg}"/><Setter TargetName="Tab" Property="Background" Value="{DynamicResource AppAccent}"/><Setter TargetName="HeaderPresenter" Property="TextElement.FontWeight" Value="SemiBold"/></Trigger>
-                            
-                        </ControlTemplate.Triggers>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
-        </Style>
+        <Style TargetType="TabItem" BasedOn="{StaticResource ProductTab}"/>
         <Style TargetType="TabControl">
             <Setter Property="Template">
                 <Setter.Value>
@@ -41,13 +23,13 @@
         <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition/></Grid.RowDefinitions>
         <StackPanel Margin="0,0,0,20">
             <TextBlock Text="服务与设置" Style="{StaticResource PageTitle}"/>
-            <TextBlock Text="文字识别与翻译服务分别配置，按需要选择本地或在线能力。" Style="{StaticResource PageSubtitle}"/>
+            <TextBlock Text="管理识别、翻译、快捷键和应用选项。" Style="{StaticResource PageSubtitle}"/>
         </StackPanel>
         <TabControl x:Name="Tabs" Grid.Row="1" Background="{DynamicResource AppSurfaceBg}" BorderBrush="{DynamicResource AppBorder}" SelectionChanged="Tab_Changed">
             <TabItem Header="文字识别" Padding="20,12"><ContentControl x:Name="OcrHost"/></TabItem>
             <TabItem Header="翻译服务" Padding="20,12">
                 <ScrollViewer VerticalScrollBarVisibility="Auto">
-                    <StackPanel Margin="0,26,0,20" MaxWidth="760" HorizontalAlignment="Left">
+                    <StackPanel Margin="0,24,12,24" MaxWidth="760" HorizontalAlignment="Stretch">
                         <TextBlock Text="AI 翻译服务" FontSize="20" FontWeight="SemiBold"/>
                         <TextBlock Text="连接 OpenAI 兼容接口，配置地址、模型与翻译提示词；配置面板支持获取模型列表和连接测试。" TextWrapping="Wrap" Foreground="{DynamicResource AppTextSecondary}" Margin="0,12,0,20"/>
                         <Button Content="配置 AI 翻译服务" Style="{StaticResource ProductButton}" HorizontalAlignment="Left" Click="OpenAi_Click" Padding="20,10" Height="44"/>
@@ -58,10 +40,12 @@
                         <Border Height="1" Background="{DynamicResource AppBorder}" Margin="0,28,0,24"/>
                         <TextBlock Text="其他翻译服务" FontSize="18" FontWeight="SemiBold"/>
                         <TextBlock Text="在截图首页或持续翻译中选择 Microsoft、Google、Bing 等服务。可用性取决于所选服务与网络，尚未测试的服务不会标记为已连接。" TextWrapping="Wrap" Foreground="{DynamicResource AppTextSecondary}" Margin="0,10,0,0"/>
+                        <ContentControl x:Name="ServiceOptionsHost"/>
                     </StackPanel>
                 </ScrollViewer>
             </TabItem>
-            <TabItem Header="快捷键与高级" Padding="20,12"><ContentControl x:Name="AdvancedHost"/></TabItem>
+            <TabItem Header="快捷键" Padding="20,12"><ContentControl x:Name="QuickToolsHost"/></TabItem>
+            <TabItem Header="通用与诊断" Padding="20,12"><ContentControl x:Name="AdvancedHost"/></TabItem>
         </TabControl>
     </Grid>
 </UserControl>

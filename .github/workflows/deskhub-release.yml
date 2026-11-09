@@ -48,7 +48,8 @@ jobs:
       - name: Build clean installer and update feed
         shell: pwsh
         run: |
-          $version = '0.3.${{ github.run_number }}'
+          # 0.3.6 已用于本机安装；从下一补丁号发布，避免同版本无法升级。
+          $version = '0.3.' + ([int]'${{ github.run_number }}' + 1)
           ./build-screen-translate-installer.ps1 -Version $version
           if ($LASTEXITCODE -ne 0) { throw 'Build failed' }
           "RELEASE_VERSION=$version" >> $env:GITHUB_ENV
@@ -59,8 +60,10 @@ jobs:
           $notes = @'
           ScreenTranslate DeskHub 安装版，适用于 Windows x64。
 
-          - 启动及每 30 分钟自动检查更新，左下角、关于及托盘可检查并安装新版。
-          - 包含截图翻译、剪贴板历史、局域网双向同步及提示词与模型资料库。
+          - 手动检查更新立即显示检查中状态，并提示结果、失败或超时。
+          - 整理设置页与快捷工具入口，改善保存反馈和快捷键录入。
+          - 设备与同步统一管理剪贴板及资料库连接，支持复制配对信息。
+          - 移除旧资料库独立同步入口，原资料保留；原独立同步用户需重新配对。
           - 安装包不包含开发者的用户数据；升级保留独立数据目录。
 
           首次使用请下载 ScreenTranslate-win-Setup.exe。已有早期本地版需手动安装一次，之后可在应用内更新。

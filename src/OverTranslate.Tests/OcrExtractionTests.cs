@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using System.Windows;
 using OverTranslate.Models;
 using OverTranslate.Services;
@@ -147,6 +147,8 @@ public class OcrExtractionTests
         Assert.False(restored.OcrPreserveFormatting);
         Assert.True(restored.AllowFallbackServices);
         Assert.Equal(HotkeyAction.Capture, HotkeyBindings.Resolve(restored).Single(b => b.Action == HotkeyAction.OcrExtract).ShadowedBy);
-        Assert.Equal(5, HotkeyBindings.Resolve(restored).Count);
+        Assert.Equal(new[] { HotkeyAction.Capture, HotkeyAction.TranslationWindow, HotkeyAction.RealtimePause,
+            HotkeyAction.OcrExtract, HotkeyAction.LibraryWindow, HotkeyAction.ClipboardHistory },
+            HotkeyBindings.Resolve(restored).Select(binding => binding.Action));
     }
 }

@@ -1,4 +1,4 @@
-<Window x:Class="OverTranslate.Views.Library.LibraryWindow"
+﻿<Window x:Class="OverTranslate.Views.Library.LibraryWindow"
  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
  Title="提示词与模型资料 · ScreenTranslate" Width="1120" Height="760" MinWidth="880" MinHeight="580"
@@ -107,21 +107,7 @@
   <Style x:Key="FilterTag" TargetType="ListBoxItem" BasedOn="{StaticResource ProductListItem}">
    <Setter Property="Padding" Value="10,5"/><Setter Property="Margin" Value="0,0,6,6"/>
   </Style>
-  <Style x:Key="LibraryTab" TargetType="TabItem">
-   <Setter Property="Foreground" Value="{DynamicResource AppTextSecondary}"/><Setter Property="FontSize" Value="15"/>
-   <Setter Property="FocusVisualStyle" Value="{StaticResource ProductFocus}"/><Setter Property="Padding" Value="18,10"/>
-   <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="TabItem">
-    <Grid Background="Transparent">
-     <Border x:Name="Surface" Background="Transparent" Padding="{TemplateBinding Padding}"><ContentPresenter ContentSource="Header" VerticalAlignment="Center" HorizontalAlignment="Center" RecognizesAccessKey="True"/></Border>
-     <Border x:Name="Underline" Height="3" VerticalAlignment="Bottom" Background="Transparent"/>
-    </Grid>
-    <ControlTemplate.Triggers>
-     <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Surface" Property="Background" Value="{DynamicResource AppButtonHoverBg}"/></Trigger>
-     <Trigger Property="IsSelected" Value="True"><Setter Property="Foreground" Value="{DynamicResource AppAccent}"/><Setter Property="FontWeight" Value="SemiBold"/><Setter TargetName="Underline" Property="Background" Value="{DynamicResource AppAccent}"/></Trigger>
-     <Trigger Property="IsEnabled" Value="False"><Setter Property="Opacity" Value="0.5"/></Trigger>
-    </ControlTemplate.Triggers>
-   </ControlTemplate></Setter.Value></Setter>
-  </Style>
+
  </Window.Resources>
  <Grid Background="{DynamicResource AppWindowBg}"><Grid Margin="20,16,20,12">
   <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
@@ -132,22 +118,18 @@
    </StackPanel>
    <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Top" Margin="18,4,0,0">
     <TextBlock x:Name="ShortcutHint" VerticalAlignment="Center" Margin="0,0,10,0" Foreground="{DynamicResource AppTextSecondary}"/>
+    <Button Content="AI 整理设置" Style="{StaticResource SmallButton}" Click="AiSettings_Click" Margin="0,0,8,0"/>
     <Button Content="快捷键" Style="{StaticResource SmallButton}" Click="Shortcut_Click"/>
-    <Button Content="局域网同步" Style="{StaticResource SmallButton}" Click="Sync_Click"/>
+
    </StackPanel>
   </Grid>
-  <Border x:Name="ShortcutPanel" Grid.Row="1" Visibility="Collapsed" Padding="16" Margin="0,0,0,16" Background="{DynamicResource AppHeaderBg}" CornerRadius="6">
-   <StackPanel><WrapPanel>
-    <CheckBox x:Name="ShortcutEnabled" Content="启用共用快捷键" VerticalAlignment="Center" Checked="ShortcutEnabled_Changed" Unchecked="ShortcutEnabled_Changed" Margin="0,0,20,0"/>
-    <TextBox x:Name="ShortcutBox" Style="{StaticResource Field}" IsReadOnly="True" Width="230" PreviewMouseLeftButtonDown="ShortcutBox_Click" PreviewKeyDown="ShortcutBox_KeyDown" LostKeyboardFocus="ShortcutBox_LostFocus" AutomationProperties.Name="提示词与模型资料快捷键"/>
-   </WrapPanel><TextBlock x:Name="ShortcutStatus" Margin="0,8,0,0" Style="{StaticResource ProductHint}" Text="点击输入框录制；Esc 取消。两个页面共用此快捷键，重复按下收起窗口。"/></StackPanel>
-  </Border>
+
   <TabControl x:Name="Tabs" Grid.Row="2" SelectionChanged="Tabs_Changed" BorderThickness="0" Background="{DynamicResource AppSurfaceBg}" TabStripPlacement="Top" Padding="0" KeyboardNavigation.TabNavigation="Continue">
-   <TabItem Header="提示词" Style="{StaticResource LibraryTab}">
+   <TabItem Header="提示词" Style="{StaticResource ProductTab}">
     <Grid Margin="0,12,0,0" TextElement.Foreground="{DynamicResource AppTextPrimary}" TextElement.FontWeight="Normal"><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition/></Grid.RowDefinitions>
      <Grid Margin="0,0,0,8"><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
       <DockPanel VerticalAlignment="Center" Margin="0,0,12,0"><TextBlock Text="搜索" DockPanel.Dock="Left" VerticalAlignment="Center" Margin="0,0,8,0" Foreground="{DynamicResource AppTextSecondary}"/><TextBox x:Name="PromptSearch" Style="{StaticResource Field}" TextChanged="PromptSearch_Changed" ToolTip="搜索标题、描述、正文和标签" AutomationProperties.Name="搜索提示词"/></DockPanel>
-      <Button Grid.Column="1" Content="AI 整理设置" Style="{StaticResource SmallButton}" Click="AiSettings_Click" VerticalAlignment="Center" Margin="0,0,8,0"/>
+
       <Button Grid.Column="2" Content="新建提示词" Style="{StaticResource SmallButton}" Foreground="{DynamicResource AppAccent}" Click="NewPrompt_Click"/>
      </Grid>
      <Expander Grid.Row="1" Header="按标签筛选 · 匹配任一已选标签" Margin="0,0,0,8" Foreground="{DynamicResource AppTextSecondary}">
@@ -196,7 +178,7 @@
      </Grid>
     </Grid>
    </TabItem>
-   <TabItem Header="模型资料" Style="{StaticResource LibraryTab}">
+   <TabItem Header="模型资料" Style="{StaticResource ProductTab}">
     <Grid Margin="0,12,0,0" TextElement.Foreground="{DynamicResource AppTextPrimary}" TextElement.FontWeight="Normal"><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition/></Grid.RowDefinitions>
      <Grid Margin="0,0,0,10"><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
       <DockPanel VerticalAlignment="Center" Margin="0,0,12,0"><TextBlock Text="搜索" DockPanel.Dock="Left" VerticalAlignment="Center" Margin="0,0,8,0" Foreground="{DynamicResource AppTextSecondary}"/><TextBox x:Name="ModelSearch" Style="{StaticResource Field}" TextChanged="ModelSearch_Changed" AutomationProperties.Name="搜索模型资料" ToolTip="搜索平台、地址、模型 ID 和备注"/></DockPanel>

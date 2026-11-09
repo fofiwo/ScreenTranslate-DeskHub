@@ -1,7 +1,8 @@
-using System.Buffers.Binary;
+﻿using System.Buffers.Binary;
 using System.IO;
 using System.Security.Cryptography;
 using System.Text.Json;
+using OverTranslate.Services.Library;
 
 namespace OverTranslate.Services.Lan;
 
@@ -52,7 +53,7 @@ internal static class LanProtocol
         }
         else if (header.Kind == "library")
         {
-            if (header.Length > 8 * 1024 * 1024 - 28) throw new InvalidDataException("资料库超过同步大小上限。");
+            if (header.Length > LibrarySyncSnapshot.MaxBytes) throw new InvalidDataException("资料库超过同步大小上限。");
         }
         else if (header.Kind is "text" or "image")
         {

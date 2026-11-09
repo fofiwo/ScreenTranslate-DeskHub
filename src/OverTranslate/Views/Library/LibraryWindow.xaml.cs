@@ -1,4 +1,4 @@
-using System.ComponentModel;
+﻿using System.ComponentModel;
 using System.Collections.ObjectModel;
 using System.IO;
 using System.Windows;
@@ -28,7 +28,6 @@ public partial class LibraryWindow : Window
     private readonly HashSet<string> _selectedTags = [];
     private bool _loading;
     private bool _ready;
-    private bool _recording;
     private bool _shutdown;
     private int _visiblePrompts = 30;
     private bool _appendPrompts;
@@ -70,7 +69,8 @@ public partial class LibraryWindow : Window
         _rankTimer.Tick += (_, _) => RankCopiedPrompts();
         _copyFeedbackTimer.Tick += (_, _) => ResetCopyFeedback();
         _saveNoticeTimer.Tick += (_, _) => DismissSaveNotice();
-        LibrarySyncRuntime.Changed += SyncChanged;
+        LibrarySyncNotifications.Changed += SyncChanged;
+        Activated += (_, _) => RefreshShortcut();
         Deactivated += (_, _) => { CancelPendingCopy(); ResetCopyFeedback(); };
         IsVisibleChanged += (_, _) =>
         {
@@ -110,7 +110,7 @@ public partial class LibraryWindow : Window
     internal void ToggleVisibility()
     {
         // 后台仍可见的窗口应先唤到前台，只有已在前台时才收起。
-        if (IsVisible && WindowState != WindowState.Minimized && IsActive) { EndRecording(); Hide(); }
+        if (IsVisible && WindowState != WindowState.Minimized && IsActive) { Hide(); }
         else
         {
             if (!IsVisible) Show();
@@ -135,10 +135,9 @@ public partial class LibraryWindow : Window
         CancelPendingCopy();
         _rankTimer.Stop();
         ResetCopyFeedback();
-        EndRecording();
         if (!_shutdown) { e.Cancel = true; Hide(); return; }
         DismissSaveNotice();
-        LibrarySyncRuntime.Changed -= SyncChanged;
+        LibrarySyncNotifications.Changed -= SyncChanged;
         // 只等待不依赖界面线程的写盘任务，避免退出中断已提交的保存。
         try { _editorSaveTask.GetAwaiter().GetResult(); }
         catch { /* 保存调用方处理错误，退出时不再次抛出。 */ }
@@ -150,7 +149,6 @@ public partial class LibraryWindow : Window
 
     private void Window_KeyDown(object sender, KeyEventArgs e)
     {
-        if (_recording) return;
         if (EditorLayer.Visibility == Visibility.Visible && e.Key == Key.Enter && Keyboard.Modifiers == ModifierKeys.Control)
         { SaveEditor_Click(sender, e); e.Handled = true; return; }
         if (e.Key != Key.Escape) return;
@@ -435,7 +433,11 @@ public partial class LibraryWindow : Window
         ModelKey.Clear(); AiKey.Clear(); EditorLayer.Visibility = Visibility.Collapsed;
     }
     private void CancelEditor_Click(object sender, RoutedEventArgs e)
-    { if (!_savingEditor) { CloseEditor(); Notice("已取消编辑，原有资料未更改。"); } }
+    {
+        if (_savingEditor) return;
+        CloseEditor();
+        if (Run(RefreshViews)) Notice("已取消编辑，原有资料未更改。");
+    }
     private void NewPrompt_Click(object sender, RoutedEventArgs e) => BeginPromptEditor(new(), false);
     private bool _editingPromptWasSaved, _editingConnectionWasSaved;
     private void EditPrompt_Click(object sender, RoutedEventArgs e) { if (((Button)sender).Tag is LibraryPrompt p) EditPrompt(p); }
@@ -480,13 +482,27 @@ public partial class LibraryWindow : Window
         finally { _summarizing.Remove(item.Id); }
     }
 
-    private void AiSettings_Click(object sender, RoutedEventArgs e)
+    public static void OpenAiSettings()
     {
-        BeginEditor("ai", "AI 整理设置");
-        var ai = _store.Read().Ai;
-        AiEndpoint.Text = ai.Endpoint; AiModel.Text = ai.Model; AiKey.Clear();
-        AiAutomatic.IsChecked = ai.AutoSummarize; AiInsecure.IsChecked = ai.AllowInsecureEndpoint;
-        AiEndpoint.Focus();
+        Open();
+        _current?.ShowAiSettings();
+    }
+
+    internal void ShowAiSettings()
+    {
+        if (EditorLayer.Visibility == Visibility.Visible)
+        {
+            Notice("请先保存或取消当前编辑，再配置 AI 整理。");
+            return;
+        }
+        Run(() =>
+        {
+            var ai = _store.Read().Ai;
+            BeginEditor("ai", "AI 整理设置");
+            AiEndpoint.Text = ai.Endpoint; AiModel.Text = ai.Model; AiKey.Clear();
+            AiAutomatic.IsChecked = ai.AutoSummarize; AiInsecure.IsChecked = ai.AllowInsecureEndpoint;
+            AiEndpoint.Focus();
+        });
     }
 
     private void NewModel_Click(object sender, RoutedEventArgs e) => BeginModelEditor(new(), false);
@@ -672,18 +688,6 @@ public partial class LibraryWindow : Window
 
     private static string FeedbackLabel(string value) => value.Length <= 48 ? value : value[..48] + "…";
 
-    private LibrarySyncWindow? _syncWindow;
-    private void Sync_Click(object sender, RoutedEventArgs e)
-    {
-        if (_syncWindow is null)
-        {
-            _syncWindow = new LibrarySyncWindow { Owner = this };
-            _syncWindow.Closed += (_, _) => _syncWindow = null;
-            _syncWindow.Show();
-        }
-        else _syncWindow.Activate();
-    }
-
     private void SyncChanged()
     {
         if (_shutdown || Dispatcher.HasShutdownStarted) return;
@@ -783,65 +787,16 @@ public partial class LibraryWindow : Window
         if (summarize is not null && !_shutdown) await Summarize(summarize);
     }
 
+    private void AiSettings_Click(object sender, RoutedEventArgs e) => ShowAiSettings();
+
     private void Shortcut_Click(object sender, RoutedEventArgs e)
-    { ShortcutPanel.Visibility = ShortcutPanel.Visibility == Visibility.Visible ? Visibility.Collapsed : Visibility.Visible; EndRecording(); RefreshShortcut(); }
+        => OverTranslate.Views.Shell.ShellWindow.ShowOrActivate(OverTranslate.Views.Shell.ShellPage.Settings).ShowQuickToolSettings();
+
     private void RefreshShortcut()
     {
         if (!_ready) return;
-        _loading = true;
         var s = SettingsService.Instance.Current;
         ShortcutHint.Text = s.LibraryHotkeyEnabled ? s.LibraryHotkeyDisplay : "快捷键未启用";
-        ShortcutBox.Text = s.LibraryHotkeyDisplay; ShortcutEnabled.IsChecked = s.LibraryHotkeyEnabled;
-        var binding = HotkeyBindings.Resolve(s).Single(b => b.Action == HotkeyAction.LibraryWindow);
-        if (binding.ShadowedBy is not null) ShortcutStatus.Text = "与已有动作快捷键冲突，请重新录制。";
-        else if (System.Windows.Application.Current?.MainWindow is MainWindow main && main.HotkeyRegistrationFailures.Contains(HotkeyAction.LibraryWindow)) ShortcutStatus.Text = "注册失败，组合可能被其他程序占用，请重新录制。";
-        _loading = false;
     }
-    private void ShortcutEnabled_Changed(object sender, RoutedEventArgs e)
-    {
-        if (!_ready || _loading) return;
-        SettingsService.Instance.Current.LibraryHotkeyEnabled = ShortcutEnabled.IsChecked == true;
-        SaveShortcut();
-    }
-    private void ShortcutBox_Click(object sender, MouseButtonEventArgs e)
-    {
-        _recording = true;
-        if (System.Windows.Application.Current?.MainWindow is MainWindow main) main.SetHotkeyRecording(true);
-        ShortcutBox.Focus(); ShortcutBox.Text = "请按键盘组合…"; e.Handled = true;
-    }
-    private void ShortcutBox_LostFocus(object sender, KeyboardFocusChangedEventArgs e) => EndRecording();
-    private void EndRecording()
-    {
-        if (!_recording) return;
-        _recording = false;
-        if (System.Windows.Application.Current?.MainWindow is MainWindow main) main.SetHotkeyRecording(false);
-        RefreshShortcut();
-    }
-    private void ShortcutBox_KeyDown(object sender, KeyEventArgs e)
-    {
-        if (!_recording) return;
-        e.Handled = true;
-        var key = e.Key == Key.System ? e.SystemKey : e.Key;
-        if (key == Key.Escape) { EndRecording(); return; }
-        if (e.IsRepeat || key is Key.LeftAlt or Key.RightAlt or Key.LeftCtrl or Key.RightCtrl or Key.LeftShift or Key.RightShift or Key.LWin or Key.RWin) return;
-        var modifiers = Keyboard.Modifiers;
-        uint mods = (modifiers.HasFlag(ModifierKeys.Control) ? 2u : 0) | (modifiers.HasFlag(ModifierKeys.Alt) ? 1u : 0) | (modifiers.HasFlag(ModifierKeys.Shift) ? 4u : 0);
-        var vk = (uint)KeyInterop.VirtualKeyFromKey(key);
-        var trigger = ShortcutTrigger.Keyboard(mods, vk);
-        if (vk == 0 || modifiers.HasFlag(ModifierKeys.Windows) || !HotkeyBindings.IsBindable(trigger)) { ShortcutStatus.Text = "请使用 Ctrl、Alt、Shift 组合，或 F1–F24 等功能键。"; return; }
-        var s = SettingsService.Instance.Current;
-        if (HotkeyBindings.Resolve(s).Any(b => b.Action != HotkeyAction.LibraryWindow && b.Enabled && b.Trigger == trigger)) { ShortcutStatus.Text = "与已有动作冲突，请选择其他组合。"; return; }
-        s.LibraryHotkeyModifiers = mods; s.LibraryHotkeyVirtualKey = vk;
-        var prefix = GlobalHotkey.ModifiersToString(mods);
-        s.LibraryHotkeyDisplay = prefix.Length == 0 ? key.ToString() : prefix + "+" + key;
-        s.LibraryHotkeyEnabled = true; SaveShortcut();
-    }
-    private void SaveShortcut()
-    {
-        var saved = SettingsService.Instance.TrySave();
-        EndRecording();
-        if (System.Windows.Application.Current?.MainWindow is MainWindow main) main.ReRegisterHotkey();
-        ShortcutStatus.Text = saved ? "快捷键已保存；重复按下收起窗口。" : "保存失败，仅当前会话生效，请检查目录权限后重试。";
-        RefreshShortcut();
-    }
+
 }

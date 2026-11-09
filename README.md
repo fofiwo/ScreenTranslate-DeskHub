@@ -20,7 +20,7 @@ dotnet tool install vpk --version 1.2.0 --tool-path .tools/velopack
 ./build-screen-translate-installer.ps1 -Version 0.3.0
 ```
 
-向本仓库 `main` 推送源代码后，GitHub Actions 自动测试、构建干净安装包，发布 `0.3.<run_number>` 稳定版及 `releases.win.json` 更新源。测试或构建失败时不发布新版；完整资产上传完成后才公开版本。发布凭证使用 Actions 内置权限，客户端读取公开更新源，不需要 GitHub Token。
+向本仓库 `main` 推送源代码后，GitHub Actions 自动测试、构建干净安装包，发布 `0.3.<run_number + 1>` 稳定版及 `releases.win.json` 更新源（跳过已用于本机安装的 0.3.6）。测试或构建失败时不发布新版；完整资产上传完成后才公开版本。发布凭证使用 Actions 内置权限，客户端读取公开更新源，不需要 GitHub Token。
 
 正式版直接读取 Release 的静态更新清单，避免 GitHub 匿名 API 限流影响检测。下载锁定提示中的版本，即使等待期间发布了下一版，也能获取原版本的更新包。
 

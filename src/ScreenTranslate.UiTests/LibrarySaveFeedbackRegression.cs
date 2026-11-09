@@ -1,4 +1,4 @@
-using System.Reflection;
+﻿using System.Reflection;
 using System.Windows;
 using System.Windows.Controls;
 using OverTranslate.Services.Library;
@@ -102,7 +102,7 @@ public sealed partial class ScreenTranslateShellTests
             PumpUntil(() => Control<FrameworkElement>("EditorLayer").Visibility == Visibility.Collapsed);
             Assert.Single(store.Read().Connections);
             Assert.Contains("连接资料", Control<TextBlock>("SaveNoticeText").Text);
-            Invoke("AiSettings_Click");
+            window.ShowAiSettings();
             Control<TextBox>("AiEndpoint").Text = "";
             Save();
             PumpUntil(() => Control<Button>("SaveButton").IsEnabled);

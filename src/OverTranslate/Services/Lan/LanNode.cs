@@ -1,4 +1,4 @@
-using System.Collections.Concurrent;
+﻿using System.Collections.Concurrent;
 using System.IO;
 using System.Net;
 using System.Net.NetworkInformation;
@@ -312,7 +312,7 @@ internal sealed class LanNode : IAsyncDisposable
     internal async Task<bool> SendLibraryAsync(byte[] bytes, CancellationToken token = default)
     {
         if (!LibraryEnabled) throw new InvalidOperationException("资料库同步尚未开启。");
-        if (bytes.Length > 8 * 1024 * 1024 - 28) throw new InvalidDataException("资料库超过同步大小上限。");
+        if (bytes.Length > OverTranslate.Services.Library.LibrarySyncSnapshot.MaxBytes) throw new InvalidDataException("资料库超过同步大小上限。");
         var session = _session ?? throw new InvalidOperationException("请先配对另一台电脑。");
         using var body = new MemoryStream(bytes, false);
         return await SendAsync(session, "library", "", body, LanProtocol.Hash(bytes), token).ConfigureAwait(false);

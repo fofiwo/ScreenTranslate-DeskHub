@@ -1,43 +1,62 @@
 <Window x:Class="OverTranslate.Views.ClipboardHistory.LanTransferWindow"
  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
- Title="局域网同步与文件传输 · ScreenTranslate" Width="880" Height="790" MinWidth="760" MinHeight="650"
+ Title="设备与同步 · ScreenTranslate" Width="880" Height="790" MinWidth="760" MinHeight="650"
  WindowStartupLocation="CenterScreen" Background="{DynamicResource AppWindowBg}"
  Foreground="{DynamicResource AppTextPrimary}" FontFamily="{DynamicResource AppFont}" FontSize="13"
  UseLayoutRounding="True" Closing="Window_Closing">
- <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+ <ScrollViewer Background="{DynamicResource AppWindowBg}" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
  <StackPanel Margin="24">
-  <DockPanel><Button DockPanel.Dock="Right" Content="断开连接" Style="{StaticResource ProductSecondaryButton}" Click="Disconnect_Click"/>
-   <StackPanel><TextBlock Text="局域网同步与文件传输" FontSize="24" FontWeight="SemiBold"/>
-    <TextBlock Text="Windows 电脑之间 · 一次配对，同步剪贴板与资料库" Margin="0,8,0,0" Foreground="{DynamicResource AppTextSecondary}"/></StackPanel>
+  <DockPanel>
+   <Button DockPanel.Dock="Right" Content="断开连接" Style="{StaticResource ProductSecondaryButton}" Click="Disconnect_Click"/>
+   <StackPanel><TextBlock Text="设备与同步" FontSize="24" FontWeight="SemiBold"/>
+    <TextBlock Text="同一局域网内，任选一种方式连接" Margin="0,8,0,0" Foreground="{DynamicResource AppTextSecondary}"/></StackPanel>
   </DockPanel>
-  <TextBlock x:Name="ConnectionStatus" Text="尚未连接。任选一台等待配对，另一台填写它的地址和配对码。" Margin="0,18,0,12" TextWrapping="Wrap" AutomationProperties.LiveSetting="Polite"/>
-  <Border Background="{DynamicResource AppCardBg}" BorderBrush="{DynamicResource AppBorder}" BorderThickness="1" CornerRadius="8" Padding="16">
+  <TextBlock x:Name="ConnectionStatus" Text="尚未连接" Margin="0,16,0,20" TextWrapping="Wrap" AutomationProperties.LiveSetting="Polite"/>
+  <Grid>
+   <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="40"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+   <Border Grid.Column="1" Width="1" Background="{DynamicResource AppBorder}"/>
    <StackPanel>
-    <TextBlock Text="在这台电脑等待配对" FontWeight="SemiBold"/>
-    <Grid Margin="0,10,0,0"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="12"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-     <ComboBox x:Name="LocalAddressBox" Style="{StaticResource ModernComboBox}" MinHeight="36" AutomationProperties.Name="本机局域网地址"/>
-     <Button x:Name="ListenButton" Grid.Column="2" Content="等待配对" Style="{StaticResource ProductSecondaryButton}" Click="Listen_Click"/>
+    <TextBlock Text="本机发起" FontSize="17" FontWeight="SemiBold"/>
+    <TextBlock Text="生成信息，发给另一台电脑" Margin="0,6,0,16" Foreground="{DynamicResource AppTextSecondary}"/>
+    <TextBlock Text="本机网络地址" Margin="0,0,0,6"/>
+    <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+     <ComboBox x:Name="LocalAddressBox" Style="{StaticResource ModernComboBox}" MinHeight="40" AutomationProperties.Name="本机局域网地址"/>
+     <Button x:Name="ListenButton" Grid.Column="1" Content="生成" Margin="8,0,0,0" Style="{StaticResource ProductSecondaryButton}" Click="Listen_Click"/>
     </Grid>
-    <TextBox x:Name="PairingInfo" IsReadOnly="True" BorderThickness="0" Background="Transparent" Foreground="{DynamicResource AppTextPrimary}" TextWrapping="Wrap" Margin="0,10,0,0" Text="开始等待后显示地址和配对码。" AutomationProperties.Name="本机配对信息" CommandManager.PreviewExecuted="PairingInfo_PreviewExecuted"/>
+    <TextBox x:Name="PairingInfo" IsReadOnly="True" BorderThickness="0" Background="{DynamicResource AppHeaderBg}" Foreground="{DynamicResource AppTextPrimary}" TextWrapping="Wrap" Padding="12" Margin="0,12,0,0" MinHeight="118" Text="生成后显示地址和配对码" AutomationProperties.Name="本机配对信息" CommandManager.PreviewExecuted="PairingInfo_PreviewExecuted"/>
+    <Button x:Name="CopyPairingButton" Content="复制配对信息" HorizontalAlignment="Left" Margin="0,12,0,0" Style="{StaticResource ProductButton}" Click="CopyPairing_Click" IsEnabled="False"/>
+    <TextBlock x:Name="PairingCopyStatus" Margin="0,8,0,0" TextWrapping="Wrap" Foreground="{DynamicResource AppTextSecondary}" AutomationProperties.LiveSetting="Polite" Text="仅分享给自己的可信电脑"/>
    </StackPanel>
-  </Border>
-  <Border Background="{DynamicResource AppCardBg}" BorderBrush="{DynamicResource AppBorder}" BorderThickness="1" CornerRadius="8" Padding="16" Margin="0,12,0,0">
+   <StackPanel Grid.Column="2">
+    <TextBlock Text="连接另一台" FontSize="17" FontWeight="SemiBold"/>
+    <TextBlock Text="已有配对信息，填写后连接" Margin="0,6,0,16" Foreground="{DynamicResource AppTextSecondary}"/>
+    <TextBlock Text="对方地址" Margin="0,0,0,6"/>
+    <TextBox x:Name="RemoteAddressBox" Style="{StaticResource ModernTextBox}" Height="40" AutomationProperties.Name="对方局域网地址" ToolTip="填写收到的 IPv4 地址和端口"/>
+    <TextBlock Text="配对码" Margin="0,12,0,6"/>
+    <TextBox x:Name="PairCodeBox" Style="{StaticResource ModernTextBox}" Height="40" MaxLength="40" AutomationProperties.Name="对方配对码"/>
+    <Button x:Name="ConnectButton" Content="连接" Style="{StaticResource ProductSecondaryButton}" HorizontalAlignment="Left" Click="Connect_Click" Margin="0,16,0,0"/>
+    <TextBlock Text="连接后，在对方电脑确认" Margin="0,8,0,0" Foreground="{DynamicResource AppTextSecondary}"/>
+   </StackPanel>
+  </Grid>
+  <Border Height="1" Background="{DynamicResource AppBorder}" Margin="0,24,0,20"/>
+  <TextBlock Text="同步内容" FontSize="17" FontWeight="SemiBold" Margin="0,0,0,12"/>
+  <Grid Margin="0,0,0,12">
+   <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="40"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
    <StackPanel>
-    <TextBlock Text="或连接另一台电脑" FontWeight="SemiBold"/>
-    <Grid Margin="0,10,0,0"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="12"/><ColumnDefinition Width="*"/><ColumnDefinition Width="12"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-     <StackPanel><TextBlock Text="对方地址（IPv4:端口）" Margin="0,0,0,6"/><TextBox x:Name="RemoteAddressBox" Style="{StaticResource ModernTextBox}" AutomationProperties.Name="对方局域网地址"/></StackPanel>
-     <StackPanel Grid.Column="2"><TextBlock Text="对方的完整配对码" Margin="0,0,0,6"/><TextBox x:Name="PairCodeBox" Style="{StaticResource ModernTextBox}" MaxLength="40" AutomationProperties.Name="对方配对码"/></StackPanel>
-     <Button x:Name="ConnectButton" Grid.Column="4" Content="连接" Style="{StaticResource ProductSecondaryButton}" Click="Connect_Click" VerticalAlignment="Bottom"/>
-    </Grid>
-    <TextBlock Text="配对在本次运行内有效；对方需确认。若 Windows 提示防火墙访问，请仅允许专用网络。" Margin="0,10,0,0" TextWrapping="Wrap" Foreground="{DynamicResource AppTextSecondary}"/>
+    <CheckBox x:Name="AutoSyncBox" Content="剪贴板 · 文本与图片" Foreground="{DynamicResource AppTextPrimary}" Checked="AutoSync_Changed" Unchecked="AutoSync_Changed"/>
+    <TextBlock x:Name="ClipboardStatus" Text="未连接" TextWrapping="Wrap" Margin="22,6,0,0" Foreground="{DynamicResource AppTextSecondary}" AutomationProperties.LiveSetting="Polite"/>
    </StackPanel>
-  </Border>
-  <CheckBox x:Name="AutoSyncBox" Content="自动同步新复制的文本和图片" Margin="0,16,0,12" Checked="AutoSync_Changed" Unchecked="AutoSync_Changed"/>
-  <TextBlock x:Name="ClipboardStatus" Text="未连接，剪贴板仅保存在本机。" TextWrapping="Wrap" Margin="0,0,0,12" AutomationProperties.LiveSetting="Polite"/>
-  <CheckBox x:Name="LibrarySyncBox" Content="同步提示词库和模型库（包括 API Key）" Margin="0,0,0,8" Checked="LibrarySync_Changed" Unchecked="LibrarySync_Changed"/>
-  <TextBlock Text="仅与自己的可信电脑配对。首次合并两端已有资料；后续新增、修改、删除自动同步，同时修改保留冲突副本。" TextWrapping="Wrap" Foreground="{DynamicResource AppTextSecondary}" Margin="0,0,0,8"/>
-  <TextBlock x:Name="LibraryStatus" Text="资料库同步尚未开启。" TextWrapping="Wrap" Margin="0,0,0,12" AutomationProperties.LiveSetting="Polite"/>
+   <StackPanel Grid.Column="2">
+    <CheckBox x:Name="LibrarySyncBox" Content="提示词与模型库 · 含 API Key" Foreground="{DynamicResource AppTextPrimary}" Checked="LibrarySync_Changed" Unchecked="LibrarySync_Changed"/>
+    <TextBlock x:Name="LibraryStatus" Text="未开启" TextWrapping="Wrap" Margin="22,6,0,0" Foreground="{DynamicResource AppTextSecondary}" AutomationProperties.LiveSetting="Polite"/>
+   </StackPanel>
+  </Grid>
+  <Expander Header="同步规则" Margin="0,0,0,16">
+   <TextBlock Text="两端都需开启对应内容。剪贴板不补传离线记录；资料库首次合并，后续修改、删除双向同步，冲突保留副本。重启或断线后需重新配对。防火墙仅允许专用网络。" TextWrapping="Wrap" Margin="22,8,0,0" Foreground="{DynamicResource AppTextSecondary}"/>
+  </Expander>
+  <Expander x:Name="FileTransferSection" Header="文件传输">
+   <StackPanel Margin="0,12,0,0">
   <TextBlock Text="文件接收文件夹" FontWeight="SemiBold"/>
   <Grid Margin="0,8,0,0"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
    <TextBox x:Name="ReceiveFolderBox" Style="{StaticResource ModernTextBox}" AutomationProperties.Name="文件接收文件夹"/>
@@ -57,7 +76,9 @@
   <TextBlock x:Name="TransferStatus" Margin="0,12,0,6" TextWrapping="Wrap" Text="配对后即可发送文件。" AutomationProperties.LiveSetting="Polite"/>
   <ProgressBar x:Name="TransferProgress" Height="6" Minimum="0" Maximum="100"/>
   <ListBox x:Name="TransferLog" MaxHeight="120" Margin="0,10,0,0" Background="Transparent" BorderThickness="0" ScrollViewer.HorizontalScrollBarVisibility="Disabled" AutomationProperties.Name="本次传输结果"/>
-  <TextBlock Text="关闭此窗口后连接继续；退出程序或断开连接将停止同步和传输。" Margin="0,12,0,0" Foreground="{DynamicResource AppTextSecondary}" TextWrapping="Wrap"/>
+   </StackPanel>
+  </Expander>
+  <TextBlock Text="关闭窗口仍会同步 · 退出程序后停止" Margin="0,12,0,0" Foreground="{DynamicResource AppTextSecondary}" TextWrapping="Wrap"/>
  </StackPanel>
  </ScrollViewer>
 </Window>

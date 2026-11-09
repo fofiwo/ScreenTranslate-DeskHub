@@ -21,6 +21,7 @@ public partial class ProductAboutPage : UserControl
     }
     private void Licenses_Click(object sender, RoutedEventArgs e) => OpenFile("FORK-NOTICES.md");
     private void Readme_Click(object sender, RoutedEventArgs e) => OpenFile("README.md");
-    private async void Update_Click(object sender, RoutedEventArgs e) => await OverTranslate.Services.UpdateUi.CheckAndShowAsync();
+    private async void Update_Click(object sender, RoutedEventArgs e) =>
+        await OverTranslate.Services.UpdateUi.CheckAndShowAsync((System.Windows.Controls.Button)sender, message => StatusText.Text = message);
     private void Releases_Click(object sender, RoutedEventArgs e) => OverTranslate.Services.UpdateUi.OpenReleases();
 }

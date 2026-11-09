@@ -16,6 +16,8 @@ public partial class LanTransferWindow : Window
     private readonly string _preferencesPath;
     private readonly bool _useClipboard;
     private readonly Func<IReadOnlyList<IPAddress>> _readAddresses;
+    private readonly Action<System.Windows.DataObject> _writeClipboard;
+    private IPAddress? _listeningAddress;
     private LanPreferences _preferences;
     private LanClipboardSync? _clipboard;
     private LanLibrarySync? _library;
@@ -30,11 +32,12 @@ public partial class LanTransferWindow : Window
     public LanTransferWindow() : this(LanPreferences.DefaultPath, true) { }
 
     internal LanTransferWindow(string preferencesPath, bool useClipboard = false,
-        Func<IReadOnlyList<IPAddress>>? readAddresses = null)
+        Func<IReadOnlyList<IPAddress>>? readAddresses = null, Action<System.Windows.DataObject>? writeClipboard = null)
     {
         _preferencesPath = preferencesPath;
         _useClipboard = useClipboard;
         _readAddresses = readAddresses ?? LanNode.LocalAddresses;
+        _writeClipboard = writeClipboard ?? (data => System.Windows.Clipboard.SetDataObject(data, true));
         string? loadError = null;
         try { _preferences = LanPreferences.Load(preferencesPath); }
         catch (Exception) { _preferences = new(LanPreferences.DefaultFolder); loadError = "读取接收设置失败，请重新选择并保存文件夹。"; }
@@ -62,7 +65,7 @@ public partial class LanTransferWindow : Window
         _ready = true;
         if (loadError is not null) ConnectionStatus.Text = loadError;
         UpdateControls(); UpdateClipboardAvailability();
-        LibraryStatus.Text = _preferences.AutoSyncLibrary ? "资料库同步已开启，等待配对。" : "资料库同步尚未开启。";
+        LibraryStatus.Text = _preferences.AutoSyncLibrary ? "已开启 · 等待连接" : "未开启";
     }
 
     internal void RefreshLocalAddresses()
@@ -102,7 +105,7 @@ public partial class LanTransferWindow : Window
     {
         if (!_useClipboard || _library is not null) return;
         _library = new(_node, () => new LibraryStore(LibraryStore.DefaultPath));
-        _library.Changed += LibrarySyncRuntime.NotifyUnifiedChange;
+        _library.Changed += LibrarySyncNotifications.NotifyChanged;
         _library.StatusChanged += message =>
         {
             if (!Dispatcher.HasShutdownStarted) Dispatcher.BeginInvoke(() =>
@@ -147,9 +150,11 @@ public partial class LanTransferWindow : Window
         try
         {
             EnsureClipboard();
+            _listeningAddress = null;
             await _node.ListenAsync(address, 0);
             if (request != _connectionRequest || _shutdown) return;
-            PairingInfo.Text = $"地址：{address}:{_node.Port}\n配对码：{_node.PairCode}";
+            _listeningAddress = address;
+            PairingCopyStatus.Text = "已生成，复制给另一台电脑";
         }
         catch (Exception) { if (request == _connectionRequest && !_shutdown) ConnectionStatus.Text = "无法等待配对，请检查网络和防火墙后重试。"; }
         finally { if (request == _connectionRequest) _connecting = false; UpdateControls(); }
@@ -167,6 +172,7 @@ public partial class LanTransferWindow : Window
         try
         {
             EnsureClipboard(); ConnectionStatus.Text = "正在连接，等待对方确认配对…";
+            _listeningAddress = null;
             await _node.ConnectAsync(address, port, PairCodeBox.Text);
             if (request != _connectionRequest || _shutdown) return;
             PairingInfo.Text = "已作为连接方配对。";
@@ -207,9 +213,9 @@ public partial class LanTransferWindow : Window
     }
 
     private void UpdateClipboardAvailability() => ClipboardStatus.Text = !_preferences.AutoSync
-        ? "自动同步已暂停，本机复制仍可使用。"
-        : _node.IsConnected ? "自动同步已开启，等待新复制的文本或图片。"
-        : "未连接，剪贴板仅保存在本机；连接后不会补传离线内容。";
+        ? "已暂停 · 本机复制不受影响"
+        : _node.IsConnected ? "已开启 · 等待新内容"
+        : "未连接";
 
     private void Node_Progress(object? sender, LanProgress progress)
     {
@@ -247,17 +253,46 @@ public partial class LanTransferWindow : Window
         if (e.Command != System.Windows.Input.ApplicationCommands.Copy) return;
         e.Handled = true;
         if (PairingInfo.SelectionLength == 0) return;
+        CopyPairingText(PairingInfo.SelectedText);
+    }
+
+    private void CopyPairing_Click(object sender, RoutedEventArgs e)
+    {
+        UpdatePairingInfo();
+        if (CopyPairingButton.IsEnabled) CopyPairingText(PairingInfo.Text);
+    }
+
+    private void CopyPairingText(string text)
+    {
         try
         {
             var data = new System.Windows.DataObject();
-            data.SetText(PairingInfo.SelectedText);
+            data.SetText(text);
             data.SetData("ExcludeClipboardContentFromMonitorProcessing", new MemoryStream(BitConverter.GetBytes(1)));
             data.SetData("CanIncludeInClipboardHistory", new MemoryStream(BitConverter.GetBytes(0)));
             data.SetData("CanUploadToCloudClipboard", new MemoryStream(BitConverter.GetBytes(0)));
-            System.Windows.Clipboard.SetDataObject(data, true);
+            _writeClipboard(data);
+            PairingCopyStatus.Text = "已复制，可发给另一台电脑";
         }
-        catch (Exception) { ConnectionStatus.Text = "复制配对信息失败，请稍后重试。"; }
+        catch (Exception) { PairingCopyStatus.Text = "复制失败，请重试"; }
     }
+
+    private void UpdatePairingInfo()
+    {
+        var available = !_shutdown && !_connecting && !_disconnecting && _node.IsListening
+            && !_node.IsConnected && _listeningAddress is not null;
+        CopyPairingButton.IsEnabled = available;
+        if (available)
+            PairingInfo.Text = BuildPairingInfo(Environment.MachineName, $"{_listeningAddress}:{_node.Port}", _node.PairCode, _preferences);
+        else PairingInfo.Text = _node.IsConnected ? "已连接，无需再次配对"
+            : _connecting ? "正在连接…" : "生成后显示地址和配对码";
+    }
+
+    internal static string BuildPairingInfo(string device, string address, string code, LanPreferences preferences) =>
+        $"设备：{device} · v{typeof(LanTransferWindow).Assembly.GetName().Version?.ToString(3)}\n"
+        + $"对方地址：{address}\n完整配对码：{code}\n"
+        + $"剪贴板：{(preferences.AutoSync ? "开启" : "暂停")}\n"
+        + $"提示词与模型库：{(preferences.AutoSyncLibrary ? "开启（含 API Key）" : "暂停")}";
     private void SaveFolder_Click(object sender, RoutedEventArgs e) => SaveFolder();
     private void SaveFolder()
     {
@@ -272,6 +307,7 @@ public partial class LanTransferWindow : Window
     }
     private void SavePreferences()
     {
+        UpdatePairingInfo();
         try { _preferences.Save(_preferencesPath); TransferStatus.Text = "设置已保存。"; }
         catch (Exception) { TransferStatus.Text = "设置仅在当前运行中生效，保存失败，请检查目录权限后重试。"; }
     }
@@ -319,6 +355,7 @@ public partial class LanTransferWindow : Window
     private void CancelFiles_Click(object sender, RoutedEventArgs e) => _files?.Cancel();
     private void UpdateControls()
     {
+        UpdatePairingInfo();
         ListenButton.IsEnabled = ConnectButton.IsEnabled = !_shutdown && !_connecting && !_disconnecting && !IsSending && !_node.IsConnected;
         ChooseFilesButton.IsEnabled = _node.IsConnected && !IsSending;
         CancelFilesButton.IsEnabled = IsSending;

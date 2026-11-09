@@ -1,4 +1,4 @@
-using System.Windows;
+﻿using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using OverTranslate.Models;
@@ -19,6 +19,7 @@ public partial class SettingsPage : UserControl
     private HotkeyAction? _recording;
     private readonly Action<bool> _setHotkeyRecording;
     private readonly Func<bool> _saveSettings;
+    internal event EventHandler? OptionsChanged;
 
     public SettingsPage() : this(recording =>
     {
@@ -39,11 +40,11 @@ public partial class SettingsPage : UserControl
             var row = new Grid { Margin = new Thickness(0, 0, 0, 10) };
             row.ColumnDefinitions.Add(new ColumnDefinition());
             row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(190) });
-            var toggle = new CheckBox { Content = title, VerticalAlignment = VerticalAlignment.Center, Tag = action,
+            var toggle = new CheckBox { Style = (Style)FindResource("ModernCheckBox"), Content = title, VerticalAlignment = VerticalAlignment.Center, Tag = action,
                 IsEnabled = action != HotkeyAction.Capture };
             toggle.Checked += Enabled_Changed; toggle.Unchecked += Enabled_Changed;
-            var box = new TextBox { IsReadOnly = true, Tag = action, Height = 38, VerticalContentAlignment = VerticalAlignment.Center,
-                ToolTip = "点击后按键盘组合，Esc 取消" };
+            var box = new TextBox { Style = (Style)FindResource("ModernTextBox"), IsReadOnly = true, Tag = action, Height = 38, VerticalContentAlignment = VerticalAlignment.Center,
+                ToolTip = "点击或按 Enter 开始录入，Esc 取消，Tab 离开" };
             System.Windows.Automation.AutomationProperties.SetName(box, title + "快捷键");
             box.PreviewMouseLeftButtonDown += (_, e) =>
             {
@@ -58,7 +59,21 @@ public partial class SettingsPage : UserControl
         }
         Loaded += (_, _) => Reload();
         Unloaded += (_, _) => EndRecording(reload: false);
+        ShowSection("快捷键");
         Reload();
+    }
+
+    internal void ShowQuickTools(bool quickTools) => ShowSection(quickTools ? "快捷键" : "通用与诊断");
+
+    internal void ShowSection(string section)
+    {
+        PageHeading.Text = section;
+        PageHeading.Visibility = section is "截图选项" or "备用策略" or "识别选项" ? Visibility.Collapsed : Visibility.Visible;
+        HotkeySection.Visibility = section == "快捷键" ? Visibility.Visible : Visibility.Collapsed;
+        OcrOptions.Visibility = section == "识别选项" ? Visibility.Visible : Visibility.Collapsed;
+        CaptureOptions.Visibility = section == "截图选项" ? Visibility.Visible : Visibility.Collapsed;
+        ServiceOptions.Visibility = section == "备用策略" ? Visibility.Visible : Visibility.Collapsed;
+        AdvancedOptions.Visibility = section == "通用与诊断" ? Visibility.Visible : Visibility.Collapsed;
     }
 
     public void Reload()
@@ -105,15 +120,23 @@ public partial class SettingsPage : UserControl
     {
         if (_loading) return;
         var s = SettingsService.Instance.Current;
-        s.OcrPreserveFormatting = PreserveFormattingCheckBox.IsChecked == true;
-        s.AllowFallbackServices = AllowFallbackCheckBox.IsChecked == true;
-        s.LiveCaptureOverlay = LiveOverlayCheckBox.IsChecked == true;
-        s.Capture.VerticalText = VerticalCheckBox.IsChecked == true;
-        s.VerboseLogging = VerboseCheckBox.IsChecked == true;
-        SettingsService.Instance.UpdateCaptureOptions(autoTranslate: AutoTranslateCheckBox.IsChecked == true);
-        SettingsService.Instance.UpdateMangaModelOptions(useModels: MangaCheckBox.IsChecked == true);
+        // 两个设置页及截图工具栏共享当前设置，不能回写其他控件保留的旧值。
+        if (ReferenceEquals(sender, PreserveFormattingCheckBox)) s.OcrPreserveFormatting = PreserveFormattingCheckBox.IsChecked == true;
+        else if (ReferenceEquals(sender, AllowFallbackCheckBox)) s.AllowFallbackServices = AllowFallbackCheckBox.IsChecked == true;
+        else if (ReferenceEquals(sender, LiveOverlayCheckBox)) s.LiveCaptureOverlay = LiveOverlayCheckBox.IsChecked == true;
+        else if (ReferenceEquals(sender, VerticalCheckBox)) s.Capture.VerticalText = VerticalCheckBox.IsChecked == true;
+        else if (ReferenceEquals(sender, VerboseCheckBox))
+        {
+            s.VerboseLogging = VerboseCheckBox.IsChecked == true;
+            LogLevelService.Apply(s.VerboseLogging);
+        }
+        else if (ReferenceEquals(sender, AutoTranslateCheckBox))
+            SettingsService.Instance.UpdateCaptureOptions(autoTranslate: AutoTranslateCheckBox.IsChecked == true);
+        else if (ReferenceEquals(sender, MangaCheckBox))
+            SettingsService.Instance.UpdateMangaModelOptions(useModels: MangaCheckBox.IsChecked == true);
+        else return;
         ShowSaveStatus(_saveSettings());
-        LogLevelService.Apply(s.VerboseLogging);
+        OptionsChanged?.Invoke(this, EventArgs.Empty);
     }
 
     private void Startup_Changed(object sender, RoutedEventArgs e)
@@ -141,7 +164,17 @@ public partial class SettingsPage : UserControl
 
     private void Record_KeyDown(object sender, KeyEventArgs e)
     {
-        if (_recording is not { } action || sender is not TextBox box) return;
+        if (sender is not TextBox box) return;
+        if (_recording is null && e.Key is Key.Enter or Key.Space && box.Tag is HotkeyAction selected)
+        {
+            _setHotkeyRecording(true);
+            _recording = selected;
+            box.Text = "请按键盘组合…";
+            e.Handled = true;
+            return;
+        }
+        if (_recording is not { } action) return;
+        if (e.Key == Key.Tab) { EndRecording(); return; }
         e.Handled = true;
         var key = e.Key == Key.System ? e.SystemKey : e.Key;
         if (key == Key.Escape) { EndRecording(); return; }

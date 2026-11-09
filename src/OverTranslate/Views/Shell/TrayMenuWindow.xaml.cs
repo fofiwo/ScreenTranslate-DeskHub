@@ -79,7 +79,7 @@ public partial class TrayMenuWindow : Window
     }
 
     private async void Update_Click(object sender, RoutedEventArgs e)
-    { Dismiss(); await UpdateUi.CheckAndShowAsync(); }
+    { await UpdateUi.CheckAndShowAsync(UpdateTrayButton); Dismiss(); }
 
     private void DismissOnNonButtonClick(object sender, MouseButtonEventArgs e)
     {
@@ -151,11 +151,6 @@ public partial class TrayMenuWindow : Window
         ClipboardHistory.ClipboardHistoryWindow.Open();
     }
 
-    private void LanTransferBtn_Click(object sender, RoutedEventArgs e)
-    {
-        Dismiss();
-        ClipboardHistory.LanTransferWindow.Open();
-    }
 
     private void ExitBtn_Click(object sender, RoutedEventArgs e)
     {

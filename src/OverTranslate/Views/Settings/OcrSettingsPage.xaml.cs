@@ -13,9 +13,16 @@ public partial class OcrSettingsPage : System.Windows.Controls.UserControl
 {
     private readonly CancellationTokenSource _lifetime = new();
 
-    public OcrSettingsPage()
+    private readonly Func<bool> _saveSettings;
+    private readonly SettingsPage _recognitionOptions;
+    public OcrSettingsPage() : this(() => SettingsService.Instance.TrySave()) { }
+    internal OcrSettingsPage(Func<bool> saveSettings)
     {
+        _saveSettings = saveSettings;
         InitializeComponent();
+        _recognitionOptions = new SettingsPage();
+        _recognitionOptions.ShowSection("识别选项");
+        RecognitionOptionsHost.Content = _recognitionOptions;
         OcrProviderBox.ItemsSource = new[] { "本地 RapidOCR（内置模型）", "HTTP OCR（本地模型或自定义服务）", "百度 OCR（带位置的通用文字识别）" };
         Reload();
     }
@@ -27,7 +34,7 @@ public partial class OcrSettingsPage : System.Windows.Controls.UserControl
         EndpointBox.Text = settings.Ocr.Endpoint;
         TimeoutBox.Text = settings.Ocr.TimeoutSeconds.ToString();
         IntervalBox.Text = settings.Ocr.MinimumIntervalMs.ToString();
-        LiveOverlayBox.IsChecked = settings.LiveCaptureOverlay;
+        _recognitionOptions.Reload();
         UpdateCredentialState();
         UpdateProviderFields();
     }
@@ -67,8 +74,12 @@ public partial class OcrSettingsPage : System.Windows.Controls.UserControl
             if (options.Provider == OcrProviderKind.Baidu && (options.BaiduApiKeyProtected.Length == 0 || options.BaiduSecretKeyProtected.Length == 0))
             { StatusText.Text = "百度 OCR 需要同时保存 API Key 和 Secret Key。"; return false; }
             settings.Ocr = options;
-            settings.LiveCaptureOverlay = LiveOverlayBox.IsChecked == true;
-            SettingsService.Instance.Save();
+            if (!_saveSettings())
+            {
+                settings.Ocr = old;
+                StatusText.Text = "保存失败，识别设置未应用。请检查目录权限后重试，输入内容已保留。";
+                return false;
+            }
             AppServices.Ocr.ReleaseModel();
             ApiKeyBox.Clear(); SecretBox.Clear();
             UpdateCredentialState();
@@ -77,6 +88,8 @@ public partial class OcrSettingsPage : System.Windows.Controls.UserControl
         }
         catch (Exception ex) when (ex is InvalidOperationException or FormatException) { StatusText.Text = ex.Message; return false; }
     }
+
+    private void Cancel_Click(object sender, RoutedEventArgs e) { ApiKeyBox.Clear(); SecretBox.Clear(); Reload(); StatusText.Text = "已取消未保存的识别服务更改。"; }
 
     private void Save_Click(object sender, RoutedEventArgs e) => SaveOptions();
 
@@ -104,9 +117,19 @@ public partial class OcrSettingsPage : System.Windows.Controls.UserControl
     {
         if (Views.Realtime.RealtimeSessionController.Instance.IsActive) { StatusText.Text = "请先结束持续翻译。"; return; }
         var options = SettingsService.Instance.Current.Ocr;
+        var oldApiKey = options.BaiduApiKeyProtected;
+        var oldSecret = options.BaiduSecretKeyProtected;
         options.BaiduApiKeyProtected = options.BaiduSecretKeyProtected = "";
+        if (!_saveSettings())
+        {
+            options.BaiduApiKeyProtected = oldApiKey;
+            options.BaiduSecretKeyProtected = oldSecret;
+            StatusText.Text = "清除凭据保存失败，原有凭据已保留。请检查目录权限后重试。";
+            return;
+        }
         ApiKeyBox.Clear(); SecretBox.Clear();
-        SettingsService.Instance.Save(); UpdateCredentialState();
+        UpdateCredentialState();
+        StatusText.Text = "已清除百度凭据。";
     }
 
     public void Teardown() => _lifetime.Cancel();

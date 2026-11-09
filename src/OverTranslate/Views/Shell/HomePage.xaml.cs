@@ -1,4 +1,4 @@
-using System.Windows;
+﻿using System.Windows;
 using System.Windows.Controls;
 using OverTranslate.Controls;
 using OverTranslate.Models;
@@ -11,11 +11,16 @@ namespace OverTranslate.Views.Shell;
 public partial class HomePage : UserControl
 {
     private bool _loading = true;
+    private readonly Settings.SettingsPage _captureOptions;
     private readonly OcrSourcePicker _sourcePicker;
 
     public HomePage()
     {
         InitializeComponent();
+        _captureOptions = new Settings.SettingsPage();
+        _captureOptions.ShowSection("截图选项");
+        _captureOptions.OptionsChanged += (_, _) => RefreshAvailability();
+        CaptureOptionsHost.Content = _captureOptions;
         _sourcePicker = new(SourceBox, () => LanguageData.DefaultOcrSourceLanguage);
         Reload();
     }
@@ -25,6 +30,7 @@ public partial class HomePage : UserControl
         _loading = true;
         try
         {
+            _captureOptions.Reload();
             var settings = SettingsService.Instance.Current;
             LocalizationService.BindLocalizedItems(SourceBox, LanguageData.OcrSourceLanguages);
             LocalizationService.BindLocalizedItems(TargetBox, LanguageData.TargetLanguages);
@@ -52,7 +58,7 @@ public partial class HomePage : UserControl
             : session.IsActive ? "持续翻译运行中；截图期间会暂时让出画面。"
             : SettingsService.Instance.Current.LiveCaptureOverlay
                 ? "当前显示：原位覆盖 · 快捷键随时可用"
-                : "当前显示：冻结截图 · 可在服务与设置中开启原位覆盖";
+                : "当前显示：冻结截图 · 可在下方截图选项开启原位覆盖";
     }
 
     private void Selection_Changed(object sender, SelectionChangedEventArgs e)
@@ -74,6 +80,7 @@ public partial class HomePage : UserControl
         if (Shell is { } shell && System.Windows.Application.Current.MainWindow is MainWindow main)
             main.StartCaptureFromShell(shell);
     }
+    private void Shortcuts_Click(object sender, RoutedEventArgs e) => Shell?.ShowQuickToolSettings();
     private void Settings_Click(object sender, RoutedEventArgs e) => Shell?.ShowOcrSettings();
     private void Realtime_Click(object sender, RoutedEventArgs e) => Shell?.Navigate(ShellPage.Realtime);
     public void Teardown() => _sourcePicker.Dispose();
