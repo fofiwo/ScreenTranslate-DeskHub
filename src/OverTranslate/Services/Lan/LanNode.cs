@@ -49,10 +49,30 @@ internal sealed class LanNode : IAsyncDisposable
         _receiveFolder = receiveFolder;
     }
 
-    public static IReadOnlyList<IPAddress> LocalAddresses() => NetworkInterface.GetAllNetworkInterfaces()
+    internal sealed record LocalAddress(IPAddress Address, NetworkInterfaceType InterfaceType, bool HasGateway, bool IsVirtual);
+
+    public static IReadOnlyList<IPAddress> LocalAddresses() => OrderLocalAddresses(NetworkInterface.GetAllNetworkInterfaces()
         .Where(n => n.OperationalStatus == OperationalStatus.Up && n.NetworkInterfaceType != NetworkInterfaceType.Loopback)
-        .SelectMany(n => n.GetIPProperties().UnicastAddresses).Select(a => a.Address)
-        .Where(a => IsLocalAddress(a) && !IPAddress.IsLoopback(a)).Distinct().ToList();
+        .SelectMany(n =>
+        {
+            var properties = n.GetIPProperties();
+            var hasGateway = properties.GatewayAddresses.Any(g => g.Address.AddressFamily == AddressFamily.InterNetwork
+                && !g.Address.Equals(IPAddress.Any) && !IPAddress.IsLoopback(g.Address));
+            var isVirtual = IsVirtualAdapter(n.Name + " " + n.Description);
+            return properties.UnicastAddresses.Select(a => new LocalAddress(a.Address, n.NetworkInterfaceType, hasGateway, isVirtual));
+        }));
+
+    internal static bool IsVirtualAdapter(string name) => new[] { "virtual", "vethernet", "hyper-v", "wsl", "vmware", "docker", "vpn", "tunnel", "tap-", "tun-" }
+        .Any(marker => name.Contains(marker, StringComparison.OrdinalIgnoreCase));
+
+    internal static IReadOnlyList<IPAddress> OrderLocalAddresses(IEnumerable<LocalAddress> addresses) => addresses
+        .Where(a => IsLocalAddress(a.Address) && !IPAddress.IsLoopback(a.Address))
+        // 保留虚拟网卡供手选，但默认优先真实局域网；169.254 自分配地址仅作最后备选。
+        .OrderBy(a => a.Address.GetAddressBytes()[0] == 169 && a.Address.GetAddressBytes()[1] == 254)
+        .ThenBy(a => a.IsVirtual)
+        .ThenByDescending(a => a.HasGateway)
+        .ThenByDescending(a => a.InterfaceType is NetworkInterfaceType.Ethernet or NetworkInterfaceType.Wireless80211)
+        .Select(a => a.Address).Distinct().ToList();
 
     internal static bool IsLocalAddress(IPAddress address)
     {

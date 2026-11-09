@@ -222,7 +222,8 @@ internal static class WindowFrame
             return IntPtr.Zero;
         }
 
-        if (msg != WM_GETMINMAXINFO) return IntPtr.Zero;
+        // 资料库可切回系统标题栏，此时最大化边框与工作区由系统处理。
+        if (msg != WM_GETMINMAXINFO || window.WindowStyle != WindowStyle.None) return IntPtr.Zero;
 
         var monitor = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
         if (monitor == IntPtr.Zero) return IntPtr.Zero;

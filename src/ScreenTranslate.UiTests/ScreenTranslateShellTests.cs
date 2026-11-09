@@ -47,6 +47,7 @@ public sealed partial class ScreenTranslateShellTests
                 if (Environment.GetEnvironmentVariable("SCREEN_TRANSLATE_LIBRARY_QUICK_ACCESS_ONLY") == "1")
                 {
                     VerifyLibraryQuickAccess();
+                    VerifyBorderlessShortcutShell();
                     return;
                 }
                 if (Environment.GetEnvironmentVariable("SCREEN_TRANSLATE_SYNC_SETUP_ONLY") == "1")
@@ -122,6 +123,7 @@ public sealed partial class ScreenTranslateShellTests
                 }
                 VerifyUpdateEntries();
                 VerifyLibraryQuickAccess();
+                VerifyBorderlessShortcutShell();
                 VerifyShortcutHintsMatchBindings();
                 VerifyScreenshotToolActions();
                 VerifyMultitoolNavigation();

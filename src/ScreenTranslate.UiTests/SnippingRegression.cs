@@ -199,6 +199,7 @@ public sealed partial class ScreenTranslateShellTests
         {
             graphics.Clear(System.Drawing.Color.FromArgb(12, 34, 56));
             graphics.FillRectangle(System.Drawing.Brushes.White, 100, 100, 600, 300);
+            graphics.FillRectangle(System.Drawing.Brushes.Blue, 300, 100, 100, 100);
         }
         var capture = new ScreenCaptureWindow((System.Drawing.Bitmap)pixels.Clone(), new System.Drawing.Rectangle(0, 0, 1000, 700), snippingTools: true);
         const BindingFlags flags = BindingFlags.Instance | BindingFlags.NonPublic;
@@ -220,9 +221,15 @@ public sealed partial class ScreenTranslateShellTests
             {
                 Invoke("SetSnipTool", tool);
                 Assert.Equal(Colors.White, capture.UpdateSnipColor(inside));
+                Assert.Equal(Colors.White, ((SolidColorBrush)((TextBlock)Get("_snipColorLabel")!).Foreground).Color);
+                Assert.Equal(Colors.Blue, capture.UpdateSnipColor(new Point(350 / sx, 150 / sy)));
+                Assert.Equal(Colors.Blue, ((SolidColorBrush)((TextBlock)Get("_snipColorLabel")!).Foreground).Color);
+                Assert.Contains("#0000FF", ((TextBlock)Get("_snipColorLabel")!).Text);
                 Assert.Equal(Color.FromRgb(12, 34, 56), capture.UpdateSnipColor(outside));
+                Assert.Equal(Color.FromRgb(12, 34, 56), ((SolidColorBrush)((TextBlock)Get("_snipColorLabel")!).Foreground).Color);
                 Assert.Contains("#0C2238", ((TextBlock)Get("_snipColorLabel")!).Text);
                 Assert.Contains("RGB(12, 34, 56)", ((TextBlock)Get("_snipColorLabel")!).Text);
+                Assert.Equal(new[] { "#0C2238", "RGB(12, 34, 56)", "C 复制HEX · Shift切换" }, ((TextBlock)Get("_snipColorLabel")!).Text.Split('\n'));
                 Assert.Equal(Colors.White, capture.UpdateSnipColor(new Point(120 / sx, 140 / sy))); // 标注下仍取原图。
             }
             capture.UpdateSnipColor(new Point(capture.ActualWidth - 1, capture.ActualHeight - 1));
@@ -448,11 +455,12 @@ public sealed partial class ScreenTranslateShellTests
             var swatch = (Border)Get("_snipColorPreview")!;
             Assert.True(label.FontSize >= 16); Assert.True(swatch.Width >= 18 && swatch.Height >= 18);
             Assert.Contains("RGB", label.Text);
-            Set("_selectionWpfRect", new Rect(100, 100, 260, 70));
+            Set("_selectionWpfRect", new Rect(100, 100, 160, 70));
             capture.UpdateSnipColor(new Point(150, 150)); capture.UpdateLayout();
             Assert.DoesNotContain("RGB", label.Text);
+            Assert.Equal(new[] { "#000000", "C 复制" }, label.Text.Split('\n'));
             var hud = (FrameworkElement)Get("_snipColorHud")!;
-            Assert.InRange(Canvas.GetLeft(hud) + hud.ActualWidth, 100, 360);
+            Assert.InRange(Canvas.GetLeft(hud) + hud.ActualWidth, 100, 260);
             Assert.InRange(Canvas.GetTop(hud) + hud.ActualHeight, 100, 170);
             Assert.Null(((Border)hud).Background); Assert.False(hud.IsHitTestVisible);
             Render(capture, "snip-readable-color", 1000, 700);

@@ -273,6 +273,7 @@ public partial class ScreenCaptureWindow
     {
         var color = SnipColorAt(point);
         _snipColorPreview!.Background = new SolidColorBrush(color);
+        _snipColorLabel!.Foreground = new SolidColorBrush(color);
         var region = new Rect(0, 0, Math.Max(1, _snipCanvas!.ActualWidth), Math.Max(1, _snipCanvas.ActualHeight));
         if (_hasSelection) region.Intersect(_selectionWpfRect);
         if (region.IsEmpty || region.Width <= 0 || region.Height <= 0)
@@ -285,10 +286,10 @@ public partial class ScreenCaptureWindow
         var rgb = $"RGB({color.R}, {color.G}, {color.B})";
         var primary = _snipCopyRgb ? rgb : hex;
         var secondary = _snipCopyRgb ? hex : rgb;
-        _snipColorLabel!.Text = $"{primary}   {secondary}   · C 复制{(_snipCopyRgb ? "RGB" : "HEX")} · Shift切换";
+        _snipColorLabel!.Text = $"{primary}\n{secondary}\nC 复制{(_snipCopyRgb ? "RGB" : "HEX")} · Shift切换";
         _snipColorLabel.Measure(new System.Windows.Size(double.PositiveInfinity, double.PositiveInfinity));
         if (_snipColorLabel.DesiredSize.Width + _snipColorPreview.Width + _snipColorPreview.Margin.Left + _snipColorPreview.Margin.Right > region.Width - inset * 2)
-            _snipColorLabel.Text = $"{primary} · C";
+            _snipColorLabel.Text = $"{primary}\nC 复制";
         _snipColorHud!.MaxWidth = Math.Max(1, region.Width - inset * 2);
         _snipColorHud.MaxHeight = Math.Max(1, region.Height - inset * 2);
         _snipColorHud!.Visibility = Visibility.Visible;
@@ -298,10 +299,6 @@ public partial class ScreenCaptureWindow
         var y = _hasSelection ? region.Bottom - inset - size.Height : point.Y + 24;
         x = Math.Clamp(x, region.Left, Math.Max(region.Left, region.Right - size.Width));
         y = Math.Clamp(y, region.Top, Math.Max(region.Top, region.Bottom - size.Height));
-        // 用提示所在位置的原图明暗选择字色；不绘制底板，避免遮挡截图。
-        var underText = SnipColorAt(new Point(x, y + size.Height / 2));
-        _snipColorLabel.Foreground = (underText.R * 299 + underText.G * 587 + underText.B * 114) >= 140000
-            ? System.Windows.Media.Brushes.Black : System.Windows.Media.Brushes.White;
         Canvas.SetLeft(_snipColorHud, x);
         Canvas.SetTop(_snipColorHud, y);
         return color;

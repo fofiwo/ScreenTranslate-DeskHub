@@ -33,7 +33,8 @@ public sealed partial class ScreenTranslateShellTests
             LibraryWindow.Toggle();
             Assert.True(window.IsVisible);
             Assert.Equal(Visibility.Collapsed, header.Visibility);
-            Assert.Equal(WindowStyle.SingleBorderWindow, window.WindowStyle);
+            Assert.Equal(WindowStyle.None, window.WindowStyle);
+            AssertNoNativeCaption(window);
             Assert.Equal(ResizeMode.CanResize, window.ResizeMode);
             Assert.False(((TextBlock)window.FindName("ShortcutHint")).IsVisible);
 
@@ -61,6 +62,9 @@ public sealed partial class ScreenTranslateShellTests
             LibraryWindow.Open();
             Render(window, "library-management-header", 880, 580);
             Assert.True(header.IsVisible);
+            Assert.Equal(WindowStyle.SingleBorderWindow, window.WindowStyle);
+            Assert.True(NativeTopInset(window) >= 20, "The ordinary management entry must restore its native title bar.");
+            VerifyNativeFrameIsNotOverridden(window);
             Assert.Equal("快捷", search.Text);
             Assert.Same(selected, ((ListBox)window.FindName("PromptList")).SelectedItem);
 
@@ -86,11 +90,24 @@ public sealed partial class ScreenTranslateShellTests
             LibraryWindow.OpenAiSettings();
             Assert.Equal(Visibility.Visible, header.Visibility);
             Assert.Equal(Visibility.Visible, ((FrameworkElement)window.FindName("AiEditor")).Visibility);
+            Assert.False(((FrameworkElement)window.FindName("QuickWindowControls")).IsVisible);
             ((TextBox)window.FindName("AiModel")).Text = "unsaved-fixture";
             window.Hide();
             LibraryWindow.Toggle();
             Assert.Equal("unsaved-fixture", ((TextBox)window.FindName("AiModel")).Text);
             Assert.Equal(Visibility.Visible, ((FrameworkElement)window.FindName("AiEditor")).Visibility);
+            Render(window, "library-shortcut-editor", 880, 580);
+            AssertNoNativeCaption(window);
+            var close = (System.Windows.Controls.Button)window.FindName("QuickCloseButton");
+            Assert.True(close.IsVisible);
+            Assert.Equal(32, close.ActualWidth);
+            var root = (FrameworkElement)window.Content;
+            var hit = root.InputHitTest(close.TranslatePoint(new Point(16, 16), root));
+            Assert.True(ReferenceEquals(hit, close) ||
+                (hit is System.Windows.DependencyObject dependency && IsDescendantOf(dependency, close)),
+                $"The editor must not cover the borderless close button (hit: {(hit as FrameworkElement)?.Name}).");
+            close.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Button.ClickEvent));
+            Assert.False(window.IsVisible);
         }
         finally
         {
@@ -100,4 +117,5 @@ public sealed partial class ScreenTranslateShellTests
             System.IO.Directory.Delete(directory, true);
         }
     }
+
 }

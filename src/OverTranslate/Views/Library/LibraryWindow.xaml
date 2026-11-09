@@ -231,6 +231,13 @@
     </Grid>
    </TabItem>
   </TabControl>
+  <Grid x:Name="QuickWindowControls" Grid.Row="2" Height="32" VerticalAlignment="Top" Visibility="Collapsed" Panel.ZIndex="2">
+   <Grid.ColumnDefinitions><ColumnDefinition Width="210"/><ColumnDefinition/><ColumnDefinition Width="32"/></Grid.ColumnDefinitions>
+   <Border x:Name="QuickDragArea" Grid.Column="1" Background="Transparent" MouseLeftButtonDown="QuickDrag_MouseLeftButtonDown" ToolTip="拖动窗口；双击最大化或还原">
+    <Border.Style><Style TargetType="Border"><Style.Triggers><DataTrigger Binding="{Binding Visibility, ElementName=EditorLayer}" Value="Visible"><Setter Property="Visibility" Value="Collapsed"/></DataTrigger></Style.Triggers></Style></Border.Style>
+   </Border>
+   <Button x:Name="QuickCloseButton" Grid.Column="2" Width="32" Height="32" Margin="0" Content="&#xE8BB;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" Style="{StaticResource QuietButton}" Padding="0" Click="QuickClose_Click" ToolTip="关闭（Esc）" AutomationProperties.Name="关闭资料库"/>
+  </Grid>
   <Border Grid.Row="3" Padding="10,5" Margin="0,8,0,0" Background="{DynamicResource AppHeaderBg}" CornerRadius="4">
    <TextBlock x:Name="Status" Text="单击提示词复制，右侧查看全文；模型列表下拉选择即复制。" Style="{StaticResource LibraryMeta}" TextTrimming="CharacterEllipsis" ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}" MinHeight="18" AutomationProperties.LiveSetting="Polite"/>
   </Border>
@@ -243,7 +250,7 @@
   </Border>
   <Border x:Name="EditorLayer" Grid.RowSpan="4" Visibility="Collapsed" Background="{DynamicResource AppSurfaceBg}" Padding="20,8,20,0" KeyboardNavigation.TabNavigation="Cycle">
    <Grid MaxWidth="760"><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
-    <StackPanel Margin="0,0,0,10"><TextBlock x:Name="EditorTitle" FontSize="28" FontWeight="SemiBold"/><TextBlock Text="修改后点击保存，取消则保留原有资料。" Style="{StaticResource ProductHint}" Margin="0,6,0,0"/></StackPanel>
+    <StackPanel Margin="0,0,32,10" Background="Transparent" MouseLeftButtonDown="QuickDrag_MouseLeftButtonDown"><TextBlock x:Name="EditorTitle" FontSize="28" FontWeight="SemiBold"/><TextBlock Text="修改后点击保存，取消则保留原有资料。" Style="{StaticResource ProductHint}" Margin="0,6,0,0"/></StackPanel>
     <ScrollViewer x:Name="EditorScroll" Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"><StackPanel Margin="0,0,12,12">
      <StackPanel x:Name="PromptEditor" Visibility="Collapsed">
       <TextBlock Text="标题" Style="{StaticResource LibraryLabel}"/><TextBox x:Name="PromptTitle" Style="{StaticResource Field}" AutomationProperties.Name="提示词标题" ToolTip="留空时从正文生成标题"/>

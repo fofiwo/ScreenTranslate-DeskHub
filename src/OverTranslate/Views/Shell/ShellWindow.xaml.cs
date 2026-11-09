@@ -103,7 +103,11 @@ public partial class ShellWindow : Window
     /// "open the window" means. Callers with something to say pass the page that says it: the
     /// tray's 設定 item, and the capture flow handing its result to 文字翻譯.
     /// </param>
-    public static ShellWindow ShowOrActivate(ShellPage? page = null)
+    public static ShellWindow ShowOrActivate(ShellPage? page = null) => ShowOrActivate(page, quickAccess: false);
+
+    public static ShellWindow ShowOrActivateFromShortcut(ShellPage? page = null) => ShowOrActivate(page, quickAccess: true);
+
+    private static ShellWindow ShowOrActivate(ShellPage? page, bool quickAccess)
     {
         // Read before the window is built: constructing one mounts a page, which writes _lastPage,
         // so asking for it after would only ever get back the page the constructor chose.
@@ -113,6 +117,7 @@ public partial class ShellWindow : Window
         {
             _instance = new ShellWindow();
         }
+        _instance.SetQuickAccess(quickAccess);
         if (_instance.WindowState == WindowState.Minimized)
         {
             _instance.WindowState = WindowState.Normal;
@@ -128,6 +133,21 @@ public partial class ShellWindow : Window
         var shell = _instance;
         shell.Dispatcher.BeginInvoke(shell.Activate, DispatcherPriority.ApplicationIdle);
         return shell;
+    }
+
+    private void SetQuickAccess(bool quickAccess)
+    {
+        WindowTitleBar.Visibility = quickAccess ? Visibility.Collapsed : Visibility.Visible;
+        WindowRoot.RowDefinitions[0].Height = new GridLength(quickAccess ? 0 : 40);
+        System.Windows.Shell.WindowChrome.GetWindowChrome(this).CaptionHeight = quickAccess ? 0 : 40;
+        QuickWindowControls.Visibility = quickAccess ? Visibility.Visible : Visibility.Collapsed;
+        QuickControlsColumn.Width = new GridLength(quickAccess ? 40 : 0);
+    }
+
+    private void QuickDrag_MouseLeftButtonDown(object sender, System.Windows.Input.MouseButtonEventArgs e)
+    {
+        if (e.ClickCount == 2) MaximizeBtn_Click(sender, e);
+        else if (e.LeftButton == System.Windows.Input.MouseButtonState.Pressed) DragMove();
     }
 
     public ShellWindow() : this(() => new LibraryStore(LibraryStore.DefaultPath).Read(), Library.LibraryWindow.Open) { }
@@ -417,6 +437,8 @@ public partial class ShellWindow : Window
 
         SidebarToggleBtn.ToolTip = label;
         AutomationProperties.SetName(SidebarToggleBtn, label);
+        QuickSidebarToggle.ToolTip = label;
+        AutomationProperties.SetName(QuickSidebarToggle, label);
     }
 
 

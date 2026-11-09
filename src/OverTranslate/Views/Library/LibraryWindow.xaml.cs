@@ -66,6 +66,7 @@ public partial class LibraryWindow : Window
         _http = http ?? new();
         _copy = copy ?? (text => LibraryClipboard.SetText(text, new System.Windows.Interop.WindowInteropHelper(this).EnsureHandle()));
         InitializeComponent();
+        Shell.WindowFrame.Attach(this);
         _rankTimer.Tick += (_, _) => RankCopiedPrompts();
         _copyFeedbackTimer.Tick += (_, _) => ResetCopyFeedback();
         _saveNoticeTimer.Tick += (_, _) => DismissSaveNotice();
@@ -95,7 +96,7 @@ public partial class LibraryWindow : Window
         try
         {
             _current ??= new LibraryWindow();
-            _current.ManagementHeader.Visibility = quickAccess ? Visibility.Collapsed : Visibility.Visible;
+            _current.SetQuickAccess(quickAccess);
             _current.RefreshShortcut();
             if (!_current.IsVisible) _current.Show();
             if (_current.WindowState == WindowState.Minimized) _current.WindowState = WindowState.Normal;
@@ -116,11 +117,33 @@ public partial class LibraryWindow : Window
         if (IsVisible && WindowState != WindowState.Minimized && IsActive) { Hide(); }
         else
         {
-            ManagementHeader.Visibility = Visibility.Collapsed;
+            SetQuickAccess(true);
             if (!IsVisible) Show();
             if (WindowState == WindowState.Minimized) WindowState = WindowState.Normal;
             Activate();
         }
+    }
+
+    private void SetQuickAccess(bool quickAccess)
+    {
+        ManagementHeader.Visibility = quickAccess ? Visibility.Collapsed : Visibility.Visible;
+        QuickWindowControls.Visibility = quickAccess ? Visibility.Visible : Visibility.Collapsed;
+        WindowStyle = quickAccess ? WindowStyle.None : WindowStyle.SingleBorderWindow;
+        System.Windows.Shell.WindowChrome.SetWindowChrome(this, quickAccess ? new System.Windows.Shell.WindowChrome
+        {
+            CaptionHeight = 0, ResizeBorderThickness = new Thickness(6),
+            GlassFrameThickness = new Thickness(0), CornerRadius = new CornerRadius(0),
+            UseAeroCaptionButtons = false
+        } : null);
+    }
+
+    private void QuickClose_Click(object sender, RoutedEventArgs e) => Close();
+
+    private void QuickDrag_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        if (e.ClickCount == 2)
+            WindowState = WindowState == WindowState.Maximized ? WindowState.Normal : WindowState.Maximized;
+        else if (e.LeftButton == MouseButtonState.Pressed) DragMove();
     }
 
     public static void Shutdown()

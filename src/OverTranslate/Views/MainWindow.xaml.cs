@@ -381,7 +381,7 @@ public partial class MainWindow : Window
         if (quickStart.Request is not { } request)
         {
             Log.Info("Realtime shortcut did not start a session: {Reason}", quickStart.RefusalKey);
-            ShellWindow.ShowOrActivate(ShellPage.Realtime).ShowRealtimeShortcutRefusal(quickStart.RefusalKey!);
+            ShellWindow.ShowOrActivateFromShortcut(ShellPage.Realtime).ShowRealtimeShortcutRefusal(quickStart.RefusalKey!);
             return;
         }
 
@@ -401,7 +401,7 @@ public partial class MainWindow : Window
                 return;
             }
 
-            OnTrayLeftClick();
+            ShowPrimaryWindow(quickAccess: true);
         });
 
     private bool RefuseWhileFramingBlocks()
@@ -1491,7 +1491,9 @@ public partial class MainWindow : Window
     /// covered. Without it the only way out of that would be killing the application from the
     /// tray, which takes the block layout with it.
     /// </remarks>
-    private static void OnTrayLeftClick()
+    private static void OnTrayLeftClick() => ShowPrimaryWindow(quickAccess: false);
+
+    private static void ShowPrimaryWindow(bool quickAccess)
     {
         if (Views.Realtime.RealtimeSessionController.Instance.IsActive)
         {
@@ -1499,7 +1501,8 @@ public partial class MainWindow : Window
             return;
         }
 
-        OpenShell();
+        if (quickAccess) ShellWindow.ShowOrActivateFromShortcut();
+        else OpenShell();
     }
 
     /// <remarks>

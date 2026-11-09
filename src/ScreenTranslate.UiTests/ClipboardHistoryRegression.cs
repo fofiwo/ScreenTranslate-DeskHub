@@ -344,20 +344,52 @@ public sealed partial class ScreenTranslateShellTests
         IReadOnlyList<System.Net.IPAddress> addresses = [];
         System.Windows.DataObject? copied = null;
         var failCopy = false;
-        var window = new LanTransferWindow(path, readAddresses: () => addresses, writeClipboard: data =>
+        var failRead = false;
+        var window = new LanTransferWindow(path, readAddresses: () => failRead ? throw new InvalidOperationException("fixture") : addresses, writeClipboard: data =>
         { if (failCopy) throw new System.Runtime.InteropServices.ExternalException(); copied = data; })
         { Left = -10000, Top = -10000, ShowActivated = false, WindowStartupLocation = WindowStartupLocation.Manual };
         try
         {
             window.Show(); window.Width = window.MinWidth; window.Height = window.MinHeight; window.UpdateLayout();
             var localAddresses = (ComboBox)window.FindName("LocalAddressBox");
+            var addressStatus = (TextBlock)window.FindName("LocalAddressStatus");
+            var generate = (Button)window.FindName("ListenButton");
             Assert.Empty(localAddresses.Items);
+            Assert.False(generate.IsEnabled);
+            Assert.True(((Button)window.FindName("ConnectButton")).IsEnabled);
+            Assert.Equal(Visibility.Visible, addressStatus.Visibility);
+            Assert.Contains("未找到", addressStatus.Text);
             addresses = [System.Net.IPAddress.Parse("192.168.1.20")];
             window.RefreshLocalAddresses();
             Assert.Equal(addresses[0], localAddresses.SelectedItem);
+            Assert.True(generate.IsEnabled);
+            Assert.Equal(Visibility.Collapsed, addressStatus.Visibility);
+            localAddresses.IsDropDownOpen = true;
+            window.UpdateLayout();
+            PumpUntil(() => localAddresses.ItemContainerGenerator.ContainerFromIndex(0) is ComboBoxItem);
+            var addressItem = (ComboBoxItem)localAddresses.ItemContainerGenerator.ContainerFromIndex(0);
+            Assert.Contains(Visuals<TextBlock>(addressItem), text => text.Text == "192.168.1.20");
+            localAddresses.IsDropDownOpen = false;
+            window.UpdateLayout();
+            Assert.Contains(Visuals<TextBlock>(localAddresses), text => text.Text == "192.168.1.20");
             addresses = [System.Net.IPAddress.Parse("192.168.2.30")];
             window.RefreshLocalAddresses();
             Assert.Equal(addresses[0], localAddresses.SelectedItem);
+            addresses = [System.Net.IPAddress.Parse("192.168.1.20"), System.Net.IPAddress.Parse("192.168.2.30")];
+            window.RefreshLocalAddresses();
+            Assert.Equal(addresses[1], localAddresses.SelectedItem);
+            failRead = true;
+            window.RefreshLocalAddresses();
+            Assert.Empty(localAddresses.Items);
+            Assert.Null(localAddresses.SelectedItem);
+            Assert.False(generate.IsEnabled);
+            Assert.Equal(Visibility.Visible, addressStatus.Visibility);
+            Assert.Contains("读取本机地址失败", addressStatus.Text);
+            failRead = false;
+            window.RefreshLocalAddresses();
+            Assert.Equal(addresses[0], localAddresses.SelectedItem);
+            Assert.True(generate.IsEnabled);
+            Assert.Equal(Visibility.Collapsed, addressStatus.Visibility);
             Assert.True(((FrameworkElement)window.FindName("DropArea")).AllowDrop);
             Assert.False(((Button)window.FindName("ChooseFilesButton")).IsEnabled);
             var sending = window.SendFilesAsync(["fixture.bin"]); PumpUntil(() => sending.IsCompleted);

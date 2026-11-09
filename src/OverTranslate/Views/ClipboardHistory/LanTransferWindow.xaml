@@ -21,9 +21,14 @@
     <TextBlock Text="生成信息，发给另一台电脑" Margin="0,6,0,16" Foreground="{DynamicResource AppTextSecondary}"/>
     <TextBlock Text="本机网络地址" Margin="0,0,0,6"/>
     <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-     <ComboBox x:Name="LocalAddressBox" Style="{StaticResource ModernComboBox}" MinHeight="40" AutomationProperties.Name="本机局域网地址"/>
+     <ComboBox x:Name="LocalAddressBox" Style="{StaticResource ModernComboBox}" MinHeight="40" AutomationProperties.Name="本机局域网地址"
+               ToolTip="选择与另一台电脑在同一局域网的地址">
+      <ComboBox.ItemTemplate><DataTemplate><TextBlock Text="{Binding}"/></DataTemplate></ComboBox.ItemTemplate>
+     </ComboBox>
      <Button x:Name="ListenButton" Grid.Column="1" Content="生成" Margin="8,0,0,0" Style="{StaticResource ProductSecondaryButton}" Click="Listen_Click"/>
     </Grid>
+    <TextBlock x:Name="LocalAddressStatus" Visibility="Collapsed" TextWrapping="Wrap" Margin="0,8,0,0"
+               Foreground="{DynamicResource AppTextSecondary}" AutomationProperties.LiveSetting="Polite"/>
     <TextBox x:Name="PairingInfo" IsReadOnly="True" BorderThickness="0" Background="{DynamicResource AppHeaderBg}" Foreground="{DynamicResource AppTextPrimary}" TextWrapping="Wrap" Padding="12" Margin="0,12,0,0" MinHeight="118" Text="生成后显示地址和配对码" AutomationProperties.Name="本机配对信息" CommandManager.PreviewExecuted="PairingInfo_PreviewExecuted"/>
     <Button x:Name="CopyPairingButton" Content="复制配对信息" HorizontalAlignment="Left" Margin="0,12,0,0" Style="{StaticResource ProductButton}" Click="CopyPairing_Click" IsEnabled="False"/>
     <TextBlock x:Name="PairingCopyStatus" Margin="0,8,0,0" TextWrapping="Wrap" Foreground="{DynamicResource AppTextSecondary}" AutomationProperties.LiveSetting="Polite" Text="仅分享给自己的可信电脑"/>

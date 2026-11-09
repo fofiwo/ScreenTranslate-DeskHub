@@ -76,8 +76,16 @@ public partial class LanTransferWindow : Window
             var addresses = _readAddresses();
             LocalAddressBox.ItemsSource = addresses;
             LocalAddressBox.SelectedItem = addresses.FirstOrDefault(a => a.Equals(selected)) ?? addresses.FirstOrDefault();
+            LocalAddressStatus.Text = "未找到局域网 IPv4 地址，请连接以太网或 Wi-Fi 后重新展开地址列表。";
+            LocalAddressStatus.Visibility = addresses.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
         }
-        catch (Exception) { ConnectionStatus.Text = "读取本机地址失败，请检查网络后重新展开地址列表。"; }
+        catch (Exception)
+        {
+            LocalAddressBox.ItemsSource = Array.Empty<IPAddress>();
+            LocalAddressStatus.Text = "读取本机地址失败，请检查网络后重新展开地址列表。";
+            LocalAddressStatus.Visibility = Visibility.Visible;
+        }
+        UpdateControls();
     }
 
     public static void Open()
@@ -366,7 +374,9 @@ public partial class LanTransferWindow : Window
     private void UpdateControls()
     {
         UpdatePairingInfo();
-        ListenButton.IsEnabled = ConnectButton.IsEnabled = !_shutdown && !_connecting && !_disconnecting && !IsSending && !_node.IsConnected;
+        var canPair = !_shutdown && !_connecting && !_disconnecting && !IsSending && !_node.IsConnected;
+        ListenButton.IsEnabled = canPair && LocalAddressBox.SelectedItem is IPAddress;
+        ConnectButton.IsEnabled = canPair;
         ChooseFilesButton.IsEnabled = _node.IsConnected && !IsSending;
         CancelFilesButton.IsEnabled = IsSending;
     }

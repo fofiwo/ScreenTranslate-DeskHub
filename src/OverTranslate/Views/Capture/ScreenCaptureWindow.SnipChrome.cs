@@ -97,7 +97,7 @@ public partial class ScreenCaptureWindow
         _snipWelcome = SnipFloatingSurface(welcome); _snipCanvas.Children.Add(_snipWelcome);
         var colorRow = new StackPanel { Orientation = Orientation.Horizontal };
         _snipColorPreview = new Border { Width = 18, Height = 18, CornerRadius = new CornerRadius(3), Margin = new Thickness(0, 0, 8, 0),
-            VerticalAlignment = VerticalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Top,
             BorderBrush = new SolidColorBrush(Color.FromArgb(120, 128, 128, 128)), BorderThickness = new Thickness(1) };
         _snipColorLabel = new TextBlock { FontSize = 16, FontWeight = FontWeights.Medium, VerticalAlignment = VerticalAlignment.Center,
             FontFamily = new System.Windows.Media.FontFamily("Cascadia Mono, Consolas") };
