@@ -1,0 +1,356 @@
+﻿using System.IO;
+using System.Text.Encodings.Web;
+using System.Text.Json;
+using System.Text.Json.Nodes;
+using NLog;
+using OverTranslate.Models;
+
+namespace OverTranslate.Services;
+
+public class SettingsService
+{
+    private static readonly Logger Log = LogManager.GetCurrentClassLogger();
+
+    // 安装版数据独立于 current 版本目录，便携版则跟随程序目录。
+    private static readonly string SettingsDirectory = AppDataPaths.Root;
+
+    private static readonly string SettingsPath = Path.Combine(SettingsDirectory, "appsettings.json");
+
+    /// <summary>
+    /// Where the settings actually are, for the one caller that needs the file rather than the
+    /// values in it: <see cref="DiagnosticBundleService"/> copies it into a problem report.
+    /// </summary>
+    public static string FilePath => SettingsPath;
+
+    // Where 1.7.0 and earlier kept the file. Velopack has usually deleted it by the time an updated
+    // build runs, but when it survives — a build relaunched in place, a dev run — those are still the
+    // user's settings, so read them once on the way to the new location.
+    private static readonly string LegacySettingsPath = Path.Combine(
+        AppDomain.CurrentDomain.BaseDirectory, "appsettings.json");
+
+    /// <summary>
+    /// How the file is written: indented, and with the whole of Unicode left as itself.
+    /// </summary>
+    /// <remarks>
+    /// The default encoder escapes everything outside a conservative ASCII set, which writes a
+    /// prompt someone named 「測試」 as an unbroken run of <c>\uXXXX</c>. This is a file a user can
+    /// open — see <see cref="Services.Realtime.RealtimeSubtitleColors"/>, which is written on the
+    /// same assumption — and now that it holds the prompt library, the names and the prose in it are
+    /// the user's own words rather than paths and key codes.
+    ///
+    /// The same encoder <see cref="DiagnosticBundleService"/> uses for its redacted copy, and for
+    /// the same reason it gives: this text goes into a file, never into a web page, so the escaping
+    /// of <c>&lt;</c>, <c>&gt;</c> and <c>&amp;</c> that guards against being embedded in HTML buys
+    /// nothing here. Widening only the character range was tried first and is not enough — it
+    /// leaves <c>+</c> escaped, which writes every shortcut in the file as
+    /// <c>Ctrl\u002BAlt\u002BA</c>. Half a readable file is not the point.
+    ///
+    /// The two copies also then read alike, which is worth something on the one occasion both are
+    /// in front of the same person: a bug report held against the file it came from.
+    ///
+    /// Cosmetic by construction: nothing reads this file as text, both forms parse to the same
+    /// string, and <see cref="Parse"/> goes through a JSON reader either way.
+    /// </remarks>
+    private static readonly JsonSerializerOptions WriteOptions = new()
+    {
+        WriteIndented = true,
+        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
+    };
+
+    private static SettingsService? _instance;
+    public static SettingsService Instance => _instance ??= new SettingsService();
+
+    public AppSettings Current { get; private set; } = new();
+
+    private SettingsService()
+    {
+        Load();
+    }
+
+    public void Load()
+    {
+        Current = Load(SettingsPath, LegacySettingsPath, SettingsBackup.CurrentVersion, settings =>
+        {
+            Current = settings;
+            Save();
+        });
+    }
+
+    /// <summary>
+    /// <see cref="Load()"/> with the paths, the running version and the save passed in, for a test
+    /// that cannot use the real ones.
+    /// </summary>
+    /// <remarks>
+    /// The backup comes before every save: once anything is saved, the file it would copy is gone.
+    /// </remarks>
+    internal static AppSettings Load(string path, string legacyPath, string version, Action<AppSettings> save)
+    {
+        var (json, readFrom) = ReadFirstAvailable(path, legacyPath);
+        if (json is null)
+        {
+            var fresh = new AppSettings { LastRunVersion = version };
+            save(fresh);
+            return fresh;
+        }
+
+        var settings = Parse(json);
+        if (settings.LastRunVersion != version)
+        {
+            // The first start after an update (or after 2.9.0 or earlier, which never wrote a
+            // version). Anything else a later version has to do once on its way in goes here too,
+            // before the version is written: after that this branch is not taken again.
+            if (SettingsBackup.Needed(settings.LastRunVersion))
+                SettingsBackup.Copy(readFrom!, SettingsBackup.PathFor(path, version));
+
+            settings.LastRunVersion = version;
+            save(settings);
+        }
+        // Nothing at the canonical path means what we just read came from the legacy one. Persist it
+        // now rather than waiting for the user to happen to change a setting.
+        else if (!File.Exists(path))
+            save(settings);
+        return settings;
+    }
+
+    /// <summary>
+    /// Reads the settings one field at a time so a single bad value cannot cost the user everything
+    /// else. A file that is not JSON at all still falls back to defaults, but an individual field
+    /// that cannot be read — an enum value a later build dropped, a type that changed, an explicit
+    /// null — costs only that field. The previous all-or-nothing catch reset API keys and hotkeys
+    /// alike whenever any one value went bad.
+    /// </summary>
+    public static AppSettings Parse(string json)
+    {
+        var settings = new AppSettings();
+
+        JsonObject? root;
+        try
+        {
+            root = JsonNode.Parse(json) as JsonObject;
+        }
+        catch (JsonException ex)
+        {
+            Log.Warn(ex, "appsettings.json is not valid JSON; falling back to defaults");
+            return settings;
+        }
+
+        if (root is null)
+            return settings;
+
+        Apply(settings, root, "");
+
+        // Retired options, read as the ones that replaced them — the pickers no longer list them.
+        settings.Provider = LanguageData.CurrentProvider(settings.Provider);
+        settings.Realtime.Provider = LanguageData.CurrentProvider(settings.Realtime.Provider);
+
+        // 替換翻譯's languages (QuickTranslate, its name before #277). The grouped section wins.
+        // Older files used flat QuickTranslate* keys, and before that shared the text-translation
+        // pair. Migrate only when the group is absent.
+        if (!root.ContainsKey(nameof(AppSettings.QuickTranslate)))
+        {
+            string LegacyLanguage(string key, string shared) =>
+                !root.TryGetPropertyValue(key, out var value) ? shared :
+                value is JsonValue scalar && scalar.TryGetValue<string>(out var text) ? text : "";
+
+            settings.QuickTranslate.SourceLanguage = LanguageData.GetValidSourceCode(
+                LegacyLanguage("QuickTranslateSourceLanguage", settings.SourceLanguage));
+            var legacyTarget = LegacyLanguage("QuickTranslateTargetLanguage",
+                root.ContainsKey(nameof(AppSettings.TargetLanguage)) ? settings.TargetLanguage : "");
+            var target = LanguageData.TargetLanguages.FirstOrDefault(
+                language => language.Code.Equals(legacyTarget, StringComparison.OrdinalIgnoreCase));
+            if (target is not null)
+                settings.QuickTranslate.TargetLanguage = target.Code;
+        }
+        return settings;
+    }
+
+    /// <summary>
+    /// Copies one object's worth of JSON onto <paramref name="target"/>, field by field, descending
+    /// into grouped sections.
+    /// </summary>
+    /// <remarks>
+    /// The descent is what keeps the promise above once settings are grouped. Handing a whole group
+    /// to <c>Deserialize</c> would make it the unit that fails: one unreadable value inside
+    /// <see cref="AppSettings.Realtime"/> would throw, and every other value in that group would go
+    /// back to its default with it. Read one at a time all the way down, and the blast radius stays
+    /// one value however deep it sits.
+    /// </remarks>
+    /// <param name="path">Where in the file this object sits, for the log to name a field properly.</param>
+    private static void Apply(object target, JsonObject source, string path)
+    {
+        foreach (var property in target.GetType().GetProperties())
+        {
+            if (!property.CanWrite)
+                continue;
+
+            // Absent and explicitly-null both leave the property on its initialiser, which keeps a
+            // hand-edited "ApiKey": null from turning into a null string the rest of the app trips on.
+            if (!source.TryGetPropertyValue(property.Name, out var node) || node is null)
+                continue;
+
+            var name = path + property.Name;
+
+            if (node is JsonObject group && IsSettingsGroup(property.PropertyType))
+            {
+                // Never null: a group is always initialised by the class that declares it, so there
+                // is something to write onto whatever the file says.
+                if (property.GetValue(target) is { } child)
+                    Apply(child, group, name + ".");
+                continue;
+            }
+
+            try
+            {
+                var value = node.Deserialize(property.PropertyType);
+                if (value is not null)
+                    property.SetValue(target, value);
+            }
+            catch (JsonException ex)
+            {
+                Log.Warn(ex, "Ignoring unreadable setting '{0}'; keeping its default", name);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Whether a property is a grouped section of the settings rather than a value.
+    /// </summary>
+    /// <remarks>
+    /// Decided by where the type is declared, not by a list to keep in step: anything this
+    /// application defines alongside <see cref="AppSettings"/> is a group of settings, and anything
+    /// from the framework — string above all, which is a class and would otherwise qualify — is a
+    /// value.
+    /// </remarks>
+    private static bool IsSettingsGroup(Type type) =>
+        type is { IsClass: true, IsArray: false }
+        && type != typeof(string)
+        && type.Namespace == typeof(AppSettings).Namespace;
+
+    /// <summary>The exact bytes <see cref="Save"/> writes, for a test that has no file to read.</summary>
+    internal static string Serialize(AppSettings settings) =>
+        JsonSerializer.Serialize(settings, WriteOptions);
+
+    public event EventHandler? OcrDebugChanged;
+
+    public void UpdateOcrDebug(bool? showLines = null, bool? showGroups = null, bool? showOnTranslation = null)
+    {
+        var debug = Current.OcrDebug;
+        var lines = showLines ?? debug.ShowLineBoxes;
+        var groups = showGroups ?? debug.ShowGroupBoxes;
+        var onTranslation = showOnTranslation ?? debug.ShowOnTranslation;
+        if (lines == debug.ShowLineBoxes && groups == debug.ShowGroupBoxes && onTranslation == debug.ShowOnTranslation) return;
+        debug.ShowOnTranslation = onTranslation;
+        debug.ShowLineBoxes = lines;
+        debug.ShowGroupBoxes = groups;
+        Save();
+        OcrDebugChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    /// <summary>
+    /// Raised when 自動翻譯, 儲存截圖 or 截圖後自動關閉 changes. The first two are set from two
+    /// places — the settings page and the capture toolbar's 設定 panel — and each has to show
+    /// what the other just wrote.
+    /// </summary>
+    public event EventHandler? CaptureOptionsChanged;
+
+    public void UpdateCaptureOptions(
+        bool? autoTranslate = null, bool? saveScreenshot = null, bool? closeAfterCopy = null)
+    {
+        var current = Current;
+        var auto = autoTranslate ?? current.AutoTranslateAfterSelection;
+        var save = saveScreenshot ?? current.SaveScreenshotToDisk;
+        var close = closeAfterCopy ?? current.Capture.CloseAfterCopy;
+        if (auto == current.AutoTranslateAfterSelection && save == current.SaveScreenshotToDisk &&
+            close == current.Capture.CloseAfterCopy) return;
+        current.AutoTranslateAfterSelection = auto;
+        current.SaveScreenshotToDisk = save;
+        current.Capture.CloseAfterCopy = close;
+        Save();
+        CaptureOptionsChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    /// <summary>
+    /// Raised when 使用漫畫直排模型 or 顯示模型提示 changes. The first is set on the settings
+    /// page's card and put back on by a delete or a download; the second from the capture toolbar's
+    /// menu. The engine and every hint on screen follow both.
+    /// </summary>
+    public event EventHandler? MangaModelOptionsChanged;
+
+    public void UpdateMangaModelOptions(bool? useModels = null, bool? showHint = null)
+    {
+        var current = Current;
+        var use = useModels ?? current.UseMangaModels;
+        var show = showHint ?? current.Capture.ShowModelHint;
+        if (use == current.UseMangaModels && show == current.Capture.ShowModelHint) return;
+        current.UseMangaModels = use;
+        current.Capture.ShowModelHint = show;
+        Save();
+        MangaModelOptionsChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    /// <summary>
+    /// Raised when the services the menus offer change. Each open menu rebuilds its list from it,
+    /// keeping whatever it has selected.
+    /// </summary>
+    public event EventHandler? ProviderVisibilityChanged;
+
+    /// <summary>Stores which services the menus leave out.</summary>
+    /// <returns>Whether anything changed, and so was saved.</returns>
+    public bool UpdateHiddenProviders(IEnumerable<TranslationProvider> hidden)
+    {
+        var stored = ProviderVisibility.ToStored(Current.HiddenProviders, hidden);
+        if (stored.SequenceEqual(Current.HiddenProviders)) return false;
+        Current.HiddenProviders = stored;
+        Save();
+        ProviderVisibilityChanged?.Invoke(this, EventArgs.Empty);
+        return true;
+    }
+
+    public void Save() => TrySave();
+
+    public bool TrySave() => TrySave(SettingsPath, Current);
+
+    internal static bool TrySave(string path, AppSettings settings)
+    {
+        try
+        {
+            Save(path, settings);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Failed to save settings to {0}", path);
+            return false;
+        }
+    }
+
+    internal static void Save(string path, AppSettings settings)
+    {
+        Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(path))!);
+        // 先写临时文件再替换，避免中途退出留下半份设置。
+        var tempPath = path + ".tmp";
+        File.WriteAllText(tempPath, Serialize(settings));
+        File.Move(tempPath, path, overwrite: true);
+    }
+
+    /// <returns>The text of the first file that could be read, and which file that was.</returns>
+    private static (string? Json, string? Path) ReadFirstAvailable(params string[] paths)
+    {
+        foreach (var path in paths)
+        {
+            if (!File.Exists(path))
+                continue;
+
+            try
+            {
+                return (File.ReadAllText(path), path);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                Log.Warn(ex, "Could not read settings from {0}", path);
+            }
+        }
+
+        return (null, null);
+    }
+}

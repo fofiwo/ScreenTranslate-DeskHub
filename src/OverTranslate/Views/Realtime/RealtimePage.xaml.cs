@@ -1,0 +1,1159 @@
+using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
+using System.Windows.Interop;
+using OverTranslate.Controls;
+using OverTranslate.Models;
+using OverTranslate.Services;
+using OverTranslate.Services.Realtime;
+using OverTranslate.Services.Realtime.Capture;
+using SolidColorBrush = System.Windows.Media.SolidColorBrush;
+using Screen = System.Windows.Forms.Screen;
+using UserControl = System.Windows.Controls.UserControl;
+
+namespace OverTranslate.Views.Realtime;
+
+/// <summary>One monitor, as offered in the screen picker.</summary>
+public sealed record ScreenItem(
+    string DeviceName, string Display, System.Drawing.Rectangle Bounds, bool IsPrimary)
+    : ISearchableItem
+{
+    /// <summary>The label, which is the whole of what a monitor is known by here.</summary>
+    public string SearchText => Display;
+}
+
+/// <summary>One open window, as offered in the source picker.</summary>
+/// <remarks>
+/// The handle is the value, and it is only good for as long as that window is open — which is why
+/// the list is rebuilt on demand rather than kept, and why the controller checks the handle again
+/// before it builds anything around it.
+/// </remarks>
+public sealed record WindowItem(IntPtr Hwnd, string Display, string Detail, string ProcessName)
+    : ISearchableItem
+{
+    /// <summary>
+    /// Title, detail line and process name together, because any of the three is a reasonable thing
+    /// to look a window up by.
+    /// </summary>
+    /// <remarks>
+    /// The process name especially: a browser tab's title is whatever page it happens to be on, and
+    /// changes while the user is deciding, whereas "msedge" is what they would think to type. It is
+    /// not shown in the list, which is exactly why it has to be listed here to be reachable.
+    /// </remarks>
+    public string SearchText => $"{Display} {Detail} {ProcessName}";
+}
+
+/// <summary>
+/// Sets up a realtime session and then gets out of the way — everything after 選取翻譯區塊 happens on
+/// the screen itself, driven by <see cref="RealtimeSessionController"/>.
+/// </summary>
+/// <remarks>
+/// The page holds two kinds of value, and the line between them is the rule to keep:
+///
+/// <para><b>Parameters of one sitting</b> — capture source, screen and block count — are not read
+/// from or written to the settings file. Reopening the window must not restore a screen that may
+/// have been unplugged, or blocks that no longer frame the same content. The capture source is the
+/// clearest case of the rule: 視窗擷取 is a live window handle, which does not survive the window
+/// being closed, let alone the next launch, so storing the mode alone would reopen the page in a
+/// state missing its own answer.</para>
+///
+/// <para><b>Translation preferences</b> — both languages and the service — are stored independently
+/// from screenshot and text translation. Watching a game and translating a document are different
+/// jobs with different latency and quality requirements, but choosing the same realtime pair and
+/// service on every launch is needless repetition. The source language joined them late, and it is
+/// the one with a cost: someone who watched Japanese yesterday and English today starts on the wrong
+/// one, and realtime recognition gives no sign of a mismatch beyond reading badly. It is offered
+/// back anyway because it is a language the user picked, not one guessed for them — 自動 is not in
+/// this page's picker at all — and re-picking it every sitting is the repetition this group exists
+/// to remove.</para>
+///
+/// <para><b>Appearance preferences</b> — the subtitle's two colours and how opaque its band is, in
+/// 顯示外觀 — are stored and restored. A reader who needs yellow on dark blue needs it every session,
+/// and re-picking it each time is the same failure as forgetting a theme. They live here rather than
+/// in 設定 so the control sits beside what it changes.</para>
+///
+/// <para>Nothing on screen currently marks which card is which; 翻譯區塊 states that its value is not
+/// kept, and 顯示外觀 says nothing either way. That is a deliberate trade for a shorter card, not an
+/// oversight — if it turns out to confuse anyone, the fix is a line in 顯示外觀 saying its values are
+/// kept, not removing the note from 翻譯區塊.</para>
+///
+/// <para><b>Kept for as long as this window is open</b> — the blocks the user drew, with the mode
+/// chosen for each. Not a preference and not a parameter: it is the answer to "where is the text",
+/// which is worth several minutes of dragging and is thrown away the moment the question changes.
+/// It lives in <see cref="RealtimeSessionController"/> rather than here, and this page tells it to
+/// forget in the two cases that change the question — the block count moving, and this window
+/// closing.</para>
+///
+/// Anything added later belongs to one of these three groups; if it is not obvious which, it is a
+/// preference only when the user would be annoyed to set it twice, and a parameter only when
+/// offering it back could be wrong rather than merely stale.
+/// </remarks>
+public partial class RealtimePage : UserControl
+{
+    /// <summary>
+    /// 繁體中文, because this page's own reason to exist is watching foreign content, and the reader
+    /// is the person sitting here.
+    /// </summary>
+    private const string DefaultTargetLanguage = "ZH-HANT";
+
+    /// <summary>
+    /// Microsoft, chosen for this page rather than inherited: measured over 639 realtime passes it
+    /// answered in 82ms at the median, which is what makes a subtitle appear to keep up. A service
+    /// that reads more carefully but takes a second is the right default elsewhere and the wrong one
+    /// here.
+    /// </summary>
+    private const TranslationProvider DefaultProvider = TranslationProvider.Microsoft;
+
+    private bool _windowsLoaded;
+
+    // True while this page is filling the capture pickers from stored values rather than the user
+    // choosing. Without it, restoring a monitor that has since been unplugged would write the
+    // fallback straight back over the user's stored choice — the same failure the opacity slider's
+    // flag exists to prevent, one card down.
+    private bool _restoringSource;
+
+    // True while this page is writing the opacity slider rather than the user, so that restoring a
+    // stored value does not read as a change and write it straight back.
+    private bool _syncingOpacity;
+
+    // True between the thumb being picked up and put down. The preview follows every step of a drag;
+    // the settings file waits for the end of it, because a drag across the track is one decision and
+    // would otherwise be a hundred writes.
+    private bool _draggingOpacity;
+
+    // True while this page is putting the stored 顯示外觀 modes on their trays rather than the user
+    // choosing one. Same failure as the two flags above, one control further on: checking a half
+    // raises Checked, which would write back the value being restored.
+    private bool _syncingAppearance;
+
+    public RealtimePage()
+    {
+        InitializeComponent();
+
+        BindPickers();
+
+        ApplyPageDefaults();
+        ApplyCaptureMode();
+
+        // Attached after the initial value is set, so initialisation does not fire the handler
+        ProviderBox.SelectionChanged += ProviderBox_SelectionChanged;
+        TgtLangBox.SelectionChanged += TgtLangBox_SelectionChanged;
+        _sourcePicker = new global::OverTranslate.Controls.OcrSourcePicker(SrcLangBox, () => LanguageData.DefaultRealtimeSourceLanguage);
+        SrcLangBox.SelectionChanged += SrcLangBox_SelectionChanged;
+
+        // The slider's own drag events, which it forwards from its thumb rather than surfacing as
+        // properties of its own.
+        ScrimOpacitySlider.AddHandler(
+            Thumb.DragStartedEvent,
+            new DragStartedEventHandler((_, _) => _draggingOpacity = true));
+        ScrimOpacitySlider.AddHandler(
+            Thumb.DragCompletedEvent,
+            new DragCompletedEventHandler((_, _) =>
+            {
+                _draggingOpacity = false;
+                PersistScrimOpacity();
+            }));
+
+        // 文字大小's − ＋ box: each size it applies is written there and then — stepped, entered, or
+        // the one a hold ends on — the same as the realtime bar's panel. The preview follows every
+        // step of a hold. The colour buttons do the same through ColourPopup.
+        FixedFontSizeStepper.Minimum = RealtimeSettings.MinFixedFontSize;
+        FixedFontSizeStepper.Maximum = RealtimeSettings.MaxFixedFontSize;
+        FixedFontSizeStepper.ValueChanging += (_, size) => PreviewText.FontSize = size;
+        FixedFontSizeStepper.ValueCommitted += (_, size) => Persist(s => s.Realtime.FixedFontSize = size);
+
+        // Set before the handlers go on, for the reason the boxes above give: restoring a stored
+        // value must not read as the user reaching for the switch and write it straight back.
+        ShowAppearanceModes(SettingsService.Instance.Current.Realtime);
+        TextColorAutoRadio.Checked += TextColorMode_Changed;
+        TextColorFixedRadio.Checked += TextColorMode_Changed;
+        FontSizeAutoRadio.Checked += FontSizeMode_Changed;
+        FontSizeFixedRadio.Checked += FontSizeMode_Changed;
+        ScrimColorAutoRadio.Checked += ScrimColorMode_Changed;
+        ScrimColorFixedRadio.Checked += ScrimColorMode_Changed;
+        BorderToggle.Checked += BorderToggle_Toggled;
+        BorderToggle.Unchecked += BorderToggle_Toggled;
+
+        SyncScrimOpacity();
+        SyncFixedFontSize();
+        RenderColours();
+        RenderPauseHint();
+
+        RealtimeSessionController.Instance.StateChanged += OnSessionStateChanged;
+        RealtimeSessionController.Instance.LanguagesChanged += OnSessionLanguagesChanged;
+        RealtimeSessionController.Instance.AppearanceChanged += OnSessionAppearanceChanged;
+
+        // The direction is set on the edit layer, which says so through MangaModelOptions.
+        MangaModelOptions.Changed += OnMangaModelOptionsChanged;
+        RenderMangaHint();
+
+        // Not just the stepper: the start button has to begin unavailable too, because 原文語言
+        // starts unset and RenderState is what ties the two together.
+        RenderState();
+    }
+
+    /// <summary>
+    /// Applies this page's independent translation preferences and per-session defaults.
+    /// </summary>
+    /// <remarks>
+    /// 原文語言 comes back only if the user has ever set it. Empty is the state that asks the question
+    /// rather than answering it badly: realtime recognition gets one look at a frame and no retry, so
+    /// there is no silent automatic mode to fall back on here — which is why 自動 is cleared rather
+    /// than offered. <see cref="LanguageData.GetValidOcrSourceCode"/> answers 自動 for anything it
+    /// cannot place, so that one branch covers a never-set value, a hand-edited one and a code
+    /// retired since.
+    /// </remarks>
+    private void ApplyPageDefaults()
+    {
+        var settings = SettingsService.Instance.Current;
+        // Never null any more: the picker used to be left blank so that only a language the user
+        // chose was ever used, and the shortcut has no page on which to ask. Anything unusable —
+        // blank from an older settings file, 自動 from a hand-edited one — resolves to the default.
+        SrcLangBox.SelectedValue =
+            LanguageData.GetValidRealtimeSourceCode(settings.Realtime.SourceLanguage);
+        TgtLangBox.SelectedValue = LanguageData.GetValidTargetCode(
+            settings.Realtime.TargetLanguage);
+        if (TgtLangBox.SelectedValue == null)
+            TgtLangBox.SelectedValue = DefaultTargetLanguage;
+
+        ProviderBox.SelectedValue = settings.Realtime.Provider;
+        if (ProviderBox.SelectedValue == null)
+            ProviderBox.SelectedValue = DefaultProvider;
+        if (ProviderBox.SelectedValue == null) ProviderBox.SelectedIndex = 0;
+        RenderProviderHint();
+
+        // Before the restore below, which needs to know whether the saved mode is one this machine
+        // can still honour.
+        ApplyCaptureCapability();
+
+        // Restored, unlike the screen and the window it implies, because it is the one part of the
+        // arrangement that is a habit rather than a fact about this sitting: someone who watches a
+        // game watches a game. Set while _restoringSource holds, so the radio's own handler does not
+        // read it as the user reaching for the control and write it straight back.
+        _restoringSource = true;
+        if (settings.Realtime.CaptureMode is RealtimeCaptureMode.Window
+            || !WgcCapability.SupportsScreenMode)
+            WindowModeRadio.IsChecked = true;
+        else
+            ScreenModeRadio.IsChecked = true;
+        _restoringSource = false;
+    }
+
+    /// <summary>
+    /// Offers only the capture modes this machine can actually run.
+    /// </summary>
+    /// <remarks>
+    /// The answer is static — see <see cref="WgcCapability"/>, where it is read once at launch — so
+    /// this is a fact about the machine settled before the user has chosen anything, and the honest
+    /// place to spend it is here rather than at 開始翻譯. A mode that is offered, framed over, and
+    /// then refused costs the user the whole set-up to learn something the program knew when the
+    /// page opened.
+    ///
+    /// Disabled and explained rather than hidden. A tile that is simply missing reads as the user
+    /// failing to find it — against a guide or a screenshot showing two — while a greyed one with
+    /// the reason underneath answers the question they are about to ask. The reason goes in a notice
+    /// across the bottom of the step rather than inside the tile, because a disabled tile dims its
+    /// own text along with everything else in it.
+    ///
+    /// The restore above coerces a saved 螢幕擷取 to 視窗擷取 on these machines, and deliberately
+    /// does not write that back: it runs under <see cref="_restoringSource"/>, so the preference
+    /// survives in the settings file and comes back if the machine ever gains the API.
+    /// </remarks>
+    private void ApplyCaptureCapability()
+    {
+        var screen = WgcCapability.SupportsScreenMode;
+
+        ScreenModeRadio.IsEnabled = screen;
+        ScreenModeNotice.Visibility = screen ? Visibility.Collapsed : Visibility.Visible;
+
+        // Nothing to steer to when even window capture is missing: the feature does not exist on
+        // this machine, which RenderState says once in the footer rather than twice in the tiles.
+        WindowModeRadio.IsEnabled = WgcCapability.SupportsWindowMode;
+    }
+
+    /// <summary>
+    /// Re-reads what may have changed while the user was elsewhere: the attached monitors, and
+    /// whether a session is running.
+    /// </summary>
+    /// <summary>
+    /// Fills the three language and provider pickers.
+    /// </summary>
+    /// <remarks>
+    /// Re-run on every <see cref="Reload"/> rather than only at construction, because the item
+    /// labels come from the string dictionary and the shell keeps this page for its lifetime —
+    /// built once, it would still be showing the language the app started in. The selections are
+    /// carried across by hand, because rebinding the items drops them — and dropping them here would
+    /// read as this page forgetting what the user chose the moment they changed the interface
+    /// language.
+    /// </remarks>
+    private void BindPickers()
+    {
+        var source   = SrcLangBox.SelectedValue;
+        var target   = TgtLangBox.SelectedValue;
+        var provider = ProviderBox.SelectedValue;
+
+        // The same list the running capsule's source menu offers — see RealtimeLanguageMenuItems.
+        LocalizationService.BindLocalizedItems(SrcLangBox, RealtimeLanguageMenuItems.SourceLanguages.ToList());
+        LocalizationService.BindLocalizedItems(TgtLangBox,  LanguageData.TargetLanguages);
+        // Also where a change to which services are offered lands, on the way back from the settings
+        // page. A running session has this box locked, and keeps its own choice in the list anyway.
+        var settings = SettingsService.Instance.Current;
+        OverTranslate.Controls.ProviderPicker.Bind(
+            ProviderBox,
+            ProviderVisibility.MenuItems(
+                settings, provider as TranslationProvider? ?? settings.Realtime.Provider));
+
+        SrcLangBox.SelectedValue  = source;
+        TgtLangBox.SelectedValue  = target;
+        ProviderBox.SelectedValue = provider;
+    }
+
+    public void Reload()
+    {
+        BindPickers();
+        LoadScreens();
+        // Both halves: the mode's own explanation comes from the string dictionary, and the window
+        // list is a snapshot of a desktop the user has been away from since it was taken.
+        ApplyCaptureMode();
+        if (_windowsLoaded) LoadWindows();
+        SyncScrimOpacity();
+        SyncFixedFontSize();
+        RenderColours();
+        RenderPauseHint();
+        RenderState();
+    }
+
+    /// <summary>
+    /// Names the capture shortcut in 運作方式, or drops the line when there is none to name.
+    /// </summary>
+    /// <remarks>
+    /// Re-read on every <see cref="Reload"/> rather than only at construction: 設定 is where that
+    /// shortcut is changed, and the user reaches this page again through the same nav rail — so the
+    /// line would otherwise go on naming the key they just replaced.
+    /// </remarks>
+    private void RenderPauseHint()
+    {
+        PauseHint.Text = RealtimePauseHint.ForSettingsPage(RealtimePauseHint.CurrentHotkey);
+        PauseHint.Visibility = PauseHint.Text.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    /// <summary>Detaches from the controller when the shell window is destroyed.</summary>
+    /// <remarks>
+    /// The kept block layout stays. It used to go with the window, on the reasoning that it exists
+    /// so ending a session to change something here does not cost the user their blocks, and closing
+    /// the window ended that errand. The shortcut undid the premise (#324): a session can be started
+    /// with this window closed, and that is exactly who the layout is kept for now. A session already
+    /// running is left alone as before — it owns its own blocks, and closing this window has never
+    /// been a request to stop it.
+    /// </remarks>
+    public void Teardown()
+    {
+        RealtimeSessionController.Instance.StateChanged -= OnSessionStateChanged;
+        RealtimeSessionController.Instance.LanguagesChanged -= OnSessionLanguagesChanged;
+        RealtimeSessionController.Instance.AppearanceChanged -= OnSessionAppearanceChanged;
+        // A static event: left attached, it would keep this page and the closed window around it alive.
+        MangaModelOptions.Changed -= OnMangaModelOptionsChanged;
+    }
+
+    /// <summary>
+    /// Says why the 即時翻譯 shortcut did not start a session, on the line the button's own refusals
+    /// use — see <see cref="RealtimeQuickStart"/>.
+    /// </summary>
+    public void ShowShortcutRefusal(string key) =>
+        SetStatus(LocalizationService.Get(key), isError: true);
+
+    private void ProviderBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (ProviderBox.SelectedValue is TranslationProvider provider)
+            SaveTranslationPreference(settings => settings.Realtime.Provider = provider);
+        RenderProviderHint();
+    }
+
+    /// <remarks>
+    /// Only a real selection is written, never the momentary null that rebinding the items produces
+    /// — see <see cref="BindPickers"/>. Without that guard, changing the interface language would
+    /// blank this preference on its way past.
+    /// </remarks>
+    private readonly global::OverTranslate.Controls.OcrSourcePicker _sourcePicker;
+
+    private void SrcLangBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_sourcePicker.Intercept(e)) return;
+
+        if (SrcLangBox.SelectedValue is string sourceLanguage)
+            SaveTranslationPreference(settings =>
+                settings.Realtime.SourceLanguage = LanguageData.GetValidOcrSourceCode(sourceLanguage));
+
+        RenderState();
+        RenderMangaHint();
+    }
+
+    // Japanese only, whatever direction the blocks turn out to be; see MangaModelHints.ForRealtimePage.
+    private void RenderMangaHint() => MangaHint.Show(vertical: true, SrcLangBox.SelectedValue as string);
+
+    private void OnMangaModelOptionsChanged(object? sender, EventArgs e) => RenderMangaHint();
+
+    private void TgtLangBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (TgtLangBox.SelectedValue is not string targetLanguage) return;
+        SaveTranslationPreference(settings =>
+            settings.Realtime.TargetLanguage = LanguageData.GetValidTargetCode(targetLanguage));
+    }
+
+    private static void SaveTranslationPreference(Action<AppSettings> apply)
+    {
+        apply(SettingsService.Instance.Current);
+        SettingsService.Instance.Save();
+    }
+
+    /// <summary>
+    /// The service's own note, plus the one thing that would otherwise only surface as a failure
+    /// mid-session: a key-based service with no key saved. Said here, before the screen is handed
+    /// over, rather than as an error on a floating bar the user is no longer looking at.
+    /// </summary>
+    private void RenderProviderHint()
+    {
+        var item = ProviderBox.SelectedItem as ProviderItem;
+        var missingKey = item?.RequiresApiKey == true &&
+                         string.IsNullOrWhiteSpace(SettingsService.Instance.Current.ApiKey);
+
+        ProviderHint.Text = missingKey
+            ? LocalizationService.Get("S.Realtime.NoApiKey")
+            : item?.Hint ?? "";
+        ProviderHint.Foreground = missingKey
+            ? (System.Windows.Media.Brush)FindResource("AppError")
+            : (System.Windows.Media.Brush)FindResource("AppTextSecondary");
+    }
+
+    // ── 擷取來源 ───────────────────────────────────────────────────────────────
+
+    /// <summary>Whether the user has asked for one window rather than the whole screen.</summary>
+    public void SelectWindowCapture() => WindowModeRadio.IsChecked = true;
+
+    private bool WindowMode => WindowModeRadio.IsChecked == true;
+
+    private void CaptureModeRadio_Checked(object sender, RoutedEventArgs e)
+    {
+        // Fires during InitializeComponent, before the rest of the card exists.
+        if (WindowPickerPanel is null) return;
+
+        if (!_restoringSource)
+            SaveTranslationPreference(settings => settings.Realtime.CaptureMode =
+                WindowMode ? RealtimeCaptureMode.Window : RealtimeCaptureMode.Screen);
+
+        ApplyCaptureMode();
+    }
+
+    /// <summary>
+    /// Shows the half of the card the chosen mode needs, and hides the screen picker when it is no
+    /// longer the user's to answer.
+    /// </summary>
+    /// <remarks>
+    /// The window list is built the first time 視窗擷取 is chosen rather than when the page loads:
+    /// enumerating every open window costs a pass over the desktop, and the common case — a user who
+    /// wants the whole screen — never needs it. After that it is only rebuilt on request, because a
+    /// list that reshuffles itself while the user is reading it is worse than one that is a few
+    /// seconds old.
+    /// </remarks>
+    private void ApplyCaptureMode()
+    {
+        var window = WindowMode;
+
+        WindowPickerPanel.Visibility = window ? Visibility.Visible : Visibility.Collapsed;
+        ScreenPanel.Visibility = window ? Visibility.Collapsed : Visibility.Visible;
+
+        if (!window || _windowsLoaded) return;
+
+        _windowsLoaded = true;
+        LoadWindows();
+    }
+
+    private void RefreshWindowsBtn_Click(object sender, RoutedEventArgs e) => LoadWindows();
+
+    /// <summary>
+    /// Asks Windows what is open, keeping the user's pick if it is still there.
+    /// </summary>
+    private void LoadWindows()
+    {
+        var previous = (WindowBox.SelectedItem as WindowItem)?.Hwnd ?? IntPtr.Zero;
+
+        var found = CaptureWindowList.Enumerate();
+        var items = found
+            .Select(window => new WindowItem(
+                window.Hwnd,
+                window.Title,
+                window.ProcessName.Length > 0
+                    ? LocalizationService.Format("S.Realtime.CaptureWindowDetail", window.ProcessName)
+                    : "",
+                window.ProcessName))
+            .ToList();
+
+        WindowBox.ItemsSource = items;
+
+        _restoringSource = true;
+        if (previous != IntPtr.Zero)
+        {
+            // Refreshing the list, not arriving at it. Matched by handle: the same window is the
+            // same window whatever it has retitled itself to since.
+            WindowBox.SelectedItem = items.FirstOrDefault(item => item.Hwnd == previous);
+        }
+        else
+        {
+            // First look this sitting, so the stored choice gets to speak. Nothing is written back
+            // when it fails to match — the user is left on 請選擇視窗 with their stored window still
+            // remembered, and only their next pick replaces it. A game that is not running yet is
+            // not a decision to forget it.
+            var realtime = SettingsService.Instance.Current.Realtime;
+            var stored = CaptureWindowList.FindStored(
+                found, realtime.CaptureWindowProcess, realtime.CaptureWindowTitle);
+
+            WindowBox.SelectedItem = stored is { } match
+                ? items.FirstOrDefault(item => item.Hwnd == match.Hwnd)
+                : null;
+        }
+        _restoringSource = false;
+
+        RenderWindowChoice(items.Count);
+    }
+
+    private void WindowBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (WindowHint is null) return;
+
+        if (!_restoringSource && WindowBox.SelectedItem is WindowItem picked)
+        {
+            SaveTranslationPreference(settings =>
+            {
+                settings.Realtime.CaptureWindowProcess = ProcessNameOf(picked.Hwnd);
+                settings.Realtime.CaptureWindowTitle = picked.Display;
+            });
+        }
+
+        RenderWindowChoice((WindowBox.ItemsSource as IReadOnlyList<WindowItem>)?.Count ?? 0);
+    }
+
+    /// <summary>
+    /// The application a listed window belongs to, taken from the list rather than asked again.
+    /// </summary>
+    private string ProcessNameOf(IntPtr hwnd) =>
+        (WindowBox.ItemsSource as IReadOnlyList<WindowItem>)
+            ?.FirstOrDefault(item => item.Hwnd == hwnd)?.ProcessName ?? "";
+
+    /// <summary>
+    /// The line under the picker: which monitor the framing will happen on, or why there is nothing
+    /// to choose.
+    /// </summary>
+    /// <remarks>
+    /// Naming the monitor matters more here than it looks. The screen picker is gone in this mode,
+    /// so the one thing the user cannot otherwise tell — which screen is about to be covered by a
+    /// full-screen framing layer — has to be said out loud, and it is decided by a window they may
+    /// have dragged somewhere since they last looked.
+    /// </remarks>
+    /// <summary>Shows the prompt only while the field is both unanswered and not being answered.</summary>
+    /// <remarks>
+    /// The prompt is a TextBlock laid over the picker rather than anything the picker owns, so it
+    /// knows nothing about the picker being open — and the open picker is a search field the user is
+    /// typing into. Left alone the prompt sits on top of what they type.
+    /// </remarks>
+    private void SyncWindowPlaceholder() =>
+        WindowPlaceholder.Visibility =
+            WindowBox.SelectedItem is null && !WindowBox.IsDropDownOpen
+                ? Visibility.Visible
+                : Visibility.Collapsed;
+
+    private void WindowBox_DropDownStateChanged(object sender, EventArgs e) => SyncWindowPlaceholder();
+
+    private void RenderWindowChoice(int count)
+    {
+        SyncWindowPlaceholder();
+
+        if (count == 0)
+        {
+            WindowHint.Text = LocalizationService.Get("S.Realtime.CaptureWindowNone");
+            return;
+        }
+
+        if (WindowBox.SelectedItem is not WindowItem item)
+        {
+            WindowHint.Text = LocalizationService.Get("S.Realtime.CaptureWindowHint");
+            return;
+        }
+
+        if (ScreenOf(item.Hwnd) is not { } screen)
+        {
+            // Closed while the list was sitting open. Said here rather than saved for 開始翻譯,
+            // because the user is looking at this line right now.
+            WindowHint.Text = LocalizationService.Get("S.Realtime.WindowCaptureGone");
+            return;
+        }
+
+        var line = LocalizationService.Format("S.Realtime.CaptureWindowOnScreen", ScreenLabel(screen));
+        WindowHint.Text = item.Detail.Length > 0 ? $"{line} {item.Detail}" : line;
+    }
+
+    /// <summary>The monitor a window sits on, or null when it has gone since the list was built.</summary>
+    private static Screen? ScreenOf(IntPtr hwnd)
+    {
+        try
+        {
+            return CaptureWindowList.StillAvailable(hwnd) ? Screen.FromHandle(hwnd) : null;
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>The same wording the screen picker uses, so the two name a monitor identically.</summary>
+    private static string ScreenLabel(Screen screen)
+    {
+        var screens = Screen.AllScreens;
+        var index = Array.FindIndex(screens, candidate => candidate.DeviceName == screen.DeviceName);
+
+        return LocalizationService.Format(
+            screen.Primary ? "S.Realtime.ScreenItemPrimary" : "S.Realtime.ScreenItem",
+            index + 1, screen.Bounds.Width, screen.Bounds.Height);
+    }
+
+    private void LoadScreens()
+    {
+        var stored = SettingsService.Instance.Current.Realtime.CaptureScreenDeviceName;
+        var previous = ScreenBox.SelectedValue as string ?? (stored.Length > 0 ? stored : null);
+
+        var screens = Screen.AllScreens;
+        var items = screens
+            .Select((screen, index) => new ScreenItem(
+                screen.DeviceName,
+                LocalizationService.Format(
+                    screen.Primary ? "S.Realtime.ScreenItemPrimary" : "S.Realtime.ScreenItem",
+                    index + 1, screen.Bounds.Width, screen.Bounds.Height),
+                screen.Bounds,
+                screen.Primary))
+            .ToList();
+
+        ScreenBox.ItemsSource = items;
+
+        // Three cases, and they want different answers. The pick still being there is the easy one.
+        // A stored monitor that is not attached any more falls back to the primary: the user did
+        // choose once, so this is a substitute for their answer rather than a first guess, and the
+        // primary is the one screen that is always there. Nothing stored at all falls back to the
+        // monitor this window is on — the one they are looking at, and not necessarily the primary.
+        _restoringSource = true;
+        if (previous != null && items.Any(item => item.DeviceName == previous))
+            ScreenBox.SelectedValue = previous;
+        else if (stored.Length > 0)
+            ScreenBox.SelectedValue = items.FirstOrDefault(item => item.IsPrimary)?.DeviceName
+                ?? items.FirstOrDefault()?.DeviceName;
+        else
+            ScreenBox.SelectedValue = CurrentScreenDeviceName(items);
+        _restoringSource = false;
+    }
+
+    /// <remarks>
+    /// Only a pick the user made is written — see <see cref="LoadScreens"/> for why a monitor that
+    /// has been unplugged must not overwrite the one they chose.
+    /// </remarks>
+    private void ScreenBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_restoringSource || ScreenBox.SelectedValue is not string deviceName) return;
+
+        SaveTranslationPreference(settings => settings.Realtime.CaptureScreenDeviceName = deviceName);
+    }
+
+    private string? CurrentScreenDeviceName(IReadOnlyList<ScreenItem> items)
+    {
+        try
+        {
+            if (Window.GetWindow(this) is { } window)
+            {
+                var handle = new WindowInteropHelper(window).Handle;
+                if (handle != IntPtr.Zero)
+                {
+                    var deviceName = Screen.FromHandle(handle).DeviceName;
+                    if (items.Any(item => item.DeviceName == deviceName))
+                        return deviceName;
+                }
+            }
+        }
+        catch (Exception)
+        {
+            // Window not yet sourced, or a monitor removed mid-call — the primary below is a fine
+            // answer either way.
+        }
+
+        return items.FirstOrDefault(item => item.IsPrimary)?.DeviceName
+            ?? items.FirstOrDefault()?.DeviceName;
+    }
+
+    private void PrimaryBtn_Click(object sender, RoutedEventArgs e)
+    {
+        var controller = RealtimeSessionController.Instance;
+        if (controller.IsActive)
+        {
+            controller.Stop();
+            return;
+        }
+
+        // The other half of the same rule the capture side enforces: one OCR engine, one pool of
+        // inference slots, and neither feature is any use with the other competing for them. This
+        // way round is the less likely of the two — a capture covers the screen, so its selection
+        // layer is usually over this button — but the toolbar phase leaves the screen usable.
+        if (System.Windows.Application.Current.MainWindow is MainWindow { IsCapturing: true })
+        {
+            SetStatus(LocalizationService.Get("S.Realtime.CaptureInProgress"), isError: true);
+            return;
+        }
+
+        if (SrcLangBox.SelectedValue is not string sourceLanguage)
+        {
+            SetStatus(LocalizationService.Get("S.Realtime.ChooseSourceFirst"), isError: true);
+            return;
+        }
+
+        // The two modes need different things to be true before there is a session to start, and
+        // both failures are the user's to fix on this page rather than something to discover on a
+        // screen that has just gone black.
+        System.Drawing.Rectangle framingBounds;
+        var sourceWindow = IntPtr.Zero;
+
+        if (WindowMode)
+        {
+            if (WindowBox.SelectedItem is not WindowItem window)
+            {
+                SetStatus(LocalizationService.Get("S.Realtime.ChooseWindowFirst"), isError: true);
+                return;
+            }
+
+            // Checked here and again in the controller, and neither is redundant: this one can still
+            // tell the user to refresh the list, while the later one is the last word before pixels
+            // are read.
+            if (ScreenOf(window.Hwnd) is not { } windowScreen)
+            {
+                SetStatus(LocalizationService.Get("S.Realtime.WindowCaptureGone"), isError: true);
+                LoadWindows();
+                return;
+            }
+
+            // The blocks have to be drawn over the window, so the framing layer belongs on whatever
+            // monitor that window is on — not on whichever one the hidden picker last held.
+            framingBounds = windowScreen.Bounds;
+            sourceWindow = window.Hwnd;
+        }
+        else
+        {
+            if (ScreenBox.SelectedItem is not ScreenItem screen)
+            {
+                SetStatus(LocalizationService.Get("S.Realtime.NoScreens"), isError: true);
+                return;
+            }
+
+            framingBounds = screen.Bounds;
+        }
+
+        var request = RealtimeQuickStart.Build(
+            SettingsService.Instance.Current,
+            framingBounds,
+            LanguageData.GetValidOcrSourceCode(sourceLanguage),
+            LanguageData.GetValidTargetCode(TgtLangBox.SelectedValue as string),
+            ProviderBox.SelectedValue as TranslationProvider? ?? DefaultProvider,
+            WindowMode ? RealtimeCaptureMode.Window : RealtimeCaptureMode.Screen,
+            sourceWindow);
+
+        // The shell is handed over to be hidden: it is almost certainly sitting on the screen the
+        // user is about to frame blocks on, and it comes back when the session ends.
+        controller.Start(request, Window.GetWindow(this));
+    }
+
+    // ── 顯示外觀 ───────────────────────────────────────────────────────────────
+
+    private void TextColorBtn_Click(object sender, RoutedEventArgs e) =>
+        ColourPopup.Toggle(TextColorBtn,
+            RealtimeSubtitleColors.Text(SettingsService.Instance.Current.Realtime.TextColor),
+            colour => Persist(s => s.Realtime.TextColor = RealtimeSubtitleColors.Format(colour)));
+
+    // Opened on the colour alone: the band's weight is the slider's, not the picker's.
+    private void ScrimColorBtn_Click(object sender, RoutedEventArgs e) =>
+        ColourPopup.Toggle(ScrimColorBtn,
+            RealtimeSubtitleColors.Scrim(SettingsService.Instance.Current.Realtime.ScrimColor, RealtimeSubtitleColors.MaxScrimOpacity),
+            colour => Persist(s => s.Realtime.ScrimColor = RealtimeSubtitleColors.Format(colour)));
+
+    /// <summary>
+    /// Everything on the card, back to what it ships as: both colours and the mode each is in, the
+    /// weight of the band, the border with its own two values, and the text size with its own.
+    /// </summary>
+    /// <remarks>
+    /// One button for the card rather than one per group. There were three before, each sitting
+    /// inside a group and undoing only that group, which left the reader to work out how much a
+    /// reset covered from where the button happened to be — and it split 底色 from 底色不透明度 across
+    /// two of them, although nobody wants one put back without the other. What it covers is
+    /// <see cref="RealtimeSettings.ResetAppearance"/>, shared with the realtime bar's panel.
+    /// </remarks>
+    private void ResetAppearanceBtn_Click(object sender, RoutedEventArgs e)
+    {
+        Persist(s => s.Realtime.ResetAppearance());
+        ShowStoredAppearance();
+    }
+
+    /// <summary>
+    /// Puts the stored 顯示外觀 back on every control — after a reset, and after the realtime bar's
+    /// panel changed it while this page was hidden behind a session (#355).
+    /// </summary>
+    /// <remarks>
+    /// The trays and the sliders are the controls here that hold their own value rather than reading
+    /// it back from the settings on every render, so they have to be told.
+    /// </remarks>
+    private void ShowStoredAppearance()
+    {
+        ShowAppearanceModes(SettingsService.Instance.Current.Realtime);
+        SyncScrimOpacity();
+        SyncFixedFontSize();
+        RenderColours();
+    }
+
+    /// <summary>
+    /// Puts the stored modes on the three trays and the 邊框 switch without that reading as the user
+    /// setting them.
+    /// </summary>
+    /// <remarks>
+    /// Guarded rather than attached-later, because the reset needs the same thing once the handlers
+    /// are already on: checking a half raises Checked, which would write the value being restored
+    /// straight back, one control at a time.
+    /// </remarks>
+    private void ShowAppearanceModes(RealtimeSettings stored)
+    {
+        _syncingAppearance = true;
+        (stored.SampleSourceTextColor ? TextColorAutoRadio : TextColorFixedRadio).IsChecked = true;
+        (stored.FontSizeMode == RealtimeFontSizeMode.Fixed
+            ? FontSizeFixedRadio
+            : FontSizeAutoRadio).IsChecked = true;
+        (stored.NaturalBackgroundEnabled ? ScrimColorAutoRadio : ScrimColorFixedRadio).IsChecked = true;
+        BorderToggle.IsChecked = stored.BorderEnabled;
+        _syncingAppearance = false;
+    }
+
+    /// <summary>
+    /// 文字顏色 → 自動／固定, which is the same value the 進階選項 switch used to hold.
+    /// </summary>
+    /// <remarks>
+    /// Written the moment the half is chosen — one press is one decision, so there is nothing to
+    /// hold back the way a drag across the opacity track has. The marker moves either way, restored
+    /// or chosen: the guard is about what gets written, not about where the tray is drawn.
+    /// </remarks>
+    private void TextColorMode_Changed(object sender, RoutedEventArgs e)
+    {
+        MoveTextColorModeThumb(animate: true);
+        if (_syncingAppearance) return;
+        Persist(s => s.Realtime.SampleSourceTextColor = TextColorAutoRadio.IsChecked == true);
+    }
+
+    /// <inheritdoc cref="TextColorMode_Changed"/>
+    private void FontSizeMode_Changed(object sender, RoutedEventArgs e)
+    {
+        MoveFontSizeModeThumb(animate: true);
+        if (_syncingAppearance) return;
+        Persist(s => s.Realtime.FontSizeMode = FontSizeFixedRadio.IsChecked == true
+            ? RealtimeFontSizeMode.Fixed
+            : RealtimeFontSizeMode.Auto);
+    }
+
+    /// <inheritdoc cref="TextColorMode_Changed"/>
+    private void ScrimColorMode_Changed(object sender, RoutedEventArgs e)
+    {
+        MoveScrimColorModeThumb(animate: true);
+        if (_syncingAppearance) return;
+        Persist(s => s.Realtime.NaturalBackgroundEnabled = ScrimColorAutoRadio.IsChecked == true);
+    }
+
+    /// <summary>顯示外觀 → 邊框. Written on the flip, like the two trays above.</summary>
+    private void BorderToggle_Toggled(object sender, RoutedEventArgs e)
+    {
+        if (_syncingAppearance) return;
+        Persist(s => s.Realtime.BorderEnabled = BorderToggle.IsChecked == true);
+    }
+
+    /// <inheritdoc cref="TextColorMode_Changed"/>
+
+    private void BorderColorBtn_Click(object sender, RoutedEventArgs e) =>
+        ColourPopup.Toggle(BorderColorBtn,
+            RealtimeSubtitleColors.Border(SettingsService.Instance.Current.Realtime.BorderColor),
+            colour => Persist(s => s.Realtime.BorderColor = RealtimeSubtitleColors.Format(colour)));
+
+    /// <summary>
+    /// The half's width is not known until the tray is laid out, so the marker is placed again
+    /// whenever it gets one — which for 邊框 is the first time the switch is turned on.
+    /// </summary>
+    private void TextColorModeThumb_SizeChanged(object sender, SizeChangedEventArgs e) =>
+        MoveTextColorModeThumb(animate: false);
+
+    /// <inheritdoc cref="TextColorModeThumb_SizeChanged"/>
+    private void FontSizeModeThumb_SizeChanged(object sender, SizeChangedEventArgs e) =>
+        MoveFontSizeModeThumb(animate: false);
+
+    /// <inheritdoc cref="TextColorModeThumb_SizeChanged"/>
+    private void ScrimColorModeThumb_SizeChanged(object sender, SizeChangedEventArgs e) =>
+        MoveScrimColorModeThumb(animate: false);
+
+    /// <inheritdoc cref="TextColorModeThumb_SizeChanged"/>
+
+    private void MoveTextColorModeThumb(bool animate) =>
+        MoveModeThumb(
+            TextColorModeThumb, TextColorModeThumbShift, TextColorFixedRadio.IsChecked == true, animate);
+
+    private void MoveFontSizeModeThumb(bool animate) =>
+        MoveModeThumb(
+            FontSizeModeThumb, FontSizeModeThumbShift, FontSizeFixedRadio.IsChecked == true, animate);
+
+    private void MoveScrimColorModeThumb(bool animate) =>
+        MoveModeThumb(
+            ScrimColorModeThumb, ScrimColorModeThumbShift, ScrimColorFixedRadio.IsChecked == true, animate);
+
+
+    /// <summary>Slides the marker under the chosen half — the same tray as 設定 → 偵錯工具.</summary>
+    /// <remarks>
+    /// The marker is the width of one half and starts under the first, so the second is exactly one
+    /// of its own widths to the right. Three trays share this rather than one each: they are the
+    /// same control asked three times, and a copy per tray is three places for the easing to drift.
+    /// </remarks>
+    private static void MoveModeThumb(
+        Border thumb, System.Windows.Media.TranslateTransform shift, bool toSecond, bool animate)
+    {
+        var target = toSecond ? thumb.ActualWidth : 0;
+
+        if (!animate || thumb.ActualWidth <= 0 || !SystemParameters.ClientAreaAnimation)
+        {
+            shift.BeginAnimation(System.Windows.Media.TranslateTransform.XProperty, null);
+            shift.X = target;
+            return;
+        }
+
+        shift.BeginAnimation(
+            System.Windows.Media.TranslateTransform.XProperty,
+            new System.Windows.Media.Animation.DoubleAnimation(target, TimeSpan.FromMilliseconds(220))
+            {
+                EasingFunction = new System.Windows.Media.Animation.CubicEase
+                {
+                    EasingMode = System.Windows.Media.Animation.EasingMode.EaseOut,
+                },
+            });
+    }
+
+    /// <summary>
+    /// Follows the thumb: the label and the preview on every step, the settings file at the end of a
+    /// drag — or immediately, when the value moved by keyboard or by a click on the track, neither of
+    /// which has an end to wait for.
+    /// </summary>
+    private void ScrimOpacitySlider_ValueChanged(
+        object sender, RoutedPropertyChangedEventArgs<double> e)
+    {
+        if (_syncingOpacity) return;
+
+        // Persist renders on its way through, so only the held-back case has to render for itself.
+        if (_draggingOpacity) RenderColours();
+        else PersistScrimOpacity();
+    }
+
+    /// <summary>Puts the stored opacity on the slider without that reading as the user setting it.</summary>
+    private void SyncScrimOpacity()
+    {
+        _syncingOpacity = true;
+        ScrimOpacitySlider.Value = RealtimeSubtitleColors.ClampOpacity(
+            SettingsService.Instance.Current.Realtime.ScrimOpacity);
+        _syncingOpacity = false;
+    }
+
+    private void PersistScrimOpacity() =>
+        Persist(s => s.Realtime.ScrimOpacity = CurrentScrimOpacity);
+
+    /// <summary>
+    /// What the slider is showing, which is what the preview draws — not what is stored, because
+    /// mid-drag those are deliberately different.
+    /// </summary>
+    private int CurrentScrimOpacity =>
+        RealtimeSubtitleColors.ClampOpacity((int)Math.Round(ScrimOpacitySlider.Value));
+
+    /// <summary>Puts the stored size in 文字大小's box.</summary>
+    private void SyncFixedFontSize() =>
+        FixedFontSizeStepper.Value = SettingsService.Instance.Current.Realtime.FixedFontSize;
+
+    private void Persist(Action<AppSettings> apply)
+    {
+        apply(SettingsService.Instance.Current);
+        SettingsService.Instance.Save();
+        RenderColours();
+        RealtimeSessionController.Instance.ApplyAppearance();
+    }
+
+    /// <summary>
+    /// Paints the two swatches, their hex labels, the opacity reading and the preview.
+    /// </summary>
+    /// <remarks>
+    /// The colours come from what is stored; the opacity comes from the slider, which during a drag
+    /// is deliberately ahead of it — see <see cref="ScrimOpacitySlider_ValueChanged"/>.
+    /// </remarks>
+    private void RenderColours()
+    {
+        var settings = SettingsService.Instance.Current;
+        var realtime = settings.Realtime;
+        var opacity = CurrentScrimOpacity;
+        var text = RealtimeSubtitleColors.Text(realtime.TextColor);
+        var scrim = RealtimeSubtitleColors.Scrim(realtime.ScrimColor, opacity);
+
+        ScrimOpacityValue.Text = $"{opacity}%";
+
+        var fixedFontMode = realtime.FontSizeMode == RealtimeFontSizeMode.Fixed;
+        PreviewText.FontSize = fixedFontMode ? realtime.FixedFontSize : PreviewAutoFontSize;
+
+        // Greyed in 自動, as the colour box beside 文字顏色 is: there is no fixed size for it to set.
+        // Dimmed by hand as well, as the opacity row is: the box has no disabled look of its own.
+        FixedFontSizeStepper.IsEnabled = fixedFontMode;
+        FixedFontSizeStepper.Opacity = fixedFontMode ? 1.0 : 0.45;
+
+        // The swatch shows the colour the user picked, so it is drawn opaque even for the scrim —
+        // the preview below is where its translucency is on display.
+        TextColorSwatch.Background = new SolidColorBrush(text);
+        ScrimColorSwatch.Background = new SolidColorBrush(
+            System.Windows.Media.Color.FromRgb(scrim.R, scrim.G, scrim.B));
+
+        TextColorValue.Text = RealtimeSubtitleColors.Format(text);
+        ScrimColorValue.Text = RealtimeSubtitleColors.Format(scrim);
+
+        PreviewText.Foreground = new SolidColorBrush(text);
+
+        // The backdrop changes with the mode — see the preview markup for why one cannot serve both.
+        PreviewChecker.Visibility = realtime.NaturalBackgroundEnabled
+            ? Visibility.Collapsed
+            : Visibility.Visible;
+        PreviewScene.Visibility = realtime.NaturalBackgroundEnabled
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+
+        // No band at all in 自動, because that is what a session draws: the source line is erased and
+        // the picture is repaired where it was, and the translation goes back on top of the repair.
+        // Painting the stored colour here instead would promise a strip that never appears.
+        PreviewScrim.Background = realtime.NaturalBackgroundEnabled
+            ? null
+            : new SolidColorBrush(scrim);
+
+        // Greyed rather than hidden in 自動: the row would change shape with the mode, and the colour
+        // is still what a sampled line falls back to when the sample comes back unusable.
+        TextColorBtn.IsEnabled = !realtime.SampleSourceTextColor;
+        ScrimColorBtn.IsEnabled = !realtime.NaturalBackgroundEnabled;
+
+        // The slider says how much of the colour above it reaches the screen, so in 自動 it has
+        // nothing to weigh. Dimmed by hand as well as disabled: a TextBlock inside a switched-off
+        // panel is still drawn at full strength, which would leave the label looking live over a
+        // greyed track.
+        ScrimOpacityRow.IsEnabled = !realtime.NaturalBackgroundEnabled;
+        ScrimOpacityRow.Opacity = realtime.NaturalBackgroundEnabled ? 0.45 : 1.0;
+
+        // Only while it is about something on screen — see the note itself for what it is for.
+        AutoModeNotice.Visibility =
+            realtime.SampleSourceTextColor || realtime.NaturalBackgroundEnabled
+                ? Visibility.Visible
+                : Visibility.Collapsed;
+
+        // The border follows the same stored values the session will be started with. 隨機 has no
+        // one colour to show, so the preview draws it in the theme's accent, which sits with the page.
+        var fixedBorder = RealtimeSubtitleColors.Border(realtime.BorderColor);
+        var fixedBorderMode = true;
+        BorderColorBtn.Visibility = realtime.BorderEnabled
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+        BorderColorBtn.IsEnabled = fixedBorderMode;
+        BorderColorSwatch.Background = new SolidColorBrush(fixedBorder);
+        BorderColorValue.Text = RealtimeSubtitleColors.Format(fixedBorder);
+        if (!realtime.BorderEnabled)
+            PreviewScrim.BorderBrush = null;
+        else if (fixedBorderMode)
+            PreviewScrim.BorderBrush = new SolidColorBrush(fixedBorder);
+        else
+            PreviewScrim.SetResourceReference(Border.BorderBrushProperty, "AppAccent");
+        PreviewScrim.BorderThickness = new Thickness(
+            realtime.BorderEnabled ? RealtimeSubtitleColors.BorderThickness : 0);
+
+        // A picker whose row no longer takes a colour of ours — switched to 自動 or 隨機, or the
+        // border turned off — has nothing left to set.
+        if (ColourPopup.OpenOn is { } open && (!open.IsEnabled || open.Visibility != Visibility.Visible))
+            ColourPopup.IsOpen = false;
+
+        ResetAppearanceBtn.IsEnabled = !realtime.HasDefaultAppearance(opacity);
+    }
+
+    /// <summary>
+    /// The size the preview is set at in 自動, which is what it was drawn at before 文字大小 existed.
+    /// </summary>
+    /// <remarks>
+    /// One number for a mode that has none: in a session 自動 follows each source line, and this
+    /// page has no source line to follow, so the preview stays at a size that reads as an example.
+    /// </remarks>
+    private const double PreviewAutoFontSize = 15;
+
+    private void OnSessionStateChanged(object? sender, EventArgs e) =>
+        Dispatcher.BeginInvoke(RenderState);
+
+    /// <summary>
+    /// The running bar's 顯示外觀 panel changed something (#355): this page shows it at once, so the
+    /// card says what the session is drawing with — and, after 結束, what the next one starts with.
+    /// </summary>
+    private void OnSessionAppearanceChanged(object? sender, EventArgs e) =>
+        Dispatcher.BeginInvoke(ShowStoredAppearance);
+
+    /// <summary>
+    /// The running capsule changed the pair (#345): the pickers follow at once, locked as they are,
+    /// so the page says what the session is running with — and, after 結束, what the next one starts
+    /// on. The settings file already holds it, so the save the pickers' own handlers make on the way
+    /// past writes back the same values.
+    /// </summary>
+    private void OnSessionLanguagesChanged(object? sender, EventArgs e) =>
+        Dispatcher.BeginInvoke(() =>
+        {
+            var realtime = SettingsService.Instance.Current.Realtime;
+            SrcLangBox.SelectedValue = LanguageData.GetValidRealtimeSourceCode(realtime.SourceLanguage);
+            TgtLangBox.SelectedValue = LanguageData.GetValidTargetCode(realtime.TargetLanguage);
+        });
+
+    private void RenderState()
+    {
+        bool active = RealtimeSessionController.Instance.IsActive;
+
+        PrimaryBtn.Content = LocalizationService.Get(
+            active ? "S.Realtime.StopSession" : "S.Realtime.SelectBlocks");
+
+        // Locked rather than hidden while running: the user can see what the session was started
+        // with, and changing any of it would mean rebuilding every block anyway.
+        SrcLangBox.IsEnabled = !active;
+        TgtLangBox.IsEnabled = !active;
+        ProviderBox.IsEnabled = !active;
+        ScreenBox.IsEnabled = !active;
+
+        // Nothing can start without a source language, so the button says so by being unavailable
+        // rather than by refusing after the fact, and the field keeps its prompt until answered.
+        var hasSource = SrcLangBox.SelectedValue is string;
+
+        // The same rule one step further out: with no capture at all there is no mode to run, and
+        // the whole feature is unavailable rather than one half of it. Said here, once, instead of
+        // greying both tiles and leaving the user to work out what the two of them have in common.
+        var capturable = WgcCapability.SupportsWindowMode || WgcCapability.SupportsScreenMode;
+
+        PrimaryBtn.IsEnabled = active || (hasSource && capturable);
+        SrcLangPlaceholder.Visibility = hasSource ? Visibility.Collapsed : Visibility.Visible;
+
+        if (!active && !capturable)
+        {
+            SetStatus(LocalizationService.Get("S.Realtime.RealtimeUnsupported"), isError: true);
+            return;
+        }
+
+        SetStatus(
+            active ? LocalizationService.Get("S.Realtime.ActiveHint") : "",
+            isError: false);
+    }
+
+    private void SetStatus(string text, bool isError)
+    {
+        StatusText.Text = text;
+        StatusText.Foreground = isError
+            ? (System.Windows.Media.Brush)FindResource("AppError")
+            : (System.Windows.Media.Brush)FindResource("AppTextSecondary");
+    }
+}

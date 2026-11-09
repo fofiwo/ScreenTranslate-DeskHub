@@ -1,0 +1,242 @@
+<UserControl x:Class="OverTranslate.Views.Shell.AboutOverlay"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             Visibility="Collapsed"
+             Focusable="True">
+
+    <!-- Scrim: swallows clicks so the page underneath stays inert, and dismisses on click -->
+    <Grid x:Name="Scrim"
+          Background="#8C000000"
+          MouseLeftButtonDown="Scrim_MouseLeftButtonDown">
+
+        <!-- The card is centred in the scrim, so at an odd window width its left edge lands on a
+             half pixel and WPF's default Ideal text formatting happily sub-pixel-positions every
+             glyph there, leaving the whole card looking soft. Layout rounding snaps the card to
+             whole device pixels so the text inside always starts on the pixel grid. -->
+        <Border x:Name="Card"
+                Width="420"
+                UseLayoutRounding="True"
+                HorizontalAlignment="Center"
+                VerticalAlignment="Center"
+                CornerRadius="14"
+                Background="{DynamicResource AppCardBg}"
+                BorderBrush="{DynamicResource AppBorder}"
+                BorderThickness="1"
+                RenderTransformOrigin="0.5,0.5"
+                MouseLeftButtonDown="Card_MouseLeftButtonDown">
+            <Border.RenderTransform>
+                <ScaleTransform x:Name="CardScale" ScaleX="1" ScaleY="1"/>
+            </Border.RenderTransform>
+            <Border.Effect>
+                <DropShadowEffect BlurRadius="28" ShadowDepth="6" Opacity="0.3" Color="#000000"/>
+            </Border.Effect>
+
+            <Grid Margin="26,22,26,26">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+
+                <!-- Close button floats over the title block's top-right corner -->
+                <Button Grid.Row="0"
+                        Style="{StaticResource OverlayCloseButton}"
+                        HorizontalAlignment="Right"
+                        VerticalAlignment="Top"
+                        Margin="0,-6,-10,0"
+                        ToolTip="{DynamicResource S.Common.Close}"
+                        Click="CloseBtn_Click"/>
+
+                <!-- Identity block. The logo uses the same PNG resource as the shell header.
+                     Version and author sit on the same AppTextSecondary: the palette has
+                     two text levels by design, so the step between them is font size, not a third
+                     grey that would fail against AppCardBg. -->
+                <StackPanel Grid.Row="0" HorizontalAlignment="Center" Margin="26,2,26,18">
+                    <Image x:Name="AppIcon"
+                           Width="64" Height="64"
+                           HorizontalAlignment="Center"
+                           RenderOptions.BitmapScalingMode="HighQuality"/>
+                    <TextBlock Text="ScreenTranslate"
+                               FontFamily="{DynamicResource AppFont}"
+                               FontSize="24"
+                               FontWeight="SemiBold"
+                               Foreground="{DynamicResource AppTextPrimary}"
+                               HorizontalAlignment="Center"
+                               Margin="0,11,0,0"/>
+                    <!-- The version and what is in it, as one control: someone wondering what changed
+                         is already looking at the version number, and this way the card's buttons below
+                         stay about the things outside the application. -->
+                    <Button x:Name="VersionPill"
+                            AutomationProperties.Name="{DynamicResource S.Update.HistoryHeading}"
+                            HorizontalAlignment="Center"
+                            Margin="0,8,0,0"
+                            Cursor="Hand"
+                            FocusVisualStyle="{x:Null}"
+                            Click="VersionPill_Click">
+                        <Button.Template>
+                            <ControlTemplate TargetType="Button">
+                                <Border x:Name="Outline"
+                                        Height="30"
+                                        CornerRadius="15"
+                                        Background="{DynamicResource AppSurfaceBg}"
+                                        BorderBrush="{DynamicResource AppBorder}"
+                                        BorderThickness="1">
+                                    <StackPanel Orientation="Horizontal">
+                                        <ContentPresenter VerticalAlignment="Center" Margin="12,0"/>
+                                        <Border x:Name="LinkPart"
+                                                CornerRadius="0,14,14,0"
+                                                Background="{DynamicResource AppAccentSubtle}"
+                                                Padding="12,0,10,0">
+                                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                                <TextBlock Text="{DynamicResource S.Update.HistoryHeading}"
+                                                           FontFamily="{DynamicResource AppFont}"
+                                                           FontSize="13"
+                                                           Foreground="{DynamicResource AppAccent}"
+                                                           VerticalAlignment="Center"/>
+                                                <TextBlock Text="&#xE76C;"
+                                                           FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets"
+                                                           FontSize="9"
+                                                           Foreground="{DynamicResource AppAccent}"
+                                                           VerticalAlignment="Center"
+                                                           Margin="5,1,0,0"/>
+                                            </StackPanel>
+                                        </Border>
+                                    </StackPanel>
+                                </Border>
+                                <ControlTemplate.Triggers>
+                                    <Trigger Property="IsMouseOver" Value="True">
+                                        <Setter TargetName="LinkPart" Property="Background" Value="{DynamicResource AppAccentSubtleHover}"/>
+                                    </Trigger>
+                                    <Trigger Property="IsPressed" Value="True">
+                                        <Setter TargetName="LinkPart" Property="Background" Value="{DynamicResource AppAccentSubtlePressed}"/>
+                                    </Trigger>
+                                    <Trigger Property="IsKeyboardFocused" Value="True">
+                                        <Setter TargetName="Outline" Property="BorderBrush" Value="{DynamicResource AppAccent}"/>
+                                    </Trigger>
+                                </ControlTemplate.Triggers>
+                            </ControlTemplate>
+                        </Button.Template>
+                        <TextBlock x:Name="VersionText"
+                                   FontFamily="{DynamicResource AppFont}"
+                                   FontSize="13"
+                                   Foreground="{DynamicResource AppTextSecondary}"/>
+                    </Button>
+                    <TextBlock Text="Hon.Lu (Hon-Lu)"
+                               FontFamily="{DynamicResource AppFont}"
+                               FontSize="12.5"
+                               Foreground="{DynamicResource AppTextSecondary}"
+                               HorizontalAlignment="Center"
+                               Margin="0,6,0,0"/>
+                </StackPanel>
+
+                <!-- Starring is the one thing a reader of this card can do that actually helps, so
+                     it takes the full width and the strongest fill. DeepAccentButton rather than
+                     AccentButton because this label is white: the dark theme's AppAccent is a pale
+                     cyan built to take black text, and white on it is unreadable.
+
+                     The mark is GitHub's own, drawn as a path because the icon font has no glyph
+                     for it. The arrow is a stroked path too, not a font glyph — at this size the
+                     icon font's arrow is a hairline beside a 15px semibold label. Both are white
+                     outright rather than themed: this button's fill is a deep blue in both themes,
+                     so there is nothing for them to flip with. -->
+                <Button Grid.Row="1"
+                        Style="{StaticResource DeepAccentButton}"
+                        Height="46"
+                        HorizontalAlignment="Stretch"
+                        ToolTip="{DynamicResource S.About.StarTip}"
+                        Click="StarBtn_Click">
+                    <Grid>
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                            <Path Width="19" Height="19"
+                                  Stretch="Uniform"
+                                  VerticalAlignment="Center"
+                                  Margin="0,0,10,0"
+                                  Fill="#FFFFFF"
+                                  Data="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12"/>
+                            <TextBlock Text="{DynamicResource S.About.Star}"
+                                       VerticalAlignment="Center"
+                                       FontSize="15"
+                                       FontWeight="SemiBold"
+                                       Foreground="#FFFFFF"
+                                       FontFamily="{DynamicResource AppFont}"/>
+                        </StackPanel>
+
+                        <Path HorizontalAlignment="Right"
+                              VerticalAlignment="Center"
+                              Stroke="#FFFFFF"
+                              StrokeThickness="1.9"
+                              StrokeStartLineCap="Round"
+                              StrokeEndLineCap="Round"
+                              StrokeLineJoin="Round"
+                              Data="M0 8h17M11.6 2.6 17 8l-5.4 5.4"/>
+                    </Grid>
+                </Button>
+
+                <!-- The site and the sponsor page are both secondary to starring, and they are the
+                     same weight as each other, so they share a row. "贊助" alone does not say where
+                     it leads, and it leads to a payment page, so the destination is in the tooltip,
+                     as GitHub's is on the button above, whose label says what a star does. -->
+                <Grid Grid.Row="2" Margin="0,10,0,0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="10"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+
+                    <Button Grid.Column="0"
+                            Style="{StaticResource FlatButton}"
+                            Height="40"
+                            HorizontalAlignment="Stretch"
+                            Click="WebsiteBtn_Click">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets"
+                                       FontSize="15" Text="&#xE774;"
+                                       VerticalAlignment="Center"
+                                       Margin="0,0,9,0"
+                                       Foreground="{DynamicResource AppAccent}"/>
+                            <TextBlock Text="{DynamicResource S.About.Website}"
+                                       VerticalAlignment="Center"
+                                       FontFamily="{DynamicResource AppFont}"/>
+                        </StackPanel>
+                    </Button>
+
+                    <Button Grid.Column="2"
+                            Style="{StaticResource FlatButton}"
+                            Height="40"
+                            HorizontalAlignment="Stretch"
+                            ToolTip="{DynamicResource S.About.SponsorTip}"
+                            Click="SponsorBtn_Click">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets"
+                                       FontSize="15" Text="&#xEC32;"
+                                       VerticalAlignment="Center"
+                                       Margin="0,0,9,0"
+                                       Foreground="{DynamicResource AppAccent}"/>
+                            <TextBlock Text="{DynamicResource S.About.Sponsor}"
+                                       VerticalAlignment="Center"
+                                       FontFamily="{DynamicResource AppFont}"/>
+                        </StackPanel>
+                    </Button>
+                </Grid>
+
+                <Rectangle Grid.Row="3" Height="1" Margin="0,18,0,0"
+                           Fill="{DynamicResource AppSeparator}"/>
+
+                <!-- The Star button above is now the largest thing on the card, so this sentence no
+                     longer repeats the ask — it only says what the interface cannot: that the app
+                     is free, open source, and has nothing to sell you. -->
+                <TextBlock Grid.Row="4"
+                           Text="{DynamicResource S.About.OpenSource}"
+                           FontFamily="{DynamicResource AppFont}"
+                           FontSize="12"
+                           Foreground="{DynamicResource AppTextSecondary}"
+                           TextWrapping="Wrap"
+                           TextAlignment="Center"
+                           LineHeight="18"
+                           Margin="0,14,0,0"/>
+            </Grid>
+        </Border>
+    </Grid>
+</UserControl>

@@ -1,0 +1,24 @@
+<UserControl x:Class="OverTranslate.Views.Shell.ProductAboutPage"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <ScrollViewer VerticalScrollBarVisibility="Auto">
+        <StackPanel Margin="36,30" MaxWidth="760" HorizontalAlignment="Left">
+            <Image Source="/ScreenTranslate;component/icons/screentranslate-logo.png"
+                   Width="88" Height="88" Margin="0,0,0,18" HorizontalAlignment="Left" Stretch="Uniform"
+                   RenderOptions.BitmapScalingMode="HighQuality" AutomationProperties.Name="ScreenTranslate Logo"/>
+            <TextBlock Text="ScreenTranslate" FontSize="28" FontWeight="SemiBold"/>
+            <TextBlock x:Name="VersionText" Margin="0,10,0,28" Foreground="{DynamicResource AppTextSecondary}"/>
+            <TextBlock Text="为屏幕阅读而做的翻译工具" FontSize="20" FontWeight="SemiBold"/>
+            <TextBlock Text="框选即译、在原位置覆盖文字，也能持续更新翻译，或独立提取文字并自动复制。识别与翻译独立配置，按需连接本地模型或在线服务。" TextWrapping="Wrap" Margin="0,14,0,24" Foreground="{DynamicResource AppTextSecondary}"/>
+            <TextBlock Text="数据与运行" FontSize="16" FontWeight="SemiBold"/>
+            <TextBlock Text="便携版的设置、模型和日志存放在程序旁的 data 文件夹；安装版使用用户目录 ScreenTranslate-data，独立于程序版本。截图支持复制到剪贴板，不提供文件保存。本地 OCR 在设备上执行，在线识别和翻译依照所选服务发送内容。关闭主窗口后快捷键仍可用，退出软件请使用托盘菜单。" TextWrapping="Wrap" Margin="0,10,0,28" Foreground="{DynamicResource AppTextSecondary}"/>
+            <WrapPanel>
+                <Button Content="检查更新" Style="{StaticResource ProductSecondaryButton}" Click="Update_Click" Margin="0,0,12,0"/>
+                <Button Content="下载最新安装包" Style="{StaticResource ProductSecondaryButton}" Click="Releases_Click" Margin="0,0,12,0"/>
+                <Button Content="许可证与第三方声明" Style="{StaticResource ProductSecondaryButton}" Click="Licenses_Click" Margin="0,0,12,0"/>
+                <Button Content="查看使用说明" Style="{StaticResource ProductSecondaryButton}" Click="Readme_Click"/>
+            </WrapPanel>
+            <TextBlock x:Name="StatusText" Margin="0,16,0,0" TextWrapping="Wrap"/>
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

@@ -1,0 +1,20 @@
+# The OCR model assets are read byte for byte, so git must not touch their line endings.
+#
+# dict.txt maps one character per line onto the recogniser's output indices. With the usual
+# CRLF conversion every entry gains a trailing carriage return, so the model's table no longer
+# says what the model was trained to say and recognition comes back as nonsense — the failure
+# is silent, survives a clean build, and only shows up as garbled text on screen. Caught when
+# PP-OCRv6 landed: the file was written with LF, committed, and came back out of git with
+# 18,708 CRLFs.
+#
+# The .onnx files are already detected as binary today; naming them here means that does not
+# depend on the heuristic happening to look at the right bytes.
+src/OverTranslate/ocrmodels/**/dict.txt -text
+*.onnx binary
+
+# launcher.manifest is embedded byte for byte into the launcher's resource section, so its
+# line endings decide the hash of a binary we ship. With core.autocrlf it checks out as CRLF
+# on Windows (+25 bytes) and a rebuild no longer matches the binary committed under dist/,
+# which silently breaks "build it yourself and compare the hash" — hit in practice.
+# That binary's whole value is having bytes that never change across releases (#210).
+src/OverTranslate.Launcher/launcher.manifest -text

@@ -1,0 +1,1540 @@
+using System.Diagnostics;
+using System.Drawing;
+using System.Drawing.Imaging;
+using System.Windows;
+using System.Windows.Forms;
+using System.Windows.Interop;
+using NLog;
+using OverTranslate.Layout;
+using OverTranslate.Services;
+using OverTranslate.Services.Ocr;
+using OverTranslate.Views.Capture;
+using OverTranslate.Views.Overlay;
+using OverTranslate.Views.Realtime;
+using OverTranslate.Views.Settings;
+using OverTranslate.Views.Shell;
+
+namespace OverTranslate.Views;
+
+public partial class MainWindow : Window
+{
+    private static readonly Logger Log = LogManager.GetCurrentClassLogger();
+
+    private NotifyIcon? _notifyIcon;
+    private bool _exitingApplication;
+    private TrayMenuWindow? _trayMenu;
+    private GlobalHotkey? _hotkey;
+    private GlobalHotkey? _ocrHotkey;
+    private GlobalHotkey? _libraryHotkey;
+    private GlobalHotkey? _clipboardHotkey;
+    public IReadOnlyList<HotkeyAction> HotkeyRegistrationFailures { get; private set; } = [];
+    private GlobalHotkey? _windowHotkey;
+    private GlobalHotkey? _realtimePauseHotkey;
+    private bool _hotkeysSuspendedForRecording;
+    private OverlayWindow? _overlayWindow;
+    private ScreenCaptureWindow? _captureWindow;
+    private LiveOverlayGuard? _liveOverlayGuard;
+    private ToolbarWindow? _toolbarWindow;
+
+    private GlobalEscapeHook? _escapeHook; // lives for the whole capture session, see CloseAll
+    private SystemRecoveryYield? _recoveryYield; // same lifetime; lets Task Manager out from under the layers
+    private CancellationTokenSource? _sessionCts; // cancelled on teardown so abandoned work stops
+    private EventHandler? _overlayClosedHandler; // tracked so we can detach before re-translate
+    // Recognition and translation are not owned here — see AppServices. This window is one of two
+    // callers, not the holder, and the call sites below name AppServices directly so that reading
+    // any one of them shows where the engine comes from.
+
+
+    // Kept alive so toolbar translate can re-run OCR/translation on the current selection
+    private List<OcrTextBlock> _lastOcrBlocks = [];
+
+    // Shared by 翻譯 and 複製原文: both recognise the same crop with the same arguments.
+    private readonly CaptureOcrReuse _ocrReuse = new();
+
+    // What the translator answered, one entry per group. Copying, the translation window and the
+    // toolbar read this, and they must keep reading it: placement below may cut a group up so that
+    // each source line gets its own share on screen, and a sentence handed back to the user in
+    // pieces is a worse answer than the one it was translated as.
+    private List<TranslatedBlock> _lastTranslatedBlocks = [];
+
+    // The same translation after placement, with the colours sampled from underneath each of these
+    // boxes. This is what the overlay draws, and the only list whose indices line up with it.
+    private List<TranslatedBlock> _lastColoredBlocks = [];
+
+    // Built alongside those colours and kept with them, so the overlay restored after a failed
+    // re-translation is the overlay that was there — bubble backgrounds included.
+    private CaptureBubbleBackdrop? _lastBackdrop;
+    private double _lastSelPhysLeft;
+    private double _lastSelPhysTop;
+    private double _lastSelPhysWidth;
+    private double _lastSelPhysHeight;
+    private bool _lastVerticalText;
+    // The target those bubbles are in. Restoring them after a failed re-translation into another
+    // target used to draw them in the new target's font and punctuation forms — Japanese columns
+    // in Segoe UI, once the new target was one set across (#315).
+    private string _lastTargetLang = "";
+    private int _selectionSessionId;
+
+    public MainWindow()
+    {
+        InitializeComponent();
+    }
+
+    public void InitializeApp()
+    {
+        var helper = new WindowInteropHelper(this);
+        helper.EnsureHandle();
+
+        InitNotifyIcon();
+        RegisterHotkey();
+        ShowStartupBalloon();
+
+        // The one thing about a realtime session that has to reach the user outside this
+        // application: the window they were watching closed, so the session is over and they are
+        // looking at whatever was behind it.
+        RealtimeSessionController.Instance.SessionEnded += OnRealtimeSessionEnded;
+
+    }
+
+    private void OnRealtimeSessionEnded(object? sender, string message) =>
+        Dispatcher.Invoke(() => ShowTrayNotification(
+            LocalizationService.Get("S.Realtime.SessionEndedTitle"), message));
+
+    private void InitNotifyIcon()
+    {
+        _notifyIcon = new NotifyIcon
+        {
+            Icon = AppIconService.CreateTrayIcon(),
+            Text = "ScreenTranslate",
+            Visible = true
+        };
+
+        _notifyIcon.MouseClick += (_, e) =>
+        {
+            if (e.Button == MouseButtons.Left)  OnTrayLeftClick();
+            if (e.Button == MouseButtons.Right) ShowTrayMenu();
+        };
+    }
+
+    /// <summary>
+    /// Binds the shortcuts the settings say should be live, highest priority first.
+    /// </summary>
+    /// <remarks>
+    /// Through <see cref="HotkeyBindings"/> rather than one <c>Register</c> call per shortcut,
+    /// because two of them can want the same combination and Windows resolves that badly: it keys a
+    /// registration by window and combination, so the second claim is refused, <c>RegisterHotKey</c>
+    /// returns false, and nothing else happens — one shortcut stops working and no code here would
+    /// know which. Which one lost would also be whichever happened to be registered second, an
+    /// ordering nobody chose.
+    ///
+    /// The settings page refuses to RECORD a combination another shortcut holds, so this is not
+    /// reachable by editing. It is reachable two other ways, and both are the point: settings.json is
+    /// a text file someone can edit, and shipping a new shortcut hands every existing installation a
+    /// default it never agreed to — anyone already using that combination for something else would
+    /// have had one of the two go quiet.
+    ///
+    /// A shortcut with no action would be absent from the table below rather than registered against
+    /// nothing: claiming a combination globally takes it away from every other application, which is
+    /// a real cost to pay for a key that would do nothing.
+    /// </remarks>
+    private void RegisterHotkey()
+    {
+        var settings = SettingsService.Instance.Current;
+        var hwnd = new WindowInteropHelper(this).Handle;
+
+        _hotkey = new GlobalHotkey(GlobalHotkey.CaptureId);
+        _hotkey.HotkeyPressed += OnHotkeyPressed;
+
+        // Deliberately quiet, unlike the one above: no startup notification and nothing in the
+        // interface naming it. It saves a trip to the tray for a user who already knows it is
+        // there, and a user who does not loses nothing by never finding it.
+        _windowHotkey = new GlobalHotkey(GlobalHotkey.TranslationWindowId);
+        _windowHotkey.HotkeyPressed += OnTranslationWindowHotkeyPressed;
+
+        _realtimePauseHotkey = new GlobalHotkey(GlobalHotkey.RealtimePauseId);
+        _realtimePauseHotkey.HotkeyPressed += OnRealtimePauseHotkeyPressed;
+
+        _ocrHotkey = new GlobalHotkey(GlobalHotkey.OcrExtractId);
+        _ocrHotkey.HotkeyPressed += OnOcrHotkeyPressed;
+
+        _libraryHotkey = new GlobalHotkey(GlobalHotkey.LibraryWindowId);
+        _libraryHotkey.HotkeyPressed += (_, _) => Dispatcher.Invoke(Views.Library.LibraryWindow.Toggle);
+
+        _clipboardHotkey = new GlobalHotkey(GlobalHotkey.ClipboardHistoryId);
+        _clipboardHotkey.HotkeyPressed += (_, _) => Dispatcher.Invoke(Views.ClipboardHistory.ClipboardHistoryWindow.Toggle);
+
+        var hooks = new Dictionary<HotkeyAction, GlobalHotkey>
+        {
+            [HotkeyAction.Capture] = _hotkey,
+            [HotkeyAction.TranslationWindow] = _windowHotkey,
+            [HotkeyAction.RealtimePause] = _realtimePauseHotkey,
+            [HotkeyAction.OcrExtract] = _ocrHotkey,
+            [HotkeyAction.LibraryWindow] = _libraryHotkey,
+            [HotkeyAction.ClipboardHistory] = _clipboardHotkey,
+        };
+
+        var failed = new List<HotkeyAction>();
+        var resolved = HotkeyBindings.Resolve(settings);
+        foreach (var binding in resolved)
+        {
+            if (binding.ShadowedBy is { } holder)
+            {
+                // Warn rather than Debug: the user pressed a key and nothing happened, and this line
+                // is the only place that says why.
+                Log.Warn(
+                    "Hotkey {Action} not registered: {Holder} already claims that trigger",
+                    binding.Action, holder);
+                continue;
+            }
+
+            if (!binding.Enabled)
+            {
+                Log.Info("Hotkey {Action} is switched off in settings", binding.Action);
+                continue;
+            }
+
+            // Reachable only through a hand-edited settings.json — the settings page refuses to
+            // record it — and refused here for the reason it is refused there: a bare typing key
+            // registered globally stops working in every other application.
+            if (!HotkeyBindings.IsBindable(binding.Trigger))
+            {
+                Log.Warn(
+                    "Hotkey {Action} not registered: {Display} is a single key that cannot be claimed globally",
+                    binding.Action, binding.Trigger.VirtualKey);
+                continue;
+            }
+
+            if (binding.InputKind == OverTranslate.Models.ShortcutInputKind.Keyboard &&
+                hooks.TryGetValue(binding.Action, out var hook))
+            {
+                hook.Register(hwnd, binding.Modifiers, binding.VirtualKey);
+                if (!hook.IsRegistered) failed.Add(binding.Action);
+            }
+        }
+        HotkeyRegistrationFailures = failed;
+
+    }
+
+    private void ShowStartupBalloon()
+    {
+        var hotkeyDisplay = SettingsService.Instance.Current.HotkeyDisplay;
+        var shortcutText = string.IsNullOrWhiteSpace(hotkeyDisplay)
+            ? LocalizationService.Get("S.Main.DefaultShortcutName")
+            : hotkeyDisplay;
+
+        ShowTrayNotification(
+            LocalizationService.Get("S.Main.MinimizedTitle"),
+            LocalizationService.Format("S.Main.MinimizedBody", shortcutText));
+    }
+
+    /// <summary>
+    /// A notification through the tray icon, which Windows presents in its own notification centre.
+    /// </summary>
+    /// <remarks>
+    /// The notice on the capture toolbar (<see cref="ToolbarWindow.ShowNotice"/>) is for things that
+    /// belong to a capture — it appears on the bar the user just pressed and disappears with it.
+    /// Something the user caused from outside any capture, such as a shortcut that declined to start
+    /// one, has no such anchor, and telling them through the shell they already associate with this
+    /// application is both less startling and something they can go back and read.
+    /// </remarks>
+    private void ShowTrayNotification(string title, string message)
+    {
+        if (_notifyIcon == null) return;
+
+        _notifyIcon.BalloonTipTitle = title;
+        _notifyIcon.BalloonTipText = message;
+        _notifyIcon.BalloonTipIcon = ToolTipIcon.Info;
+        _notifyIcon.ShowBalloonTip(3000);
+    }
+
+    /// <summary>
+    /// Rebinds every shortcut, after any one of them has been changed.
+    /// </summary>
+    /// <remarks>
+    /// All of them rather than the one that changed, because the cost is two Win32 calls and the
+    /// alternative is a second entry point that has to be kept in step with which setting the
+    /// settings page happened to write.
+    /// </remarks>
+    public void ReRegisterHotkey()
+    {
+        _clipboardHotkey?.Unregister();
+        _libraryHotkey?.Unregister();
+        _hotkey?.Unregister();
+        _ocrHotkey?.Unregister();
+        _windowHotkey?.Unregister();
+        _realtimePauseHotkey?.Unregister();
+        if (!_hotkeysSuspendedForRecording) RegisterHotkey();
+    }
+
+    internal void SetHotkeyRecording(bool recording)
+    {
+        if (_hotkeysSuspendedForRecording == recording) return;
+        _hotkeysSuspendedForRecording = recording;
+        ReRegisterHotkey();
+    }
+
+    /// <summary>
+    /// Starts a capture, standing a running realtime session down for its duration.
+    /// </summary>
+    /// <remarks>
+    /// This shortcut used to pause and resume a running session, on the reasoning that a session
+    /// rules a capture out anyway — so the key was free for the whole of a session that may run for
+    /// hours, and pausing is what a user in front of one keeps needing. It was still one key with two
+    /// meanings, and the reader could neither choose what to press for the frequent one nor put it
+    /// where their hands are while a game has the screen. 暫停 / 繼續 has its own shortcut now — see
+    /// <see cref="OnRealtimePauseHotkeyPressed"/> — and this key means the one thing it is named after.
+    ///
+    /// A session no longer turns the key away. It stands down instead — paused and off the screen for
+    /// as long as the capture is up, then back the way it was; see
+    /// <see cref="Services.Realtime.RealtimeCaptureInterlude"/> for why that is better than the
+    /// refusal it replaces. Block framing is the one state still refused, and silently: the user is
+    /// mid-gesture on a layer covering the whole screen, and a notification about a second feature is
+    /// not what that press is asking about.
+    /// </remarks>
+    private void OnHotkeyPressed(object? sender, EventArgs e) =>
+        Dispatcher.Invoke(() => RunCaptureYieldingRealtimeAsync("hotkey"));
+
+    /// <summary>
+    /// Starts a capture from the 截圖翻譯 button on a running session's own control bar.
+    /// </summary>
+    /// <remarks>
+    /// The same door as the shortcut, opened by someone who is looking at the session rather than
+    /// remembering a key. Nothing here is specific to that: the bar goes off the screen with the
+    /// rest of the session's layers, exactly as it does for a capture started any other way.
+    /// </remarks>
+    public void StartCaptureFromRealtimeBar() =>
+        Dispatcher.Invoke(() => RunCaptureYieldingRealtimeAsync("realtime-bar"));
+
+    /// <summary>
+    /// A capture with a realtime session, if there is one, stood down around it.
+    /// </summary>
+    /// <remarks>
+    /// Shared by the shortcut and the control bar so the two cannot answer differently. The nav
+    /// rail's button has the same pair around it but hides the shell as well, which is why it keeps
+    /// its own path.
+    /// </remarks>
+    private async Task RunCaptureYieldingRealtimeAsync(string origin)
+    {
+        if (!RealtimeSessionController.Instance.TryYieldToCapture()) return;
+
+        try
+        {
+            await RunCaptureSessionAsync(origin);
+        }
+        finally
+        {
+            // A session left on screen keeps the realtime layers away until it is torn down, and
+            // CloseAll is where they come back. Nothing here means the user cancelled during
+            // selection — the session they interrupted must not be left stood down for it.
+            if (!HasActiveSession)
+                RealtimeSessionController.Instance.ResumeAfterCapture();
+        }
+    }
+
+    /// <summary>
+    /// The 即時翻譯 shortcut: each press is the next step from wherever a session is (#324).
+    /// </summary>
+    /// <remarks>
+    /// <para>No session: block framing, as 選取翻譯區塊 on the page would — with the blocks from
+    /// the last sitting put back, which is most of what makes this worth a key. Framing: 開始翻譯.
+    /// Translating: pause and resume, which is all this key used to do. Ending stays with the bar's
+    /// close button, as before.</para>
+    ///
+    /// <para>The first press frames rather than translating outright, even with blocks remembered.
+    /// They are physical pixels from an earlier sitting over whatever was on the screen then; a
+    /// press that put them back and started reading would translate the wrong places the moment
+    /// the scene had moved, with nothing to show it had. One more press is the price of seeing
+    /// them first.</para>
+    ///
+    /// <para>When the settings cannot start a session — no window picked, the picked one not open —
+    /// the translation window opens on the page that can fix it, saying why. Not a notification:
+    /// the press already asked for the screen to change, and the next thing the user has to do is
+    /// on that page anyway. Silent only while a capture is up, which is the one rule every other
+    /// shortcut here keeps too.</para>
+    /// </remarks>
+    private void OnRealtimePauseHotkeyPressed(object? sender, EventArgs e) =>
+        Dispatcher.Invoke(OnRealtimeShortcut);
+
+    private void OnRealtimeShortcut()
+    {
+        var controller = Views.Realtime.RealtimeSessionController.Instance;
+        if (controller.IsActive)
+        {
+            if (controller.IsTranslating) controller.TogglePause();
+            else controller.StartTranslatingFromShortcut();
+            return;
+        }
+
+        if (IsCapturing) return;
+
+        var quickStart = Views.Realtime.RealtimeQuickStart.From(SettingsService.Instance.Current);
+        if (quickStart.Request is not { } request)
+        {
+            Log.Info("Realtime shortcut did not start a session: {Reason}", quickStart.RefusalKey);
+            ShellWindow.ShowOrActivate(ShellPage.Realtime).ShowRealtimeShortcutRefusal(quickStart.RefusalKey!);
+            return;
+        }
+
+        // Null when the shell is closed to the tray, which is the common case for a shortcut and
+        // means there is nothing to put away.
+        controller.Start(request, ShellWindow.Current);
+    }
+
+    private void OnTranslationWindowHotkeyPressed(object? sender, EventArgs e) =>
+        Dispatcher.Invoke(() =>
+        {
+            if (HasActiveSession) return;
+
+            if (ShellWindow.Current is { IsActive: true } shell)
+            {
+                shell.Close();
+                return;
+            }
+
+            OnTrayLeftClick();
+        });
+
+    private bool RefuseWhileFramingBlocks()
+    {
+        if (Views.Realtime.RealtimeSessionController.Instance is not { IsActive: true, IsTranslating: false })
+            return false;
+
+        ShowTrayNotification(
+            LocalizationService.Get("S.Main.RealtimeRunningTitle"),
+            LocalizationService.Get("S.Main.RealtimeRunningBody"));
+        return true;
+    }
+
+    /// <summary>
+    /// Starts a capture from the shell window's nav rail. The shell has to leave the screen first:
+    /// <see cref="RunCaptureSessionAsync"/> grabs the desktop with a synchronous CopyFromScreen, so
+    /// a still-visible shell ends up baked into the very image the user is about to select from.
+    /// <see cref="WindowScreenPresence.HideAndWaitForScreen"/> is what makes that ordering real —
+    /// it does not return until the compositor has presented a frame without the window.
+    /// </summary>
+    public void StartCaptureFromShell(Window shell)
+    {
+        // Stands a running session down exactly as the shortcut does, and refuses in the one state
+        // that shortcut refuses in. The rail's button is disabled while blocks are being framed, so
+        // this is the guard rather than the notice — but it is the one that actually enforces the
+        // rule, and a disabled button is a presentation detail a future layout change could drop.
+        if (!RealtimeSessionController.Instance.TryYieldToCapture()) return;
+
+        if (HasActiveSession)
+        {
+            CloseAll("shell-button toggle");
+            return;
+        }
+
+        _shellHiddenForCapture = shell;
+        WindowScreenPresence.HideAndWaitForScreen(shell);
+
+        // Started inline, not queued. This used to go through the dispatcher at Background
+        // priority, which sits *below* Input: hiding the shell hands activation to another window
+        // and the user is already moving the mouse toward what they want to select, so the queued
+        // capture kept being overtaken by that input and started whenever the stream happened to
+        // pause. There is nothing left to wait for either — HideAndWaitForScreen has already
+        // cleared the screen, and the button whose press feedback the deferral used to protect is
+        // no longer visible.
+        _ = RunShellCaptureAsync();
+    }
+
+    private async Task RunShellCaptureAsync()
+    {
+        try
+        {
+            await RunCaptureSessionAsync("shell-button");
+        }
+        catch (Exception ex)
+        {
+            // Nothing awaits this task, so an escaping exception would otherwise be silent.
+            Log.Error(ex, "Capture started from the shell window failed");
+        }
+        finally
+        {
+            // A live session owns the screen, and the shell stays away until it ends — CloseAll and
+            // the overlay's own teardown both restore it. No session here means the user cancelled
+            // during selection, and a window that vanished because they pressed a button inside it
+            // must come straight back. A realtime session stood down for this capture is in exactly
+            // the same position, and comes back at the same two moments.
+            if (!HasActiveSession)
+            {
+                RestoreShellAfterCapture();
+                RealtimeSessionController.Instance.ResumeAfterCapture();
+            }
+        }
+    }
+
+    // Set for the lifetime of a shell-initiated capture. Null for hotkey captures, which never hid
+    // anything and so have nothing to put back.
+    private Window? _shellHiddenForCapture;
+
+    private void RestoreShellAfterCapture()
+    {
+        var shell = _shellHiddenForCapture;
+        _shellHiddenForCapture = null;
+        // Already visible when the toolbar's 開啟翻譯視窗 carried the result into it, which shows
+        // the shell itself before tearing the session down.
+        if (shell is null || shell.IsVisible) return;
+
+        try
+        {
+            shell.Show();
+            shell.Activate();
+        }
+        catch (Exception ex)
+        {
+            // Racing an app shutdown that already destroyed the window. Nothing left to restore,
+            // and it must not take the session teardown down with it.
+            Log.Warn(ex, "Could not restore the shell window after a capture");
+        }
+    }
+
+    private async Task RunCaptureSessionAsync(string origin = "hotkey", bool ocrOnly = false)
+    {
+        if (HasActiveSession)
+        {
+            CloseAll($"{origin} toggle");
+            return;
+        }
+
+        Bitmap screenshot;
+        var sourceWindow = LiveOverlayGuard.Foreground;
+        System.Drawing.Rectangle screenBounds;
+        try
+        {
+            screenBounds = ScreenGeometry.VirtualDesktopBounds();
+            screenshot = new Bitmap(screenBounds.Width, screenBounds.Height);
+            using var g = Graphics.FromImage(screenshot);
+            g.CopyFromScreen(screenBounds.Left, screenBounds.Top, 0, 0,
+                screenBounds.Size, CopyPixelOperation.SourceCopy);
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Screen capture failed — aborting selection");
+            return;
+        }
+
+        // After the capture, never before: with the level enabled this queries every monitor and
+        // writes a multi-line record, which on the way in would delay the freeze the user just
+        // asked for. The values it reports are the same either side of the capture.
+        DisplayDiagnostics.LogSnapshot(origin);
+
+        // Anything that escapes from here would leave the full-screen dim window on top of the
+        // desktop with no owner left to close it, so the whole session setup is guarded.
+        try
+        {
+            Log.Info("Capture session starting, origin={Origin}, bounds={Bounds}", origin, screenBounds);
+            var captureWindow = new ScreenCaptureWindow(screenshot, screenBounds);
+            captureWindow.LiveDesktopChanged += (_, live) =>
+            {
+                if (!ReferenceEquals(_captureWindow, captureWindow)) return;
+                _liveOverlayGuard?.Dispose();
+                _liveOverlayGuard = null;
+                if (!live) return;
+                Services.Realtime.Capture.SourceWindowFocus.Raise(sourceWindow);
+                // OCR 读取的是已冻结的图像，选区外的点击／滚动不应取消自动复制。
+                if (ocrOnly) return;
+                _liveOverlayGuard = new LiveOverlayGuard(sourceWindow, () => CloseAll("live desktop changed"));
+            };
+            captureWindow.Closed += (_, _) =>
+            {
+                if (!ReferenceEquals(_captureWindow, captureWindow)) return;
+                _liveOverlayGuard?.Dispose(); _liveOverlayGuard = null;
+            };
+            _captureWindow = captureWindow;
+
+            // The box stays adjustable until translation starts, so the toolbar anchored to it has to
+            // keep up. Only the toolbar: the overlay carries no bubbles yet at this stage, and the
+            // crop is re-read from the window at translate time.
+            captureWindow.SelectionAdjusted += (_, selection) =>
+            {
+                _lastSelPhysLeft   = selection.Left;
+                _lastSelPhysTop    = selection.Top;
+                _lastSelPhysWidth  = selection.Width;
+                _lastSelPhysHeight = selection.Height;
+                _toolbarWindow?.FollowSelection(selection);
+                // OCR geometry belongs to the old crop until the user recognises this one.
+                _lastOcrBlocks = [];
+                _ocrReuse.Clear();
+                _overlayWindow?.ShowOcrDebug([], selection.Left, selection.Top);
+
+
+            };
+
+            captureWindow.Show();
+
+            // Diagnostic: where the dim window physically landed and at what scale, versus the
+            // screenBounds the screenshot was taken with. A difference between the two is the
+            // misalignment users report, and Stretch="Fill" makes it invisible otherwise.
+            DisplayDiagnostics.LogSnapshot("capture-window-shown", captureWindow);
+
+            // After Show, not before: everything on the path between creating the window and
+            // presenting it delays the first frame, during which the window's black background
+            // is what the user sees. The hook is still installed within the same dispatcher
+            // pass, so Esc is live long before anyone can press it.
+            // Release any previous one first — this hook swallows Esc process-wide, so an
+            // orphaned instance would break Esc across the entire desktop, which is far worse
+            // than the stuck overlay it exists to prevent.
+            DisposeSessionHooks();
+            _escapeHook = GlobalEscapeHook.Install(() => CloseAll("esc hook"));
+
+            // Paired with the Esc hook and for the same reason: these windows cover the screen, so
+            // both ways out of a session that has gone wrong have to be set up before it can.
+            _recoveryYield = SystemRecoveryYield.Install(ApplyCaptureTopmost);
+
+            CancelSession();
+            _sessionCts = new CancellationTokenSource();
+
+            bool selected = await captureWindow.WaitForSelectionAsync();
+            // 旧框选取消后的 continuation 不得拆除随后启动的新会话。
+            if (!ReferenceEquals(_captureWindow, captureWindow)) return;
+            if (!selected || !captureWindow.HasSelection)
+            {
+                // Also reached when the capture window cancelled itself (its own Esc fallback),
+                // which never goes through CloseAll — so the session is torn down here too.
+                DisposeSessionHooks();
+                CancelSession();
+                captureWindow.Close();
+                _captureWindow = null;
+                screenshot.Dispose();
+                return;
+            }
+
+            var settings      = SettingsService.Instance.Current;
+            var selection     = captureWindow.Selection;
+            if (ocrOnly)
+            {
+                await ExtractSelectedTextAsync(captureWindow);
+                return;
+            }
+            EnterOverlayState(captureWindow, selection, [], [], settings.SourceLanguage, hasTranslated: false);
+
+            // Fire in the same pass that built the overlay, before it paints: the toolbar's first
+            // frame already reads "翻譯中..." and the overlay's first frame already shows "辨識中".
+            // Deferring this to a later dispatcher pass only adds a visible gap where the toolbar
+            // sits idle after the selection is done.
+            if (settings.AutoTranslateAfterSelection)
+                _toolbarWindow?.RequestTranslate();
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Capture session setup failed — tearing down overlay windows");
+            CloseAll("setup failed");
+            screenshot.Dispose();
+        }
+    }
+
+    public void StartOcrFromShell() => OnOcrHotkeyPressed(this, EventArgs.Empty);
+
+    private void OnOcrHotkeyPressed(object? sender, EventArgs e) =>
+        Dispatcher.Invoke(async () =>
+        {
+            if (!RealtimeSessionController.Instance.TryYieldToCapture()) return;
+            var shell = ShellWindow.Current;
+            try
+            {
+                if (!HasActiveSession && shell?.IsVisible == true)
+                {
+                    // OCR 复制后留在原应用，不登记截图流程的主界面恢复动作。
+                    WindowScreenPresence.HideAndWaitForScreen(shell);
+                }
+                await RunCaptureSessionAsync("ocr-hotkey", ocrOnly: true);
+            }
+            finally
+            {
+                if (!HasActiveSession)
+                {
+                    RealtimeSessionController.Instance.ResumeAfterCapture();
+                }
+            }
+        });
+
+    private async Task ExtractSelectedTextAsync(ScreenCaptureWindow capture)
+    {
+        var session = ++_selectionSessionId;
+        var token = _sessionCts?.Token ?? CancellationToken.None;
+        bool Current() => session == _selectionSessionId && ReferenceEquals(capture, _captureWindow);
+        try
+        {
+            if (!capture.PrepareForProcessing(out _) || capture.CroppedBitmap is null)
+                throw new InvalidOperationException("无法读取框选区域。");
+            using var bitmap = ClonePixels(capture.CroppedBitmap);
+            var settings = SettingsService.Instance.Current;
+            var copied = await OcrExtraction.CopyAsync(
+                ct => AppServices.Ocr.RecognizeTextAsync(bitmap, settings.SourceLanguage, ct),
+                settings.OcrPreserveFormatting, Current, System.Windows.Clipboard.SetText, token);
+            if (!Current()) return;
+            CloseAll("OCR complete");
+            ShowTrayNotification(copied ? "文字已复制" : "未识别到文字",
+                copied ? "可在目标输入框中手动粘贴。" : "剪贴板未更改，请重新框选清晰的文字区域。");
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception)
+        {
+            if (!Current()) return;
+            CloseAll("OCR failed");
+            ShowTrayNotification("文字提取失败", "未复制文字，请检查 OCR 服务配置或稍后重试。");
+        }
+        finally
+        {
+            if (Current()) CloseAll("OCR finished");
+        }
+    }
+
+    private void EnterOverlayState(
+        ScreenCaptureWindow captureWindow,
+        System.Windows.Rect selection,
+        List<TranslatedBlock> blocks,
+        List<OcrTextBlock> ocrBlocks,
+        string srcLang,
+        bool hasTranslated)
+    {
+        _selectionSessionId++;
+        _lastOcrBlocks     = ocrBlocks;
+        _lastTranslatedBlocks = blocks;
+        _lastColoredBlocks = blocks;
+        _lastSelPhysLeft   = selection.Left;
+        _lastSelPhysTop    = selection.Top;
+        _lastSelPhysWidth  = selection.Width;
+        _lastSelPhysHeight = selection.Height;
+        _lastVerticalText  = false;
+
+
+        var settings = SettingsService.Instance.Current;
+        _lastTargetLang = settings.TargetLanguage;
+        ShowOverlay(
+            blocks,
+            ocrBlocks,
+            selection.Left,
+            selection.Top,
+            selection.Width,
+            selection.Height,
+            srcLang,
+            settings.TargetLanguage,
+            verticalText: false);
+
+        var toolbar  = new ToolbarWindow(
+            selection.Left, selection.Top, selection.Width, selection.Height,
+            srcLang, settings.TargetLanguage);
+        toolbar.Owner = captureWindow;
+        toolbar.TranslateRequested      += OnTranslateRequested;
+        toolbar.CopyTextRequested       += OnCopyTextRequested;
+        toolbar.CopyScreenshotRequested += OnCopyScreenshotRequested;
+        toolbar.CloseAllRequested       += (_, _) => CloseAll("toolbar close");
+        toolbar.BubblesVisibilityChanged += (_, visible) => _overlayWindow?.SetBubblesVisible(visible);
+        _toolbarWindow = toolbar;
+        toolbar.SetTranslationState(hasTranslated);
+        toolbar.SetToggleEnabled(blocks.Count > 0);
+        toolbar.Show();
+
+        ApplyCaptureTopmost();
+    }
+
+    // On re-translate: update the existing overlay in-place to avoid z-order fights with
+    // ScreenCaptureWindow (both Topmost — close+reopen loses the z-position race).
+    // On first call: create a new overlay and wire its Closed handler.
+    private void ShowOverlay(
+        List<TranslatedBlock> blocks,
+        IReadOnlyList<OcrTextBlock> ocrBlocks,
+        double selPhysLeft,
+        double selPhysTop,
+        double selPhysWidth,
+        double selPhysHeight,
+        string sourceLang,
+        string targetLang,
+        bool verticalText,
+        CaptureBubbleBackdrop? backdrop = null)
+    {
+        if (_overlayWindow != null)
+        {
+            _overlayWindow.UpdateBlocks(
+                blocks,
+                ocrBlocks,
+                selPhysLeft,
+                selPhysTop,
+                selPhysWidth,
+                selPhysHeight,
+                sourceLang,
+                targetLang,
+                verticalText,
+                backdrop);
+            return;
+        }
+
+        _overlayWindow = new OverlayWindow(
+            blocks,
+            ocrBlocks,
+            selPhysLeft,
+            selPhysTop,
+            selPhysWidth,
+            selPhysHeight,
+            sourceLang,
+            targetLang,
+            verticalText,
+            backdrop);
+        if (_captureWindow != null)
+            _overlayWindow.Owner = _captureWindow;
+        // This runs when the overlay closes on its own (Esc via the keyboard hook). Same fault
+        // tolerance as CloseAll: a throwing toolbar Close() must not strand the capture window's
+        // full-screen dim layer, which is the one window the user cannot get rid of.
+        _overlayClosedHandler = (_, _) =>
+        {
+            _selectionSessionId++;
+            DisposeSessionHooks();
+            CancelSession();
+            CloseWindow(_toolbarWindow, w => w.Close(), nameof(ToolbarWindow));
+            _toolbarWindow = null;
+            CloseWindow(_captureWindow, w => w.Close(), nameof(ScreenCaptureWindow));
+            _captureWindow = null;
+            _overlayWindow = null;
+            RestoreShellAfterCapture();
+        };
+        _overlayWindow.Closed += _overlayClosedHandler;
+
+        // The marks are drawn by the overlay and shown by the capture window — see
+        // OverlayWindow.InkLayer for why they are not shown where they are drawn.
+
+
+        _overlayWindow.Show();
+    }
+
+    private async void OnTranslateRequested(object? sender, TranslateRequest req)
+    {
+        var requestToolbar = sender as ToolbarWindow;
+        var requestCaptureWindow = _captureWindow;
+        var requestSessionId = _selectionSessionId;
+        // Captured now: _sessionCts is replaced by the next capture, and this request must keep
+        // observing the token belonging to the session it was started for.
+        var cancellationToken = _sessionCts?.Token ?? CancellationToken.None;
+        var settings = SettingsService.Instance.Current;
+        var selRect  = requestCaptureWindow?.Selection
+            ?? new System.Windows.Rect(_lastSelPhysLeft, _lastSelPhysTop, _lastSelPhysWidth, _lastSelPhysHeight);
+
+        if (AppServices.Translation.RequiresApiKey && string.IsNullOrWhiteSpace(settings.ApiKey))
+        {
+            ShowNotice(
+                LocalizationService.Get("S.Main.MissingApiKeyTitle"),
+                LocalizationService.Get("S.Main.MissingApiKeyBody"));
+            return;
+        }
+
+        requestToolbar?.SetBusy(true);
+
+        // Each stage's share of the wait, for the line written when the bubbles are up. Recognition,
+        // the engine and the backdrop repair are each "the slow one" on some machine or screen, and
+        // a report of a slow capture says nothing about which without this.
+        var started = Stopwatch.GetTimestamp();
+        long ocrMs = 0, translateMs = 0, backdropMs = 0;
+
+        // Whether the frame may still be handed back: this run is what locked it, and recognition —
+        // the one stage a redrawn box would fix — has not got past finding text yet. Cleared the
+        // moment there is text to translate, because from there the box is settled for good: the
+        // bubbles are laid out against it, so it must not move under them even if the engine fails.
+        bool frameStillRestorable = false;
+
+        try
+        {
+            if (requestCaptureWindow == null || !requestCaptureWindow.PrepareForProcessing(out frameStillRestorable))
+            {
+                ShowNotice(
+                    LocalizationService.Get("S.Main.RecogniseFailedTitle"),
+                    LocalizationService.Get("S.Main.NoImageBody"));
+                return;
+            }
+
+            _lastSelPhysLeft   = requestCaptureWindow.Selection.Left;
+            _lastSelPhysTop    = requestCaptureWindow.Selection.Top;
+            _lastSelPhysWidth  = requestCaptureWindow.Selection.Width;
+            _lastSelPhysHeight = requestCaptureWindow.Selection.Height;
+            selRect = requestCaptureWindow.Selection;
+
+            // The capture window owns CroppedBitmap and disposes it the instant it closes (Esc,
+            // CloseAll, re-capture). OCR runs on a thread pool thread and the colour sampling below
+            // happens after a second await, so both would read freed GDI+ memory if they used that
+            // instance directly. Take our own copy up front — cloning here is safe because we are
+            // still on the UI thread with no await since PrepareForTranslation — and let its
+            // lifetime match this request instead of the window's.
+            using var workBitmap = ClonePixels(requestCaptureWindow.CroppedBitmap!);
+
+            var stage = Stopwatch.GetTimestamp();
+            var recognition = await RecognizeCropAsync(
+                requestCaptureWindow,
+                workBitmap,
+                req.SourceLang,
+                req.IsVerticalText,
+                req.LayoutMode,
+                () => IsCurrentSelectionSession(requestSessionId, requestToolbar, requestCaptureWindow),
+                cancellationToken);
+            if (recognition is not (var recognizedBlocks, var ocrReused))
+                return;
+            ocrMs = ElapsedMs(stage);
+
+            _lastOcrBlocks = recognizedBlocks;
+            if (_lastOcrBlocks.Count == 0)
+            {
+                requestToolbar?.SetTranslationState(false);
+                if (frameStillRestorable) requestCaptureWindow.RestoreSelectionEditing();
+                ShowNotice(
+                    LocalizationService.Get("S.Main.NoTextTitle"),
+                    LocalizationService.Get("S.Main.NoTextBody"), NoticeKind.Info);
+                return;
+            }
+
+            frameStillRestorable = false;
+
+            _overlayWindow?.ShowProcessing(
+                _lastSelPhysLeft,
+                _lastSelPhysTop,
+                _lastSelPhysWidth,
+                _lastSelPhysHeight,
+                LocalizationService.Get("S.Main.Translating"));
+
+            // Recognition is available even while translation is still pending.
+            _overlayWindow?.ShowOcrDebug(_lastOcrBlocks, _lastSelPhysLeft, _lastSelPhysTop);
+
+            // Where every bubble goes and what colour it is, worked out now rather than after the
+            // translation: none of it depends on the text — see CaptureBubbleShapes. Placement has
+            // to come before the colours, because it decides the boxes the overlay will draw, and a
+            // colour sampled from a box that is about to be cut into four is the average of four
+            // backgrounds — the group box of a wrapped paragraph spans whatever the page put between
+            // its lines.
+            var layoutMode = CaptureLayoutPolicy.ForApplication(req.LayoutMode);
+            var bubbles = new CaptureBubbleShapes(_lastOcrBlocks, layoutMode, req.IsVerticalText, req.TargetLang);
+
+            // Re-use sampled colours from the previous overlay, but only where the block at that
+            // index is recognisably the same block. Re-translating after switching capture mode,
+            // re-drawing the selection, or simply letting the detector wobble all change how many
+            // boxes there are and where they sit, and a colour re-used across that lands a bubble
+            // in the colours of whatever used to be at its index — quietly, with nothing on screen
+            // to say the picture underneath was never looked at. Re-sampling costs a pass over the
+            // crop, next to nothing beside the OCR and the translation.
+            var previousVerticalText = _lastVerticalText;
+            var coloredShapes = bubbles.Shapes
+                .Select((b, i) =>
+                {
+                    if (SampledColorReuse.CanReuse(
+                            _lastColoredBlocks, i, b, req.IsVerticalText, previousVerticalText))
+                    {
+                        return b with
+                        {
+                            BackgroundColor = _lastColoredBlocks[i].BackgroundColor,
+                            TextColor       = _lastColoredBlocks[i].TextColor
+                        };
+                    }
+
+                    // A group off a tilted card is read from inside the card: its upright box and
+                    // the gaps between its upright lines are mostly the page beside it. A row on a
+                    // vertical page has its lines one above the other, as any paragraph across does.
+                    var (bg, fg) = b.Tilt is { } tilt
+                        ? SourceTextColorSampler.ForCaptureOverlay(workBitmap, tilt.SampleArea)
+                        : SourceTextColorSampler.ForCaptureOverlay(
+                            workBitmap, b.Bounds, b.SourceLineBounds, req.IsVerticalText && !b.RunsAcross);
+                    return b with { BackgroundColor = bg, TextColor = fg };
+                })
+                .ToList();
+            bubbles.Colour(coloredShapes);
+
+            // Off the UI thread, and alongside the translation rather than after it: this repairs the
+            // whole capture once, under the same boxes, for every bubble that is about to be drawn
+            // over it. Null on failure, and the overlay then paints flat colour. Awaited before this
+            // request is left, whatever happens, because it reads this request's copy of the crop.
+            var backdropTask = Task.Run(() =>
+            {
+                var repairStarted = Stopwatch.GetTimestamp();
+                var repaired = CaptureBubbleBackdrop.Create(workBitmap, coloredShapes, cancellationToken);
+                backdropMs = ElapsedMs(repairStarted);
+                return repaired;
+            }, cancellationToken);
+
+            stage = Stopwatch.GetTimestamp();
+            var requestedProvider = settings.Provider;
+            var translation = AppServices.Translation.TranslateAsync(
+                _lastOcrBlocks, req.SourceLang, req.TargetLang, settings.ApiKey,
+                cancellationToken: cancellationToken, engine: requestedProvider);
+            CaptureBubbleBackdrop? backdrop;
+            try
+            {
+                backdrop = await backdropTask;
+            }
+            catch
+            {
+                // The translation is left to the session's cancellation; what it throws is seen.
+                _ = translation.ContinueWith(t => t.Exception, TaskContinuationOptions.OnlyOnFaulted);
+                throw;
+            }
+
+            var (translated, _) = await translation;
+            if (!IsCurrentSelectionSession(requestSessionId, requestToolbar, requestCaptureWindow))
+                return;
+            translateMs = ElapsedMs(stage);
+
+            _lastTranslatedBlocks = [.. translated];
+
+            // The answer lines up with what was read block for block; should it ever not, it is
+            // placed and coloured on its own.
+            var coloredTranslated = bubbles.Final(translated)
+                ?? [.. OverlayPlacement.Place(translated, layoutMode, req.IsVerticalText, req.TargetLang)
+                    .Select(b =>
+                    {
+                        var (bg, fg) = b.Tilt is { } tilt
+                            ? SourceTextColorSampler.ForCaptureOverlay(workBitmap, tilt.SampleArea)
+                            : SourceTextColorSampler.ForCaptureOverlay(
+                                workBitmap, b.Bounds, b.SourceLineBounds, req.IsVerticalText && !b.RunsAcross);
+                        return b with { BackgroundColor = bg, TextColor = fg };
+                    })];
+
+            _lastColoredBlocks = coloredTranslated;
+            _lastVerticalText = req.IsVerticalText;
+            _lastTargetLang = req.TargetLang;
+            _lastBackdrop = backdrop;
+            ShowOverlay(
+                coloredTranslated,
+                _lastOcrBlocks,
+                _lastSelPhysLeft,
+                _lastSelPhysTop,
+                _lastSelPhysWidth,
+                _lastSelPhysHeight,
+                req.SourceLang,
+                req.TargetLang,
+                req.IsVerticalText,
+                backdrop);
+            requestToolbar?.SetTranslationState(true);
+            requestToolbar?.SetToggleEnabled(coloredTranslated.Count > 0);
+            requestToolbar?.SetEngineBadge(TranslationService.DescribeUsage(translated, requestedProvider));
+            if (coloredTranslated.Any(block => block.Untranslated))
+                ShowNotice("部分文字未翻译", "翻译服务未能完成全部文字，请检查选定服务后重试。", NoticeKind.Info);
+
+            // Sizes and times only, never the text: this is Info, in every diagnostic bundle.
+            // The backdrop runs alongside the translation, so the two times overlap.
+            Log.Info("Capture translation done in {Total} ms: {Width}x{Height}, {Blocks} blocks, " +
+                     "ocr {Ocr} ms{Reused:l}, translate {Translate} ms, backdrop {Backdrop} ms",
+                ElapsedMs(started), workBitmap.Width, workBitmap.Height, _lastOcrBlocks.Count,
+                ocrMs, ocrReused ? " (reused)" : "", translateMs, backdropMs);
+        }
+        // The session was torn down (Esc, re-capture, toolbar close) while this was in flight.
+        // Expected and user-initiated — it must stay completely silent, with no error toast.
+        catch (OperationCanceledException)
+        {
+            Log.Debug("Translate request abandoned — capture session ended");
+        }
+        catch (InvalidOperationException ex) when (ex.Message.Contains("sequence contains no elements", StringComparison.OrdinalIgnoreCase))
+        {
+            Log.Debug(ex, "OCR produced no text blocks");
+            if (!IsCurrentSelectionSession(requestSessionId, requestToolbar, requestCaptureWindow))
+                return;
+
+            requestToolbar?.SetTranslationState(false);
+            if (frameStillRestorable) requestCaptureWindow?.RestoreSelectionEditing();
+            ShowNotice(
+                LocalizationService.Get("S.Main.NoTextTitle"),
+                LocalizationService.Get("S.Main.NoTextBody"), NoticeKind.Info);
+        }
+        catch (Exception ex)
+        {
+            // How far it got, and how long that took: a timeout reads differently from a refusal.
+            Log.Error(ex, "Translate request failed after {Elapsed} ms (src={Src}, tgt={Tgt}, selection={Sel}, " +
+                          "ocr {Ocr} ms, translate {Translate} ms)",
+                ElapsedMs(started), req.SourceLang, req.TargetLang, selRect, ocrMs, translateMs);
+            if (!IsCurrentSelectionSession(requestSessionId, requestToolbar, requestCaptureWindow))
+                return;
+
+            // On failure, restore old bubbles so the overlay isn't left blank
+            _overlayWindow?.UpdateBlocks(
+                _lastColoredBlocks,
+                _lastOcrBlocks,
+                _lastSelPhysLeft,
+                _lastSelPhysTop,
+                _lastSelPhysWidth,
+                _lastSelPhysHeight,
+                req.SourceLang,
+                _lastTargetLang,
+                _lastVerticalText,
+                _lastBackdrop);
+            requestToolbar?.SetTranslationState(_lastColoredBlocks.Count > 0);
+            requestToolbar?.SetToggleEnabled(_lastColoredBlocks.Count > 0);
+            ShowNotice(
+                LocalizationService.Get("S.Main.TranslateFailedTitle"),
+                LocalizationService.Format("S.Main.TranslateFailedBody", ex.Message));
+        }
+        finally
+        {
+            if (IsCurrentSelectionSession(requestSessionId, requestToolbar, requestCaptureWindow))
+            {
+                _overlayWindow?.RestoreIdle(_lastColoredBlocks.Count > 0);
+
+                // Tied to a translation being on screen, not merely to recognition having run: the
+                // 複製文字 button also recognises, and the box stays editable after it, so text on
+                // its own is no promise that what would be read still matches the selection. A
+                // re-translate that fails keeps the button, because its bubbles are still up.
+                requestToolbar?.SetBusy(false);
+            }
+        }
+    }
+
+    // Deep copy of a capture crop, owned by the caller. Clone(Rectangle, PixelFormat) allocates a
+    // fresh GDI+ bitmap and copies the pixels, so the copy stays valid after the source is disposed.
+    private static Bitmap ClonePixels(Bitmap source) =>
+        source.Clone(new Rectangle(0, 0, source.Width, source.Height), source.PixelFormat);
+
+    /// <summary>
+    /// Recognises the locked crop, or hands back its last recognition when nothing recognition
+    /// sees has changed — see <see cref="CaptureOcrReuse"/>.
+    /// </summary>
+    /// <param name="captureWindow">
+    /// The window the crop was cut from, locked for this request; with its selection, what
+    /// identifies the picture.
+    /// </param>
+    /// <param name="workBitmap">This request's copy of the crop, which is what is actually read.</param>
+    /// <returns>
+    /// The blocks, and whether they are the last recognition handed back; null when the session this
+    /// request belongs to has moved on in the meantime.
+    /// </returns>
+    private async Task<(List<OcrTextBlock> Blocks, bool Reused)?> RecognizeCropAsync(
+        ScreenCaptureWindow captureWindow,
+        Bitmap workBitmap,
+        string sourceLang,
+        bool verticalText,
+        CaptureLayoutMode requestedLayout,
+        Func<bool> stillCurrent,
+        CancellationToken cancellationToken)
+    {
+        var layoutMode = CaptureLayoutPolicy.ForApplication(requestedLayout);
+        var region     = captureWindow.Selection;
+        if (_ocrReuse.TryGet(captureWindow, region, sourceLang, verticalText, layoutMode, out var reused))
+        {
+            Log.Debug("Re-using the last recognition of this crop ({Count} blocks)", reused.Count);
+            return (reused, true);
+        }
+
+        _overlayWindow?.ShowProcessing(
+            _lastSelPhysLeft,
+            _lastSelPhysTop,
+            _lastSelPhysWidth,
+            _lastSelPhysHeight,
+            LocalizationService.Get("S.Main.Recognising"));
+
+        var recognized = await AppServices.Ocr.RecognizeAsync(
+            workBitmap, sourceLang, cancellationToken, verticalText, layoutMode);
+        if (!stillCurrent()) return null;
+
+        _ocrReuse.Remember(captureWindow, region, sourceLang, verticalText, layoutMode, recognized);
+        return (recognized, false);
+    }
+
+    private static long ElapsedMs(long since) => (long)Stopwatch.GetElapsedTime(since).TotalMilliseconds;
+
+    private async void OnCopyTextRequested(object? sender, CopyTextRequest req)
+    {
+        var requestToolbar = sender as ToolbarWindow;
+        var requestCaptureWindow = _captureWindow;
+        var requestSessionId = _selectionSessionId;
+        var cancellationToken = _sessionCts?.Token ?? CancellationToken.None;
+        var selRect = CurrentSelectionRect();
+
+        if (req.Kind != CopyTextKind.RecognizeSource)
+        {
+            try
+            {
+                var cachedText = req.Kind == CopyTextKind.Translation
+                    ? JoinWithoutLineBreaks(_lastTranslatedBlocks.Select(block => block.TranslatedText))
+                    : JoinWithoutLineBreaks(_lastOcrBlocks.Select(block => block.Text));
+                CopyCaptureText(cachedText, req.Kind);
+            }
+            catch (Exception ex)
+            {
+                Log.Error(ex, "Copy cached capture text failed (kind={Kind})", req.Kind);
+                ShowNotice(
+                    LocalizationService.Get("S.Main.CopyFailedTitle"),
+                    LocalizationService.Get("S.Main.CopyTextFailedBody"));
+            }
+            return;
+        }
+
+        requestToolbar?.SetRecognitionBusy(true);
+
+        // Copying text needs the region held still while it is read, nothing more, so the frame goes
+        // back to the user afterwards — but only if this is what locked it. A frame already locked
+        // by a translation belongs to that translation and stays put.
+        bool frameLockedByThisCopy = false;
+
+        try
+        {
+            if (requestCaptureWindow == null || !requestCaptureWindow.PrepareForProcessing(out frameLockedByThisCopy))
+            {
+                ShowNotice(
+                    LocalizationService.Get("S.Main.RecogniseFailedTitle"),
+                    LocalizationService.Get("S.Main.NoImageBody"));
+                return;
+            }
+
+            _lastSelPhysLeft   = requestCaptureWindow.Selection.Left;
+            _lastSelPhysTop    = requestCaptureWindow.Selection.Top;
+            _lastSelPhysWidth  = requestCaptureWindow.Selection.Width;
+            _lastSelPhysHeight = requestCaptureWindow.Selection.Height;
+            selRect = requestCaptureWindow.Selection;
+
+            using var workBitmap = ClonePixels(requestCaptureWindow.CroppedBitmap!);
+
+            var recognition = await RecognizeCropAsync(
+                requestCaptureWindow,
+                workBitmap,
+                req.SourceLang,
+                req.IsVerticalText,
+                req.LayoutMode,
+                () => IsCurrentSelectionSession(requestSessionId, requestToolbar, requestCaptureWindow),
+                cancellationToken);
+            if (recognition is not (var recognizedBlocks, _))
+                return;
+
+            _lastOcrBlocks = recognizedBlocks;
+            _overlayWindow?.ShowOcrDebug(_lastOcrBlocks, _lastSelPhysLeft, _lastSelPhysTop);
+            if (_lastOcrBlocks.Count == 0)
+            {
+                ShowNotice(
+                    LocalizationService.Get("S.Main.NoTextTitle"),
+                    LocalizationService.Get("S.Main.NoTextBody"), NoticeKind.Info);
+                return;
+            }
+
+            CopyCaptureText(
+                JoinWithoutLineBreaks(_lastOcrBlocks.Select(block => block.Text)),
+                CopyTextKind.Source);
+        }
+        catch (OperationCanceledException)
+        {
+            Log.Debug("Copy text request abandoned — capture session ended");
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Copy text request failed (src={Src}, selection={Sel})", req.SourceLang, selRect);
+            if (!IsCurrentSelectionSession(requestSessionId, requestToolbar, requestCaptureWindow))
+                return;
+
+            ShowNotice(
+                LocalizationService.Get("S.Main.CopyFailedTitle"),
+                LocalizationService.Get("S.Main.CopyTextFailedBody"));
+        }
+        finally
+        {
+            if (IsCurrentSelectionSession(requestSessionId, requestToolbar, requestCaptureWindow))
+            {
+                _overlayWindow?.RestoreIdle(_lastColoredBlocks.Count > 0);
+                if (frameLockedByThisCopy) requestCaptureWindow?.RestoreSelectionEditing();
+                requestToolbar?.SetRecognitionBusy(false);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Puts one side of the capture on the clipboard and says which side it was.
+    /// </summary>
+    /// <param name="text">The recognised original or the translation, already joined into one line</param>
+    /// <param name="kind">Which of the two was copied, so the confirmation names the right one</param>
+    private void CopyCaptureText(string text, CopyTextKind kind)
+    {
+        var payload = text.Trim();
+
+        // Blocks made only of whitespace get this far: they count as recognised text but leave
+        // nothing to paste, and a "已複製" over an untouched clipboard is the one thing the user
+        // cannot check without switching away.
+        if (payload.Length == 0)
+        {
+            ShowNotice(
+                LocalizationService.Get("S.Main.NoTextTitle"),
+                LocalizationService.Get("S.Main.NoTextBody"), NoticeKind.Info);
+            return;
+        }
+
+        System.Windows.Clipboard.SetText(payload);
+        ShowNotice(
+            LocalizationService.Get("S.Main.CopiedTitle"),
+            LocalizationService.Get(
+                kind == CopyTextKind.Translation
+                    ? "S.Main.TranslationCopiedBody"
+                    : "S.Main.TextCopiedBody"),
+            NoticeKind.Success);
+    }
+
+    // Builds the "copy screenshot" image by compositing what the user actually sees in the
+    // selection — WITHOUT OverTranslate's own editing chrome. The background is the clean original
+    // capture (so the selection border/handles are never included), and the translation bubbles
+    // (when present) are rendered on top. The loading indicator is excluded because the bubble
+    // layers are empty while processing, so RenderBubblesForSelection returns null then.
+    private void OnCopyScreenshotRequested(object? sender, EventArgs e)
+    {
+        try
+        {
+            var background = _captureWindow?.CreateSelectionImage();
+            if (background is null)
+            {
+                ShowNotice(
+                    LocalizationService.Get("S.Main.CopyFailedTitle"),
+                    LocalizationService.Get("S.Main.NoImageBody"));
+                return;
+            }
+
+            int w = background.PixelWidth;
+            int h = background.PixelHeight;
+
+            var bubbles = _overlayWindow?.RenderOverlayForSelection(
+                _lastSelPhysLeft, _lastSelPhysTop, w, h);
+
+            System.Windows.Media.Imaging.BitmapSource result = background;
+            if (bubbles is not null)
+            {
+                var dv = new System.Windows.Media.DrawingVisual();
+                using (var dc = dv.RenderOpen())
+                {
+                    var bounds = new System.Windows.Rect(0, 0, w, h);
+                    dc.DrawImage(background, bounds);
+                    dc.DrawImage(bubbles, bounds);
+                }
+                var composed = new System.Windows.Media.Imaging.RenderTargetBitmap(
+                    w, h, 96, 96, System.Windows.Media.PixelFormats.Pbgra32);
+                composed.Render(dv);
+                composed.Freeze();
+                result = composed;
+            }
+
+            System.Windows.Clipboard.SetImage(result);
+            _toolbarWindow?.ShowScreenshotCopied();
+
+            if (SettingsService.Instance.Current.Capture.CloseAfterCopy)
+                CloseAll("copy and close");
+            else ShowNotice(LocalizationService.Get("S.Main.CopiedTitle"),
+                LocalizationService.Get("S.Main.CopiedBody"), NoticeKind.Success);
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Copy screenshot failed");
+            ShowNotice(
+                LocalizationService.Get("S.Main.CopyFailedTitle"),
+                LocalizationService.Format("S.Main.CopyFailedBody", ex.Message));
+        }
+    }
+
+    private System.Windows.Rect CurrentSelectionRect() => new(
+        _lastSelPhysLeft, _lastSelPhysTop, _lastSelPhysWidth, _lastSelPhysHeight);
+
+    private static string JoinWithoutLineBreaks(IEnumerable<string> parts) =>
+        string.Join(" ", parts.Select(text => text.Replace('\r', ' ').Replace('\n', ' ')));
+
+    /// <param name="reason">
+    /// Which way out asked for this, for the log line below. A session that flashes and vanishes has
+    /// several possible causes — Esc, a second press of the key or the button, an exception — and
+    /// without this they all read the same.
+    /// </param>
+    private void CloseAll(string reason)
+    {
+        // Paired with "Capture session starting": between them they show whether a session the user
+        // reports as stuck ever actually ended.
+        Log.Info("Tearing down capture session, reason={Reason} (overlay={Overlay}, toolbar={Toolbar}, capture={Capture})",
+            reason, _overlayWindow != null, _toolbarWindow != null, _captureWindow != null);
+        _selectionSessionId++;
+        DisposeSessionHooks();
+        CancelSession();
+        _ocrReuse.Clear();
+
+
+        // Detach handler before closing so we drive the teardown order ourselves
+        if (_overlayWindow != null && _overlayClosedHandler != null)
+            _overlayWindow.Closed -= _overlayClosedHandler;
+
+        // Each window is torn down independently: the capture window paints a full-screen dim layer
+        // that is click-through once processing starts, so if an earlier Close() threw we must still
+        // reach it. Clearing the field first also guarantees the state never claims a window that is
+        // actually gone, which would make the next hotkey press a no-op teardown.
+        // Before the overlay: closing the panel gives the pen back and takes the overlay out of
+        // click-through mode, and doing that to a window that has already gone is a needless throw
+        // on the one teardown path that must never leave a window behind.
+
+        CloseWindow(_overlayWindow, w => w.CloseOverlay(), nameof(OverlayWindow));
+        _overlayWindow = null;
+
+        CloseWindow(_toolbarWindow, w => w.Close(), nameof(ToolbarWindow));
+        _toolbarWindow = null;
+
+        CloseWindow(_captureWindow, w => w.Close(), nameof(ScreenCaptureWindow));
+        _captureWindow = null;
+
+        // Last, so a shell hidden for this capture comes back only once the screen is clear of the
+        // dim layer and overlay it would otherwise be raised behind.
+        RestoreShellAfterCapture();
+
+        // And the realtime layers after that, for the same reason twice over: they are topmost, so
+        // they would come back over a capture still being torn down. Unconditional — it does nothing
+        // unless this capture is the one that stood a session down.
+        RealtimeSessionController.Instance.ResumeAfterCapture();
+    }
+
+    private void DisposeSessionHooks()
+    {
+        _escapeHook?.Dispose();
+        _escapeHook = null;
+
+        _recoveryYield?.Dispose();
+        _recoveryYield = null;
+    }
+
+    // Puts the session's windows where the recovery watch says they belong. Called both when it
+    // changes its mind and after a window is created, since the overlay and the toolbar are built
+    // after the selection is drawn and would otherwise come up on top of a Task Manager already out.
+    private void ApplyCaptureTopmost()
+    {
+        bool onTop = _recoveryYield?.HasYielded != true;
+
+        // Bottom of the stack first: each one steps in directly behind the recovery window, so the
+        // last one placed ends up highest and the layers keep their own order among themselves.
+        foreach (var window in new Window?[]
+                 { _captureWindow, _overlayWindow, _toolbarWindow })
+        {
+            if (window is null) continue;
+
+            window.Topmost = onTop;
+
+            // Both halves or neither. A step-aside that could not be completed — Task Manager gone
+            // between the event and here — would otherwise leave the layer out of the topmost band
+            // and still in front of it, which is worse than never having moved.
+            if (!onTop && !AlwaysOnTop.PlaceBehind(window, _recoveryYield!.RecoveryWindow))
+                window.Topmost = true;
+        }
+    }
+
+    // Signals recognition/translation started by this session to stop. The source is not disposed
+    // here: work already in flight still holds the token, and disposing it underneath them would
+    // throw. Letting it be collected is the safe trade for an object this small.
+    private void CancelSession()
+    {
+        _sessionCts?.Cancel();
+        _sessionCts = null;
+    }
+
+    private static void CloseWindow<T>(T? window, Action<T> close, string name) where T : Window
+    {
+        if (window == null) return;
+        try
+        {
+            close(window);
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Failed to close {Window} — forcing teardown of the remaining windows", name);
+        }
+    }
+
+    // Last-resort teardown for the unhandled-exception handler. Returns whether a capture session
+    // was actually torn down, which is what tells the caller the app is back in a clean state.
+    internal bool ForceCloseOverlays()
+    {
+        if (!HasActiveSession) return false;
+
+        CloseAll("unhandled exception");
+        return true;
+    }
+
+    // The Esc hook counts: it is process-wide, so a session that left only the hook behind still
+    // needs tearing down even though every window is already gone.
+    private bool HasActiveSession =>
+        _overlayWindow != null || _toolbarWindow != null || _captureWindow != null || _escapeHook != null;
+
+    /// <summary>
+    /// Whether a screenshot capture — selection, overlay or toolbar — is on screen right now, so
+    /// the other feature can decline to start on top of it.
+    /// </summary>
+    public bool IsCapturing => HasActiveSession;
+
+    private bool IsCurrentSelectionSession(int sessionId, ToolbarWindow? toolbar, ScreenCaptureWindow? captureWindow) =>
+        sessionId == _selectionSessionId &&
+        ReferenceEquals(toolbar, _toolbarWindow) &&
+        ReferenceEquals(captureWindow, _captureWindow);
+
+    private static void OpenSettings() => ShellWindow.ShowOrActivate(ShellPage.Settings);
+
+    private void ShowTrayMenu()
+    {
+        if (_trayMenu != null) return;
+        _trayMenu = new TrayMenuWindow();
+        _trayMenu.OpenTranslationRequested += (_, _) => OnTrayLeftClick();
+        _trayMenu.SetRealtimeRunning(Views.Realtime.RealtimeSessionController.Instance.IsActive);
+        _trayMenu.OpenSettingsRequested    += (_, _) => OpenSettings();
+        _trayMenu.OpenLibraryRequested     += (_, _) => Views.Library.LibraryWindow.Open();
+        _trayMenu.ExitRequested            += (_, _) => ExitApp();
+        _trayMenu.Closed                   += (_, _) => _trayMenu = null;
+        _trayMenu.Show();
+    }
+
+    /// <summary>
+    /// Opens the shell, or — while a realtime session owns the screen — puts its layers back on
+    /// top instead.
+    /// </summary>
+    /// <remarks>
+    /// The window is no use during a session: the layers cover the screen and the session's own
+    /// controls are the only thing to interact with. So the click is spent on the one thing the
+    /// user might actually need it for, which is reaching a control bar that something else has
+    /// covered. Without it the only way out of that would be killing the application from the
+    /// tray, which takes the block layout with it.
+    /// </remarks>
+    private static void OnTrayLeftClick()
+    {
+        if (Views.Realtime.RealtimeSessionController.Instance.IsActive)
+        {
+            Views.Realtime.RealtimeSessionController.Instance.BringToFront();
+            return;
+        }
+
+        OpenShell();
+    }
+
+    /// <remarks>
+    /// No page named: both ways in here — this shortcut and the tray's left click — mean "show me
+    /// the window", so it opens on whichever page it was last left on.
+    /// </remarks>
+    private static void OpenShell() => ShellWindow.ShowOrActivate();
+
+    private async void ExitApp()
+    {
+        if (_exitingApplication) return;
+        _exitingApplication = true;
+        Views.Library.LibraryWindow.Shutdown();
+        Views.ClipboardHistory.ClipboardHistoryWindow.Shutdown();
+        _clipboardHotkey?.Dispose();
+        _libraryHotkey?.Dispose();
+        // Its overlays are Topmost and click-through; left behind by a shutdown they would be
+        // painted onto the desktop with no process left to close them.
+        RealtimeSessionController.Instance.Stop();
+        DisposeSessionHooks();
+        _hotkey?.Dispose();
+        _ocrHotkey?.Dispose();
+        _windowHotkey?.Dispose();
+        _realtimePauseHotkey?.Dispose();
+        if (_notifyIcon != null)
+        {
+            _notifyIcon.Visible = false;
+            _notifyIcon.Dispose();
+        }
+        try { await Views.ClipboardHistory.LanTransferWindow.ShutdownCurrentAsync(); }
+        catch (Exception) { Log.Warn("LAN shutdown did not finish cleanly"); }
+        await Services.ClipboardHistory.ClipboardHistoryRuntime.StopAsync();
+        System.Windows.Application.Current.Shutdown();
+    }
+
+    private void ShowNotice(string title, string message, NoticeKind kind = NoticeKind.Error)
+    {
+        if (_toolbarWindow is { } toolbar)
+        {
+            toolbar.ShowNotice(title, message, kind);
+            return;
+        }
+
+        // Every caller is answering a button on the toolbar, so this is a session that closed while
+        // the work behind the button was still running. Nothing on screen is left to say it on.
+        Log.Info("Toolbar notice dropped with no toolbar open, kind={Kind}, title=\"{Title}\"", kind, title);
+    }
+
+    protected override void OnClosed(EventArgs e)
+    {
+        base.OnClosed(e);
+        ExitApp();
+    }
+}

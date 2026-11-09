@@ -1,0 +1,549 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:sys="clr-namespace:System;assembly=mscorlib">
+
+    <!-- Mirror of Strings.zh-Hant.xaml. Same keys, same {0} placeholders in the same meaning —
+         StringsParityTests fails the build if the two drift apart.
+
+         Field labels here are deliberately terse. They sit in a shared-width column that sizes
+         itself to the longest one, so a wordy label pushes every input on the page to the right.
+         Prefer the noun ("Shortcut", "Provider") over the sentence. -->
+
+    <!-- ── Shared ── -->
+    <sys:String x:Key="S.Common.Reset">Reset</sys:String>
+    <sys:String x:Key="S.Common.Close">Close</sys:String>
+    <sys:String x:Key="S.Common.Cancel">Cancel</sys:String>
+    <sys:String x:Key="S.Common.Save">Save</sys:String>
+    <sys:String x:Key="S.Common.ApiKey">API key</sys:String>
+    <!-- The search box in a language picker. Typing narrows the list and never changes the
+         selection on its own — the user still picks. -->
+    <sys:String x:Key="S.Common.SearchLanguage">Search languages</sys:String>
+    <sys:String x:Key="S.Common.SearchNoMatch">No matching language</sys:String>
+
+    <!-- ── Shell window ── -->
+    <sys:String x:Key="S.Shell.About">About</sys:String>
+    <sys:String x:Key="S.Shell.QuickTools">Quick tools</sys:String>
+    <sys:String x:Key="S.Shell.CaptureTranslate">Screen capture</sys:String>
+    <sys:String x:Key="S.Shell.RealtimeTranslate">Realtime</sys:String>
+    <sys:String x:Key="S.Shell.Settings">Settings</sys:String>
+    <sys:String x:Key="S.Shell.HideSidebar">Hide sidebar</sys:String>
+    <sys:String x:Key="S.Shell.ShowSidebar">Show sidebar</sys:String>
+    <sys:String x:Key="S.Shell.CaptureBlockedByRealtimeFraming">Realtime blocks are being framed — click "Start" before using screen capture</sys:String>
+
+    <!-- ── Tray menu ── -->
+    <sys:String x:Key="S.Tray.OpenWindow">Open translation window</sys:String>
+    <sys:String x:Key="S.Tray.RealtimeWindow">Realtime window</sys:String>
+    <sys:String x:Key="S.Tray.Settings">Settings</sys:String>
+    <sys:String x:Key="S.Tray.Exit">Exit</sys:String>
+
+    <!-- ── About ── -->
+    <sys:String x:Key="S.About.Website">Visit the website</sys:String>
+    <sys:String x:Key="S.About.Star">Star it to help others find it</sys:String>
+    <sys:String x:Key="S.About.StarTip">Go to GitHub</sys:String>
+    <sys:String x:Key="S.About.Sponsor">Support</sys:String>
+    <sys:String x:Key="S.About.SponsorTip">Support via Buy Me a Coffee</sys:String>
+    <sys:String x:Key="S.About.Version">Version {0}</sys:String>
+    <sys:String x:Key="S.About.OpenSource">Free and open source.</sys:String>
+
+    <!-- ── Toast ── -->
+    <sys:String x:Key="S.Toast.CopyMessage">Copy message</sys:String>
+    <sys:String x:Key="S.Toast.Copied">Copied to the clipboard</sys:String>
+    <sys:String x:Key="S.Toast.CopyFailed">Copy failed. Please try again later.</sys:String>
+
+    <!-- ── Update ── -->
+    <sys:String x:Key="S.Update.WindowTitle">Update available</sys:String>
+    <sys:String x:Key="S.Update.Heading">Update available</sys:String>
+    <sys:String x:Key="S.Update.HeadingDownloading">Downloading update...</sys:String>
+    <sys:String x:Key="S.Update.HeadingInstalling">Installing update...</sys:String>
+    <sys:String x:Key="S.Update.HistoryHeading">Release notes</sys:String>
+    <sys:String x:Key="S.Update.HistoryCurrent">Current version {0}</sys:String>
+    <sys:String x:Key="S.Update.IncludesVersions">Includes {0} versions</sys:String>
+    <sys:String x:Key="S.Update.LatestTag">Latest</sys:String>
+    <sys:String x:Key="S.Update.CurrentTag">Current</sys:String>
+    <sys:String x:Key="S.Update.EarlierVersions">{0} earlier versions</sys:String>
+    <sys:String x:Key="S.Update.EarlierLink">View on GitHub</sys:String>
+    <sys:String x:Key="S.Update.AllVersionsLink">View all versions on GitHub</sys:String>
+    <sys:String x:Key="S.Update.HistoryUnavailable">Release notes can't be loaded right now.</sys:String>
+    <sys:String x:Key="S.Update.PeekSeparator" xml:space="preserve">, </sys:String>
+    <sys:String x:Key="S.Update.Explanation">"Update now" downloads and applies the update, then restarts the app.</sys:String>
+    <sys:String x:Key="S.Update.NotesBefore" xml:space="preserve">Curious what changed? </sys:String>
+    <sys:String x:Key="S.Update.NotesLink">See the release notes</sys:String>
+    <sys:String x:Key="S.Update.Later">Later</sys:String>
+    <sys:String x:Key="S.Update.Now">Update now</sys:String>
+    <sys:String x:Key="S.Update.Skip">Skip this version and stop reminding me</sys:String>
+    <sys:String x:Key="S.Update.DownloadingDelta">Downloading update {0}</sys:String>
+    <sys:String x:Key="S.Update.DownloadingFull">Downloading full installer {0}</sys:String>
+    <sys:String x:Key="S.Update.Patching">Applying update...</sys:String>
+    <sys:String x:Key="S.Update.Preparing">Preparing to install...</sys:String>
+    <sys:String x:Key="S.Update.Applying">Installing...</sys:String>
+    <sys:String x:Key="S.Update.FellBackToFull">Update file could not be applied — using a full update</sys:String>
+    <sys:String x:Key="S.Update.SlowBefore" xml:space="preserve">Downloading slowly? </sys:String>
+    <sys:String x:Key="S.Update.SlowLink">Get it manually from GitHub</sys:String>
+    <sys:String x:Key="S.Update.Cancel">Cancel update</sys:String>
+    <sys:String x:Key="S.Update.Cancelling">Cancelling...</sys:String>
+    <sys:String x:Key="S.Update.Retry">Retry</sys:String>
+    <sys:String x:Key="S.Update.Failed">Could not download the update: {0}</sys:String>
+    <sys:String x:Key="S.Update.CloseBlocked">The update is running — the app restarts itself when it finishes</sys:String>
+
+    <!-- ── Service errors ── -->
+    <sys:String x:Key="S.Error.OpenAiHttp">The OpenAI-compatible API returned {0}: {1}</sys:String>
+    <sys:String x:Key="S.Error.OpenAiUnparsable">Could not parse the OpenAI-compatible API response.</sys:String>
+    <sys:String x:Key="S.Error.OpenAiNoTranslation">The OpenAI-compatible API returned no translation.</sys:String>
+    <sys:String x:Key="S.Error.OpenAiTimeout">The OpenAI-compatible API did not respond within {0} seconds. You can change the timeout in the translation service settings.</sys:String>
+    <sys:String x:Key="S.Error.OpenAiBadUrl">The OpenAI-compatible API address must be a valid HTTP or HTTPS URL.</sys:String>
+    <sys:String x:Key="S.Error.OpenAiNoModel">No model name is set. Enter the model to use in the translation service settings.</sys:String>
+    <sys:String x:Key="S.Error.UnknownError">Unknown error</sys:String>
+    <sys:String x:Key="S.Error.NoErrorContent">No error details provided</sys:String>
+    <sys:String x:Key="S.Error.OcrUnsupportedLanguage">OCR currently supports AUTO, EN, ZH, ZH-HANT, JA, KO, RU and UK only; "{0}" is not supported yet.</sys:String>
+    <sys:String x:Key="S.Error.OcrSwapTimeout">Timed out waiting for other recognition to finish before switching OCR models.</sys:String>
+    <sys:String x:Key="S.Error.OcrImageConvert">Could not convert the image into a format the ONNX OCR can read.</sys:String>
+    <sys:String x:Key="S.Error.OcrModelMissing">OCR model file not found: {0}</sys:String>
+    <sys:String x:Key="S.Error.NotTranslated">Not translated</sys:String>
+
+    <!-- ── Text translation page ── -->
+    <!-- The note at the foot of the page and the greyed speaker's tooltip are the same sentence:
+         the note is what is read, the tooltip is for whoever hovers the button instead. -->
+
+    <!-- ── In-place translation ── Only ever seen on the hint card, so each line stays to one: it sits
+         over the window the reader is working in. -->
+
+    <!-- ── Rich dictionary ── -->
+    <sys:String x:Key="S.Dictionary.Alternatives">More translations</sys:String>
+    <sys:String x:Key="S.Dictionary.PartOfSpeech.Adjective">Adjective</sys:String>
+    <sys:String x:Key="S.Dictionary.PartOfSpeech.Adverb">Adverb</sys:String>
+    <sys:String x:Key="S.Dictionary.PartOfSpeech.Article">Article</sys:String>
+    <sys:String x:Key="S.Dictionary.PartOfSpeech.Conjunction">Conjunction</sys:String>
+    <sys:String x:Key="S.Dictionary.PartOfSpeech.Determiner">Determiner</sys:String>
+    <sys:String x:Key="S.Dictionary.PartOfSpeech.Interjection">Interjection</sys:String>
+    <sys:String x:Key="S.Dictionary.PartOfSpeech.ModalVerb">Modal verb</sys:String>
+    <sys:String x:Key="S.Dictionary.PartOfSpeech.Noun">Noun</sys:String>
+    <sys:String x:Key="S.Dictionary.PartOfSpeech.Other">Other</sys:String>
+    <sys:String x:Key="S.Dictionary.PartOfSpeech.Phrase">Phrase</sys:String>
+    <sys:String x:Key="S.Dictionary.PartOfSpeech.Preposition">Preposition</sys:String>
+    <sys:String x:Key="S.Dictionary.PartOfSpeech.Pronoun">Pronoun</sys:String>
+    <sys:String x:Key="S.Dictionary.PartOfSpeech.Verb">Verb</sys:String>
+
+    <!-- ── Quick lookup popup ── -->
+    <!-- Automatic is not switched off here the way it is on the text translation page: once the
+         translation is back the engine has said which language the original was in, so the only
+         gap is before the first result. -->
+
+    <!-- ── Capture toolbar ── -->
+    <sys:String x:Key="S.Toolbar.Translate">Translate</sys:String>
+    <sys:String x:Key="S.Toolbar.Translating">Translating...</sys:String>
+    <sys:String x:Key="S.Toolbar.Recognising">Reading...</sys:String>
+    <sys:String x:Key="S.Toolbar.Retranslate">Translate again</sys:String>
+    <sys:String x:Key="S.Toolbar.ShowSource">Show source</sys:String>
+    <sys:String x:Key="S.Toolbar.ShowTranslation">Show translation</sys:String>
+    <sys:String x:Key="S.Toolbar.CopyText">Copy text</sys:String>
+    <sys:String x:Key="S.Toolbar.CopyTranslation">Copy translation</sys:String>
+    <sys:String x:Key="S.Toolbar.Screenshot">Screenshot</sys:String>
+    <sys:String x:Key="S.Toolbar.ShowSourceHint">Take the translation away for now and see the selection as it was</sys:String>
+    <sys:String x:Key="S.Toolbar.ShowTranslationHint">Put the translation back</sys:String>
+    <sys:String x:Key="S.Toolbar.CopyTextHint">Copy the original text in the selection to the clipboard</sys:String>
+    <sys:String x:Key="S.Toolbar.CopyTranslationHint">Copy the translation to the clipboard</sys:String>
+    <sys:String x:Key="S.Toolbar.ScreenshotHint">Copy the selection as it looks now to the clipboard</sys:String>
+    <sys:String x:Key="S.Toolbar.SettingsHint">Auto-translate, Close after screenshot, Save screenshots and more</sys:String>
+    <sys:String x:Key="S.Toolbar.Swap">Swap source and target languages</sys:String>
+    <sys:String x:Key="S.Toolbar.Close">End screenshot translation</sys:String>
+    <sys:String x:Key="S.Toolbar.Direction">Writing direction of the source</sys:String>
+    <sys:String x:Key="S.Toolbar.DirectionHorizontal">Horizontal</sys:String>
+    <sys:String x:Key="S.Toolbar.DirectionVertical">Vertical</sys:String>
+    <sys:String x:Key="S.Toolbar.DirectionHorizontalHint">The source runs from left to right.</sys:String>
+    <sys:String x:Key="S.Toolbar.DirectionVerticalHint">Primarily for vertical text; also translates some horizontal text (Japanese books and manga).</sys:String>
+    <sys:String x:Key="S.Toolbar.LayoutMode">What the selection holds</sys:String>
+    <sys:String x:Key="S.Toolbar.LayoutModeGeneral">General</sys:String>
+    <sys:String x:Key="S.Toolbar.LayoutModeInterface">Interface</sys:String>
+    <sys:String x:Key="S.Toolbar.LayoutModeGeneralHint">Sets the text in reading order and merges neighbouring lines where they belong together. Suits articles, comics, dialogue and most ordinary captures.</sys:String>
+    <sys:String x:Key="S.Toolbar.LayoutModeInterfaceHint">Keeps the original arrangement and the separation between blocks, and judges merges more strictly. Suits game UI, menus and multi-column interfaces.</sys:String>
+
+    <!-- ── Capture overlay ── -->
+    <sys:String x:Key="S.Capture.CancelTip">Cancel capture</sys:String>
+    <sys:String x:Key="S.Capture.DragPrompt">Drag to select an area to translate</sys:String>
+    <sys:String x:Key="S.Capture.PressPrefix">Press</sys:String>
+    <sys:String x:Key="S.Capture.CancelSuffix">to cancel</sys:String>
+    <sys:String x:Key="S.Overlay.Recognising">Reading</sys:String>
+
+    <!-- ── Secret box ── -->
+    <sys:String x:Key="S.Secret.Show">Show</sys:String>
+    <sys:String x:Key="S.Secret.Hide">Hide</sys:String>
+
+    <!-- ── Tray notifications and capture balloons ── -->
+    <sys:String x:Key="S.Main.MinimizedTitle">ScreenTranslate is still running</sys:String>
+    <sys:String x:Key="S.Main.MinimizedBody">Minimised to the system tray. Press {0} to start a screen capture translation.</sys:String>
+    <sys:String x:Key="S.Main.DefaultShortcutName">your shortcut</sys:String>
+    <sys:String x:Key="S.Main.RealtimeRunningTitle">Realtime translation is running</sys:String>
+    <sys:String x:Key="S.Main.RealtimeRunningBody">Quick lookup isn't available while editing blocks.</sys:String>
+    <sys:String x:Key="S.Main.MissingApiKeyTitle">No API key</sys:String>
+    <sys:String x:Key="S.Main.MissingApiKeyBody">Enter an API key in Settings.</sys:String>
+    <sys:String x:Key="S.Main.RecogniseFailedTitle">Recognition failed</sys:String>
+    <sys:String x:Key="S.Main.NoImageBody">The selected image is missing. Select the area again.</sys:String>
+    <sys:String x:Key="S.Main.Recognising">Reading</sys:String>
+    <sys:String x:Key="S.Main.NoTextTitle">No text found</sys:String>
+    <sys:String x:Key="S.Main.NoTextBody">No readable text in the selected area.</sys:String>
+    <sys:String x:Key="S.Main.Translating">Translating</sys:String>
+    <sys:String x:Key="S.Main.TranslateFailedTitle">Translation failed</sys:String>
+    <sys:String x:Key="S.Main.TranslateFailedBody">The current translation source may be temporarily unavailable.
+Switch to a different source and try again.
+Details: {0}</sys:String>
+    <sys:String x:Key="S.Main.CopiedTitle">Copied</sys:String>
+    <sys:String x:Key="S.Main.CopiedBody">The selected area was copied to the clipboard.</sys:String>
+    <sys:String x:Key="S.Main.TextCopiedBody">The recognized text was copied to the clipboard.</sys:String>
+    <sys:String x:Key="S.Main.TranslationCopiedBody">The translation was copied to the clipboard.</sys:String>
+    <sys:String x:Key="S.Main.CopyFailedTitle">Copy failed</sys:String>
+    <sys:String x:Key="S.Main.CopyFailedBody">Could not copy the screenshot: {0}</sys:String>
+    <sys:String x:Key="S.Main.CopyTextFailedBody">The clipboard is unavailable right now. Try again in a moment.</sys:String>
+
+    <!-- ── Realtime translation ── -->
+    <sys:String x:Key="S.Realtime.Title">Realtime translation</sys:String>
+    <sys:String x:Key="S.Realtime.Subtitle">Pick regions of the screen and they are re-translated whenever the text changes — for video, games and anything else that keeps moving.</sys:String>
+
+    <sys:String x:Key="S.Realtime.TranslationSettings">Translation</sys:String>
+    <sys:String x:Key="S.Realtime.SourceLanguage">Source language</sys:String>
+    <sys:String x:Key="S.Realtime.SourceLanguagePrompt">Choose a source language</sys:String>
+    <sys:String x:Key="S.Realtime.TargetLanguage">Target language</sys:String>
+    <sys:String x:Key="S.Realtime.Provider">Provider</sys:String>
+
+    <sys:String x:Key="S.Realtime.ScreenHint">Realtime translation currently covers one screen at a time.</sys:String>
+    <sys:String x:Key="S.Realtime.BlockCountProgress">Blocks {0} / {1}</sys:String>
+
+    <sys:String x:Key="S.Realtime.Appearance">Appearance</sys:String>
+    <sys:String x:Key="S.Realtime.Preview">Preview</sys:String>
+    <sys:String x:Key="S.Realtime.PreviewText">Text will look like this on screen</sys:String>
+    <sys:String x:Key="S.Realtime.TextColor">Text colour</sys:String>
+    <sys:String x:Key="S.Realtime.TextColorHint">Sets the colour of the translated text. Automatic keeps the colour of the original text on screen.</sys:String>
+    <sys:String x:Key="S.Realtime.TextColorMode">Text colour mode</sys:String>
+    <sys:String x:Key="S.Realtime.FontSize">Text size</sys:String>
+    <sys:String x:Key="S.Realtime.FontSizeHint">Sets the size of the translated text. Automatic follows the size of the original text.</sys:String>
+    <sys:String x:Key="S.Realtime.FontSizeMode">Text size mode</sys:String>
+    <sys:String x:Key="S.Realtime.FontSizeValue">Text size (px)</sys:String>
+    <sys:String x:Key="S.Realtime.FontSizeIncrease">Increase text size</sys:String>
+    <sys:String x:Key="S.Realtime.FontSizeDecrease">Decrease text size</sys:String>
+    <sys:String x:Key="S.Realtime.ScrimColor">Background colour</sys:String>
+    <sys:String x:Key="S.Realtime.ScrimColorHint">Sets the colour of the band behind the translation. Automatic rebuilds the background from the surrounding picture instead.</sys:String>
+    <sys:String x:Key="S.Realtime.ScrimColorMode">Background colour mode</sys:String>
+    <sys:String x:Key="S.Realtime.ScrimOpacity">Background opacity</sys:String>
+    <sys:String x:Key="S.Realtime.ScrimOpacityHint">The higher the value, the more solid the background behind the translation.</sys:String>
+    <sys:String x:Key="S.Realtime.ColorAuto">Automatic</sys:String>
+    <sys:String x:Key="S.Realtime.ColorFixed">Fixed</sys:String>
+    <sys:String x:Key="S.Realtime.Border">Border</sys:String>
+    <sys:String x:Key="S.Realtime.BorderHint">Draws a border around the translation, so it stands apart from the picture.</sys:String>
+    <sys:String x:Key="S.Realtime.BorderColor">Border colour</sys:String>
+    <sys:String x:Key="S.Realtime.ResetAppearance">Reset appearance to defaults</sys:String>
+    <sys:String x:Key="S.ColorPicker.Undo">Back to the previous colour</sys:String>
+    <sys:String x:Key="S.ColorPicker.Hex">Colour code</sys:String>
+    <sys:String x:Key="S.ColorPicker.Square">Saturation and brightness</sys:String>
+    <sys:String x:Key="S.ColorPicker.Hue">Hue</sys:String>
+    <sys:String x:Key="S.Realtime.AutoModeBestFor">The text colour and background Automatic picks do not suit every picture: over some video or a busy background the text can be hard to read and the erased area can look out of place. Switch to Fixed for those scenes.</sys:String>
+
+    <sys:String x:Key="S.Realtime.HowItWorks">How it works</sys:String>
+    <sys:String x:Key="S.Realtime.Step1">1. Click "Select blocks" and drag over the areas you want translated.</sys:String>
+    <sys:String x:Key="S.Realtime.Step2">2. Click "Start" on the floating bar. Each block is re-read and updated whenever its content changes.</sys:String>
+    <sys:String x:Key="S.Realtime.Step3">3. Translated areas do not intercept clicks, so games and other apps keep working. Click "Edit" to adjust the blocks.</sys:String>
+    <sys:String x:Key="S.Realtime.Step4">4. Or press {0}: once to select blocks, again to start translating, and while translating to pause and resume. Pausing puts the original text back on screen.</sys:String>
+
+    <sys:String x:Key="S.Realtime.SelectBlocks">Select blocks</sys:String>
+    <sys:String x:Key="S.Realtime.StopSession">Stop</sys:String>
+    <sys:String x:Key="S.Realtime.ActiveHint">Running. Use the floating bar on screen to adjust or stop it.</sys:String>
+    <sys:String x:Key="S.Realtime.NoApiKey">No API key set. Enter one in Settings, or realtime translation will not be able to fetch translations.</sys:String>
+    <sys:String x:Key="S.Realtime.ScreenItem">Screen {0} · {1}×{2}</sys:String>
+    <sys:String x:Key="S.Realtime.ScreenItemPrimary">Screen {0} · {1}×{2} (primary)</sys:String>
+    <sys:String x:Key="S.Realtime.CaptureInProgress">A screen capture translation is in progress. Finish it before starting realtime translation.</sys:String>
+    <sys:String x:Key="S.Realtime.ChooseSourceFirst">Choose a source language first.</sys:String>
+    <sys:String x:Key="S.Realtime.NoScreens">No usable screen found. Reopen this page.</sys:String>
+
+    <!-- Floating control bar -->
+    <sys:String x:Key="S.Realtime.EditHint">Drag on screen to create the areas you want translated</sys:String>
+    <sys:String x:Key="S.Realtime.StartTranslating">Start</sys:String>
+    <sys:String x:Key="S.Realtime.Running">Translating</sys:String>
+    <sys:String x:Key="S.Realtime.Paused">Paused</sys:String>
+    <sys:String x:Key="S.Realtime.LoadingModels">Loading models…</sys:String>
+    <sys:String x:Key="S.Realtime.Pause">Pause realtime translation</sys:String>
+    <sys:String x:Key="S.Realtime.Resume">Resume realtime translation</sys:String>
+    <sys:String x:Key="S.Realtime.EditBlocks">Edit blocks</sys:String>
+    <sys:String x:Key="S.Realtime.CollapseBar">Collapse the floating bar</sys:String>
+    <sys:String x:Key="S.Realtime.ExpandBar">Expand the floating bar</sys:String>
+    <sys:String x:Key="S.Realtime.ChangeSourceLanguage">Change source language</sys:String>
+    <sys:String x:Key="S.Realtime.ChangeTargetLanguage">Change target language</sys:String>
+    <sys:String x:Key="S.Realtime.LanguageNoMatch">No results for “{0}”</sys:String>
+    <sys:String x:Key="S.Realtime.DismissMessage">Click to dismiss</sys:String>
+    <sys:String x:Key="S.Realtime.CrosshairOff">Pause framing and use the app underneath</sys:String>
+    <sys:String x:Key="S.Realtime.CrosshairOn">Resume framing</sys:String>
+    <sys:String x:Key="S.Realtime.CompareDisplay">Compare with original</sys:String>
+    <sys:String x:Key="S.Realtime.CompareDisplayOn">On</sys:String>
+    <sys:String x:Key="S.Realtime.CompareDisplayOff">Off</sys:String>
+    <sys:String x:Key="S.Realtime.CompareDisplayOnHint">Compare with original: turn off to show the translation directly over the original</sys:String>
+    <sys:String x:Key="S.Realtime.CompareDisplayOffHint">Compare with original: turn on to keep the original visible and show the translation in a separate compare area</sys:String>
+    <sys:String x:Key="S.Realtime.CompareCopyHint">Drag to move the compare box. Double-click this label to put it back automatically</sys:String>
+    <sys:String x:Key="S.Realtime.CompareHideBlock">Turn off compare for this block</sys:String>
+    <sys:String x:Key="S.Realtime.CompareShowBlock">Show compare for this block</sys:String>
+    <sys:String x:Key="S.Realtime.CompareCopyCenter">Translation appears here</sys:String>
+    <sys:String x:Key="S.Realtime.CrosshairOffHint">Framing paused — the app underneath takes the mouse</sys:String>
+
+    <!-- Control bar and edit window messages -->
+    <sys:String x:Key="S.Realtime.MovedToFront">Realtime windows brought to the front</sys:String>
+    <sys:String x:Key="S.Realtime.TooManyBlocks">{0} blocks at most — remove one first</sys:String>
+    <sys:String x:Key="S.Realtime.NeedOneBlock">Drag to create at least one block first</sys:String>
+    <sys:String x:Key="S.Realtime.CaptureSourceLost">The window being translated has closed — realtime translation stopped</sys:String>
+    <sys:String x:Key="S.Realtime.ScreenCaptureUnavailable">This system cannot read the whole screen for realtime translation. Switch to One window and pick the window you want translated</sys:String>
+    <sys:String x:Key="S.Realtime.CaptureSourceScreen">Whole screen</sys:String>
+    <sys:String x:Key="S.Realtime.CaptureSourceWindow">One window</sys:String>
+    <sys:String x:Key="S.Realtime.CaptureSourceScreenHint">Everything on the screen.</sys:String>
+    <sys:String x:Key="S.Realtime.ScreenModeUnsupported">This system does not currently support whole-screen capture.</sys:String>
+    <sys:String x:Key="S.Realtime.RealtimeUnsupported">Realtime translation needs screen capture, which this Windows does not provide</sys:String>
+    <sys:String x:Key="S.Realtime.CaptureSourceWindowHint">One window, even while something covers it.</sys:String>
+    <sys:String x:Key="S.Realtime.Step1Label">Step 1</sys:String>
+    <sys:String x:Key="S.Realtime.Step1Name">Choose a capture source</sys:String>
+    <sys:String x:Key="S.Realtime.Step1Desc">Pick the kind of area to read.</sys:String>
+    <sys:String x:Key="S.Realtime.Step2Label">Step 2</sys:String>
+    <sys:String x:Key="S.Realtime.Step2Name">Choose the screen or window</sys:String>
+    <sys:String x:Key="S.Realtime.Step2Desc">Name the screen or window to read, following the choice above.</sys:String>
+    <sys:String x:Key="S.Realtime.ScreenPrompt">Choose the screen to read.</sys:String>
+    <sys:String x:Key="S.Realtime.CaptureWindowPromptLine">Choose the window to read.</sys:String>
+    <sys:String x:Key="S.Realtime.CaptureWindowPrompt">Choose a window</sys:String>
+    <sys:String x:Key="S.Realtime.CaptureWindowHint">The window list updates when you press Refresh. If you have just opened another app, refresh before choosing.</sys:String>
+    <sys:String x:Key="S.Realtime.CaptureWindowNone">No window can be captured. Open the app first, then refresh.</sys:String>
+    <sys:String x:Key="S.Realtime.CaptureWindowDetail">from {0}</sys:String>
+    <sys:String x:Key="S.Realtime.CaptureWindowOnScreen">Blocks will be framed on {0}.</sys:String>
+    <sys:String x:Key="S.Realtime.RefreshWindows">Refresh</sys:String>
+    <sys:String x:Key="S.Realtime.ChooseWindowFirst">Choose the window to translate first</sys:String>
+    <sys:String x:Key="S.Realtime.WindowCaptureUnsupported">This version of Windows does not support screen capture.</sys:String>
+    <sys:String x:Key="S.Realtime.WindowCaptureGone">That window has closed or been minimised. Pick a window again.</sys:String>
+    <sys:String x:Key="S.Realtime.WindowCaptureFailed">That window cannot be captured. Switch it to borderless window or windowed and try again.</sys:String>
+    <sys:String x:Key="S.Realtime.WindowCaptureFullscreen">That display mode cannot be captured. Switch to borderless window or windowed and try again.</sys:String>
+    <sys:String x:Key="S.Realtime.WindowCaptureNoFrame">No picture could be taken from that window. Switch it to borderless window or windowed and try again.</sys:String>
+    <sys:String x:Key="S.Realtime.SessionEndedTitle">Realtime translation ended</sys:String>
+    <sys:String x:Key="S.Realtime.RemoveBlock">Remove this block</sys:String>
+
+    <!-- Block mode picker -->
+    <sys:String x:Key="S.Realtime.ModeSubtitle">Subtitles / Comics</sys:String>
+    <sys:String x:Key="S.Realtime.ModeGameUi">Game / UI</sys:String>
+    <sys:String x:Key="S.Realtime.ModeSubtitleSummary">One passage, replaced by the next — subtitles, story dialogue, comics</sys:String>
+    <sys:String x:Key="S.Realtime.ModeGameUiSummary">Separate short strings around the screen — HUD, menus, item text, chat</sys:String>
+    <sys:String x:Key="S.Realtime.ModeSubtitleGuidance">For video subtitles, game story dialogue and comic lettering — text that is read straight through.</sys:String>
+    <sys:String x:Key="S.Realtime.ModeGameUiGuidance">For game screens, chat windows, menus and UI text — anything that is not subtitles, dialogue or comics.</sys:String>
+    <sys:String x:Key="S.Realtime.CollapseGuidance">Hide mode details</sys:String>
+    <sys:String x:Key="S.Realtime.ExpandGuidance">Show mode details</sys:String>
+
+    <!-- Session failures -->
+    <sys:String x:Key="S.Realtime.SessionAborted">Realtime translation stopped: {0}</sys:String>
+    <sys:String x:Key="S.Realtime.MissingApiKey">No API key. Enter one in Settings first.</sys:String>
+    <sys:String x:Key="S.Realtime.RetryingAfterFailure">Translation failed for now, still retrying: {0}</sys:String>
+
+    <!-- ── Translation providers ── -->
+    <sys:String x:Key="S.Provider.Google">Google (Standard)</sys:String>
+    <sys:String x:Key="S.Provider.GoogleChrome">Google (Beta)</sys:String>
+    <sys:String x:Key="S.Provider.GoogleChromeHint">More natural, but names may be reworded or dropped</sys:String>
+    <sys:String x:Key="S.Provider.Bing">Bing</sys:String>
+    <sys:String x:Key="S.Provider.Microsoft">Microsoft</sys:String>
+    <sys:String x:Key="S.Provider.Youdao">Youdao</sys:String>
+    <sys:String x:Key="S.Provider.TranSmart">Tencent</sys:String>
+    <sys:String x:Key="S.Provider.Yandex">Yandex</sys:String>
+    <sys:String x:Key="S.Provider.DeepL">DeepL</sys:String>
+    <sys:String x:Key="S.Provider.DeepLHint">Requires an API key from DeepL</sys:String>
+    <sys:String x:Key="S.Provider.OpenAI">OpenAI</sys:String>
+    <sys:String x:Key="S.Provider.OpenAIHint">Any OpenAI-compatible API (Ollama, LM Studio, OpenRouter…). A local LLM is recommended.</sys:String>
+
+    <!-- ── Settings page ── -->
+
+    <!-- The checkbox carries no text, so this is its ToolTip rather than a label -->
+    <!-- The shortcut box has no label of its own; this is its ToolTip -->
+
+    <sys:String x:Key="S.Settings.AutoTranslateCheck">Translate as soon as a screen capture region is selected, with nothing left to click.</sys:String>
+
+    <sys:String x:Key="S.Settings.ServiceDialogTitle">{0} settings</sys:String>
+    <sys:String x:Key="S.Settings.ApiBaseUrl">API URL</sys:String>
+    <sys:String x:Key="S.Settings.OpenAiTimeout">Timeout</sys:String>
+    <sys:String x:Key="S.Settings.OpenAiMode">Translation mode</sys:String>
+    <sys:String x:Key="S.Settings.OpenAiModeSegment">Standard</sys:String>
+    <sys:String x:Key="S.Settings.OpenAiModeBatch">Batch</sys:String>
+    <sys:String x:Key="S.Settings.OpenAiModeSegmentHint">Translates the text blocks on screen one at a time, in order.</sys:String>
+    <sys:String x:Key="S.Settings.OpenAiModeBatchHint">Combines the text blocks on screen and translates them together.</sys:String>
+    <sys:String x:Key="S.Settings.OpenAiModeSegmentPro1">Faster with local models</sys:String>
+    <sys:String x:Key="S.Settings.OpenAiModeSegmentPro2">Less likely to skip a block</sys:String>
+    <sys:String x:Key="S.Settings.OpenAiModeBatchPro1">Sees the whole screen, so meaning flows better</sys:String>
+    <sys:String x:Key="S.Settings.OpenAiModeBatchPro2">Fewer requests, better suited to cloud services</sys:String>
+    <sys:String x:Key="S.Settings.OpenAiModeSuits">Best for</sys:String>
+    <sys:String x:Key="S.Settings.OpenAiModeSegmentTag1">Video subtitles</sys:String>
+    <sys:String x:Key="S.Settings.OpenAiModeSegmentTag2">Story dialogue</sys:String>
+    <sys:String x:Key="S.Settings.OpenAiModeBatchTag1">Comics</sys:String>
+    <sys:String x:Key="S.Settings.OpenAiModeBatchTag2">Chat windows</sys:String>
+    <sys:String x:Key="S.Settings.PromptModeSwitchTitle">Switch translation mode</sys:String>
+    <sys:String x:Key="S.Settings.PromptModeSwitchToBatch">You're using a custom prompt. Switch to the default Batch prompt?</sys:String>
+    <sys:String x:Key="S.Settings.PromptModeSwitchToSegment">You're using a custom prompt. Switch to the default Standard prompt?</sys:String>
+    <sys:String x:Key="S.Settings.PromptModeUseDefault">Use default</sys:String>
+    <sys:String x:Key="S.Settings.PromptModeKeep">Keep</sys:String>
+    <sys:String x:Key="S.Settings.OpenAiTimeoutUnit">seconds</sys:String>
+    <sys:String x:Key="S.Settings.OpenAiTimeoutMin">At least {0} seconds</sys:String>
+    <sys:String x:Key="S.Settings.ModelName">Model</sys:String>
+    <sys:String x:Key="S.Settings.ModelRequired">Required</sys:String>
+    <sys:String x:Key="S.Settings.OllamaGuide">Local LLM setup guide</sys:String>
+    <sys:String x:Key="S.Settings.ModelProfiles">Model settings</sys:String>
+    <sys:String x:Key="S.Settings.ProfileAdd">Add settings ({0}/{1})</sys:String>
+    <sys:String x:Key="S.Settings.ProfileListHint">Click the setting to use</sys:String>
+    <sys:String x:Key="S.Settings.ProfileBuiltInNote">The built-in setting changes with each version. To keep what it is now, save a copy with the copy button beside it.</sys:String>
+    <sys:String x:Key="S.Settings.ProfileCopy">Copy as a new setting</sys:String>
+    <sys:String x:Key="S.Settings.ProfileTagCustomPrompt">Custom prompt</sys:String>
+    <sys:String x:Key="S.Settings.ProfileSnapshotName">Built-in v{0}</sys:String>
+    <sys:String x:Key="S.Settings.PromptDeleteTitle">Delete settings</sys:String>
+    <sys:String x:Key="S.Settings.PromptDeleteConfirm">Delete “{0}”? This cannot be undone.</sys:String>
+    <sys:String x:Key="S.Settings.PromptDefaultName">Built-in</sys:String>
+    <sys:String x:Key="S.Settings.PromptReadOnly">Read-only</sys:String>
+    <sys:String x:Key="S.Settings.PromptAddTitle">New settings</sys:String>
+    <sys:String x:Key="S.Settings.PromptEditTitle">Edit settings</sys:String>
+    <sys:String x:Key="S.Settings.PromptDelete">Delete</sys:String>
+    <sys:String x:Key="S.Settings.PromptName">Name</sys:String>
+    <sys:String x:Key="S.Settings.PromptNamePlaceholder">Name these settings</sys:String>
+    <sys:String x:Key="S.Settings.PromptParams">Available parameters</sys:String>
+    <sys:String x:Key="S.Settings.PromptParamSourceName">Source language name</sys:String>
+    <sys:String x:Key="S.Settings.PromptParamSourceCode">Source language code</sys:String>
+    <sys:String x:Key="S.Settings.PromptParamTargetName">Target language name</sys:String>
+    <sys:String x:Key="S.Settings.PromptParamTargetCode">Target language code</sys:String>
+    <sys:String x:Key="S.Settings.PromptParamSourceNameExample">English</sys:String>
+    <sys:String x:Key="S.Settings.PromptParamTargetNameExample">Japanese</sys:String>
+    <sys:String x:Key="S.Settings.PromptParamsTipAuto">When the source language is Automatic, the source language name is "any language" and the code is empty.</sys:String>
+    <sys:String x:Key="S.Settings.PromptTemplate">Prompt</sys:String>
+    <sys:String x:Key="S.Settings.PromptTemplateHint">What is sent to the model for each translation. Parameters in curly braces are replaced with the actual text.</sys:String>
+    <sys:String x:Key="S.Settings.PromptTemplateReset">Restore default</sys:String>
+    <sys:String x:Key="S.Settings.PromptParamText">The source text, sent one text block at a time. If the template doesn't use it, {text} is added at the end of the prompt.</sys:String>
+    <sys:String x:Key="S.Settings.PromptParamTextBatch">The source text: the text blocks on screen are combined and sent together, one per line and numbered, for example &lt;1&gt;text...&lt;/1&gt;. If the template doesn't use it, {text} is added at the end of the prompt.</sys:String>
+    <sys:String x:Key="S.Settings.PromptParamContext">Earlier translations, so the model can follow the context and terminology and keep the meaning coherent. When there is nothing to refer to, this part and the extra blank lines are removed. If the template doesn't use it, the model can't refer to earlier translations.</sys:String>
+    <sys:String x:Key="S.Settings.PromptNewName">My settings {0}</sys:String>
+    <sys:String x:Key="S.Settings.OpenAiAdvanced">Advanced</sys:String>
+    <sys:String x:Key="S.Settings.ModelResetTip">Use the recommended model</sys:String>
+    <sys:String x:Key="S.Settings.ThinkingOff">Turn off thinking</sys:String>
+    <sys:String x:Key="S.Settings.ThinkingOffDetail">Sends reasoning_effort: none</sys:String>
+    <sys:String x:Key="S.Settings.ThinkingOffTip" xml:space="preserve">Asks the model to answer straight away, without thinking first. Some general-purpose models think before they answer by default, which makes translation much slower or even times out; models made for translation usually don’t need this.
+Some services don’t recognise this parameter and return an error. If so, untick it.</sys:String>
+    <sys:String x:Key="S.Settings.AdvancedHint">Unticked parameters are not sent. Models differ in which parameters they accept and in what range — go by your model’s documentation.</sys:String>
+    <sys:String x:Key="S.Settings.Temperature">Temperature</sys:String>
+    <sys:String x:Key="S.Settings.TemperatureRange">Range: 0.0 ~ 2.0</sys:String>
+    <sys:String x:Key="S.Settings.TemperatureTip" xml:space="preserve">How strongly the model favours the likeliest phrasing. The lower the value, the more
+it sticks to the most probable way of saying something; the higher it is, the more
+chance other ways have of being picked.</sys:String>
+    <sys:String x:Key="S.Settings.TopP">Top P</sys:String>
+    <sys:String x:Key="S.Settings.TopPRange">Range: 0.0 ~ 1.0</sys:String>
+    <sys:String x:Key="S.Settings.TopPTip" xml:space="preserve">How many candidates the model may choose between. The lower the value, the fewer
+of the likeliest candidates are kept; the higher it is, the more there are to
+choose from.</sys:String>
+    <sys:String x:Key="S.Settings.Seed">Seed</sys:String>
+    <sys:String x:Key="S.Settings.SeedRange">Whole number</sys:String>
+    <sys:String x:Key="S.Settings.SeedTip" xml:space="preserve">Makes a result easier to reproduce. With the same model, the same prompts and the
+same settings, the same seed usually gives the same output.</sys:String>
+
+    <sys:String x:Key="S.Settings.MangaModels">Manga vertical-text models</sys:String>
+    <sys:String x:Key="S.Settings.MangaModelsDesc1">Made for vertical Japanese manga: fuller, faster.</sys:String>
+    <sys:String x:Key="S.Settings.MangaModelsDesc2">Needs 1 GB of VRAM; 2 GB recommended.</sys:String>
+    <sys:String x:Key="S.Settings.MangaModelsDesc2Unsupported">No DirectX 12 GPU; standard recognition is used.</sys:String>
+    <sys:String x:Key="S.Settings.MangaModelsFeatureVertical">Vertical Japanese</sys:String>
+    <sys:String x:Key="S.Settings.MangaModelsFeatureMissed">Fewer misses</sys:String>
+    <sys:String x:Key="S.Settings.MangaModelsFeatureFast">Faster</sys:String>
+    <sys:String x:Key="S.Settings.MangaModelsDownload">Download ({0} MB)</sys:String>
+    <sys:String x:Key="S.Settings.MangaModelsCancel">Cancel</sys:String>
+    <sys:String x:Key="S.Settings.MangaModelsDelete">Delete models</sys:String>
+    <sys:String x:Key="S.Settings.MangaModelsRetry">Retry</sys:String>
+    <sys:String x:Key="S.Settings.MangaModelsDeleteFailed">Could not delete the models: {0}</sys:String>
+    <sys:String x:Key="S.Settings.MangaModelsNotDownloaded">Not downloaded</sys:String>
+    <sys:String x:Key="S.Settings.MangaModelsDownloading">Downloading</sys:String>
+    <sys:String x:Key="S.Settings.MangaModelsReady">Ready</sys:String>
+    <sys:String x:Key="S.Settings.MangaModelsDisabled">Off</sys:String>
+    <sys:String x:Key="S.Settings.MangaModelsNoGpu">Unavailable</sys:String>
+    <sys:String x:Key="S.Settings.MangaModelsFailed">Download failed</sys:String>
+    <sys:String x:Key="S.Settings.MangaModelsUnsupported">Not supported</sys:String>
+    <sys:String x:Key="S.Settings.MangaModelsOutdated">Update available</sys:String>
+    <sys:String x:Key="S.Settings.MangaModelsUpdated">Models updated. Using the default model for now.</sys:String>
+    <sys:String x:Key="S.Settings.MangaModelsProgress">{0} / {1} MB · {2}%</sys:String>
+    <sys:String x:Key="S.Settings.MangaModelsEnabled">Manga models on</sys:String>
+    <sys:String x:Key="S.Settings.MangaModelsSwitchedOff">Off (default model)</sys:String>
+    <sys:String x:Key="S.Settings.MangaModelsReasonLoadFailed">The models could not be loaded on {0}; vertical text uses standard recognition.</sys:String>
+    <sys:String x:Key="S.Settings.MangaModelsReasonReadFailed">Reading on {0} failed; vertical text uses standard recognition.</sys:String>
+    <sys:String x:Key="S.Settings.MangaModelsErrorNetwork">Could not reach the download server. Check your connection and try again.</sys:String>
+    <sys:String x:Key="S.Settings.MangaModelsErrorServer">The download server returned an error ({0}).</sys:String>
+    <sys:String x:Key="S.Settings.MangaModelsErrorChecksum">A downloaded file was incomplete or damaged.</sys:String>
+    <sys:String x:Key="S.Settings.MangaModelsErrorDisk">The models could not be saved. Check that there is enough disk space.</sys:String>
+    <sys:String x:Key="S.Settings.MangaModelsErrorOther">The download did not finish. Please try again.</sys:String>
+
+
+    <sys:String x:Key="S.Settings.UploadBundle">Upload</sys:String>
+
+    <sys:String x:Key="S.Settings.AutoSaveHint">Changes are saved automatically</sys:String>
+
+    <!-- Settings page, composed in code-behind -->
+
+    <!-- ── Diagnostics note ── -->
+    <sys:String x:Key="S.Settings.NoteTitle">Report a problem</sys:String>
+    <sys:String x:Key="S.Settings.NoteIntro">What you write here is sent together with the diagnostics, and is used only to help work out what went wrong.</sys:String>
+    <sys:String x:Key="S.Settings.NotePlaceholder">Add what you were doing when the problem appeared, or anything else that might be related — it helps the developer find the cause sooner. This field can be left empty.</sys:String>
+    <sys:String x:Key="S.Settings.NoteSending">Uploading…</sys:String>
+    <sys:String x:Key="S.Settings.NoteUploadFailed">The upload did not go through. The file is still on your device, so you can try again.</sys:String>
+    <sys:String x:Key="S.Settings.NoteAttachFailed">Your message could not be written into the file, so nothing was sent. Please try again.</sys:String>
+    <sys:String x:Key="S.Settings.NoteReportManually">Report it on GitHub instead</sys:String>
+
+    <!-- ── Language names ── -->
+    <!-- The language names in the pickers. The English interface shows LangItem.English
+         instead of these, so they exist here for parity and for anything that asks for a
+         name by key. -->
+    <sys:String x:Key="S.Lang.Automatic">Automatic</sys:String>
+    <sys:String x:Key="S.Lang.AutomaticOcr">Automatic (ZH/EN/JA)</sys:String>
+    <sys:String x:Key="S.Lang.English">English</sys:String>
+    <sys:String x:Key="S.Lang.Japanese">Japanese</sys:String>
+    <sys:String x:Key="S.Lang.Korean">Korean</sys:String>
+    <sys:String x:Key="S.Lang.TraditionalChinese">Traditional Chinese</sys:String>
+    <sys:String x:Key="S.Lang.SimplifiedChinese">Simplified Chinese</sys:String>
+    <sys:String x:Key="S.Lang.Bulgarian">Bulgarian</sys:String>
+    <sys:String x:Key="S.Lang.Czech">Czech</sys:String>
+    <sys:String x:Key="S.Lang.Danish">Danish</sys:String>
+    <sys:String x:Key="S.Lang.German">German</sys:String>
+    <sys:String x:Key="S.Lang.Greek">Greek</sys:String>
+    <sys:String x:Key="S.Lang.Spanish">Spanish</sys:String>
+    <sys:String x:Key="S.Lang.Estonian">Estonian</sys:String>
+    <sys:String x:Key="S.Lang.Persian">Persian</sys:String>
+    <sys:String x:Key="S.Lang.Finnish">Finnish</sys:String>
+    <sys:String x:Key="S.Lang.French">French</sys:String>
+    <sys:String x:Key="S.Lang.Hungarian">Hungarian</sys:String>
+    <sys:String x:Key="S.Lang.Indonesian">Indonesian</sys:String>
+    <sys:String x:Key="S.Lang.Italian">Italian</sys:String>
+    <sys:String x:Key="S.Lang.Lithuanian">Lithuanian</sys:String>
+    <sys:String x:Key="S.Lang.Latvian">Latvian</sys:String>
+    <sys:String x:Key="S.Lang.Norwegian">Norwegian</sys:String>
+    <sys:String x:Key="S.Lang.Dutch">Dutch</sys:String>
+    <sys:String x:Key="S.Lang.Polish">Polish</sys:String>
+    <sys:String x:Key="S.Lang.Portuguese">Portuguese</sys:String>
+    <sys:String x:Key="S.Lang.Romanian">Romanian</sys:String>
+    <sys:String x:Key="S.Lang.Russian">Russian</sys:String>
+    <sys:String x:Key="S.Lang.Slovak">Slovak</sys:String>
+    <sys:String x:Key="S.Lang.Slovenian">Slovenian</sys:String>
+    <sys:String x:Key="S.Lang.Swedish">Swedish</sys:String>
+    <sys:String x:Key="S.Lang.Turkish">Turkish</sys:String>
+    <sys:String x:Key="S.Lang.Ukrainian">Ukrainian</sys:String>
+    <sys:String x:Key="S.Lang.Vietnamese">Vietnamese</sys:String>
+
+    <sys:String x:Key="S.Toolbar.CloseAfterCopy">Close after screenshot</sys:String>
+    <sys:String x:Key="S.Toolbar.CloseAfterCopyTip">Ends the capture once "Screenshot" has copied it to the clipboard</sys:String>
+    <sys:String x:Key="S.Toolbar.MoreGeneral">General</sys:String>
+    <sys:String x:Key="S.Toolbar.AutoTranslate">Auto-translate</sys:String>
+    <sys:String x:Key="S.Toolbar.ModelHintSwitch">Show model hints</sys:String>
+    <sys:String x:Key="S.Toolbar.ModelHintSwitchTip">A line under the source language says which model will read the text.</sys:String>
+    <sys:String x:Key="S.Toolbar.MangaHintChooseJapanese">Default model for now; set Japanese to switch to the manga models</sys:String>
+    <sys:String x:Key="S.Toolbar.MangaHintApplied">Using the manga models</sys:String>
+    <sys:String x:Key="S.Toolbar.MangaHintDownloading">Manga models downloading</sys:String>
+    <sys:String x:Key="S.Toolbar.MangaHintNotInstalled">Manga models not installed; see Settings</sys:String>
+    <sys:String x:Key="S.Toolbar.MangaHintOutdated">Manga models updated; using the default for now, redownload in Settings</sys:String>
+    <sys:String x:Key="S.Realtime.MangaHintApplied">Using the manga models (horizontal uses the default model)</sys:String>
+    <sys:String x:Key="S.Realtime.MangaHintNotInstalled">Manga models not installed; see Settings (horizontal uses the default model, no download needed)</sys:String>
+    <sys:String x:Key="S.Realtime.MangaHintOutdated">Manga models updated; using the default for now, redownload in Settings</sys:String>
+    <!-- Two lines, one per half of the switch. xml:space is what keeps the break: without it XAML
+         collapses the &#x0A; away and the two sentences run together. -->
+
+    <!-- Recognition languages downloaded on demand: OcrLanguagePackCard, OcrLanguagePacksCard. -->
+    <sys:String x:Key="S.OcrPack.CyrillicLanguages">Russian and Ukrainian</sys:String>
+    <sys:String x:Key="S.OcrPack.AskTitle">Download the {0} recognition model?</sys:String>
+    <sys:String x:Key="S.OcrPack.AskBody">Reading this language needs a separate model. {0} share it, so you only download it once.</sys:String>
+    <sys:String x:Key="S.OcrPack.AskBodySingle">Reading this language needs a separate model. You only download it once.</sys:String>
+    <sys:String x:Key="S.OcrPack.Size">About {0} MB</sys:String>
+    <sys:String x:Key="S.OcrPack.RowSize">{0} MB</sys:String>
+    <sys:String x:Key="S.OcrPack.Download">Download</sys:String>
+    <sys:String x:Key="S.OcrPack.Downloading">Downloading the {0} recognition model</sys:String>
+    <sys:String x:Key="S.Settings.OcrPacks">Recognition languages</sys:String>
+    <sys:String x:Key="S.Settings.OcrPacksDesc">These models are not built in. They download when you choose the language.</sys:String>
+</ResourceDictionary>

@@ -1,0 +1,71 @@
+<Window x:Class="OverTranslate.Views.Overlay.OverlayWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        WindowStyle="None"
+        AllowsTransparency="True"
+        Background="Transparent"
+        Topmost="True"
+        ShowInTaskbar="False"
+        IsHitTestVisible="False">
+    <Grid>
+        <!-- Every layer here says it cannot be hit, and the window itself says so too. Only the
+             drawing surface below ever takes it back, and only while 標記 is on: without these the
+             bubbles — which do have backgrounds — would swallow the pointer the moment the window
+             became hit-testable, and the one place the user most wants to draw on is over a bubble. -->
+
+        <!-- Translation backgrounds and text are separated so no later bubble background can cover prior text. -->
+        <Canvas x:Name="BubbleBackgroundCanvas" IsHitTestVisible="False"/>
+        <!-- OCR geometry, when the debug setting asks for it: above the bubble backgrounds so the
+             boxes are visible against them, below the text so a translation is never obscured. -->
+        <Canvas x:Name="DebugCanvas" IsHitTestVisible="False"/>
+        <Canvas x:Name="BubbleTextCanvas" IsHitTestVisible="False"/>
+
+        <!-- Processing indicator — separate layer so it's always above bubbles -->
+        <Canvas x:Name="IndicatorCanvas" IsHitTestVisible="False">
+            <Border x:Name="ProcessingBorder"
+                    Background="{DynamicResource AppCardBg}"
+                    BorderBrush="{DynamicResource AppBorder}"
+                    BorderThickness="1"
+                    CornerRadius="16"
+                    Padding="18,12"
+                    Visibility="Collapsed">
+                <Border.Effect>
+                    <DropShadowEffect BlurRadius="30" ShadowDepth="0" Opacity="0.2" Color="#000000"/>
+                </Border.Effect>
+                <StackPanel Orientation="Horizontal">
+                    <Border Width="18" Height="18" CornerRadius="9" Background="{DynamicResource AppAccentSubtle}" Margin="0,0,10,0">
+                        <Viewbox Margin="4">
+                            <Path x:Name="ProcessingSpinner"
+                                  Fill="{DynamicResource AppAccent}"
+                                  Data="M 8,0 A 8,8 0 1 1 0,8 L 2.2,8 A 5.8,5.8 0 1 0 8,2.2 Z"
+                                  RenderTransformOrigin="0.5,0.5">
+                                <Path.RenderTransform>
+                                    <RotateTransform/>
+                                </Path.RenderTransform>
+                                <Path.Triggers>
+                                    <EventTrigger RoutedEvent="Path.Loaded">
+                                        <BeginStoryboard>
+                                            <Storyboard RepeatBehavior="Forever">
+                                                <DoubleAnimation Storyboard.TargetProperty="RenderTransform.Angle"
+                                                                 From="0"
+                                                                 To="360"
+                                                                 Duration="0:0:0.9"/>
+                                            </Storyboard>
+                                        </BeginStoryboard>
+                                    </EventTrigger>
+                                </Path.Triggers>
+                            </Path>
+                        </Viewbox>
+                    </Border>
+                    <TextBlock Foreground="{DynamicResource AppTextPrimary}"
+                               x:Name="ProcessingText"
+                               FontFamily="{DynamicResource AppFont}"
+                               FontSize="15"
+                               FontWeight="SemiBold"
+                               VerticalAlignment="Center"
+                               Text="{DynamicResource S.Overlay.Recognising}"/>
+                </StackPanel>
+            </Border>
+        </Canvas>
+    </Grid>
+</Window>

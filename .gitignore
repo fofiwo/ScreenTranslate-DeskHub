@@ -1,0 +1,80 @@
+# Build outputs
+bin/
+obj/
+
+# Visual Studio
+.vs/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+*.Backup.tmp
+
+# .Net
+.dotnet
+
+# NuGet
+*.nupkg
+*.snupkg
+packages/
+project.lock.json
+project.fragment.lock.json
+artifacts/
+.test-artifacts/
+
+# 個人的權限允許清單，不是專案設定
+.claude/settings.local.json
+
+# Publish output
+publish/
+PublishProfiles/
+
+# ReSharper
+_ReSharper*/
+*.ReSharper
+*.DotSettings.user
+
+# Rider
+.idea/
+
+# Test results
+TestResults/
+*.trx
+*.coverage
+*.coveragexml
+
+# Logs
+*.log
+logs/
+
+# OS
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# User-specific settings
+*.rsuser
+launchSettings.json
+
+# publish
+# publish-velopack.ps1 與 docs/ops/ 的發版文件都已納入版控 ——
+# CI 在本倉打包，腳本與文件都必須跟著程式碼走，否則一定漂移。
+# Python 產生器的快取
+__pycache__/
+# ScreenTranslate local build and index artifacts
+/app/
+/.codegraph/
+/data/
+/artifacts/
+
+# Project-local packaging CLI
+/.tools/
+
+# Never publish personal runtime configuration or credentials
+.env*
+**/appsettings*.json
+**/data/
+*.clip
+*.pfx
+*.pem
+*.key

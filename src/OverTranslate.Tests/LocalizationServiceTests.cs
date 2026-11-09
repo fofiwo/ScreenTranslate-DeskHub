@@ -1,0 +1,101 @@
+using System.Globalization;
+using OverTranslate.Services;
+using Xunit;
+
+namespace OverTranslate.Tests;
+
+/// <summary>
+/// The two decisions LocalizationService makes on its own: which language a first run starts in,
+/// and which stored values it is willing to hand out afterwards.
+/// </summary>
+public class LocalizationServiceTests
+{
+    /// <summary>Every interface language on offer, for tests that hold each one to something.</summary>
+    public static TheoryData<string> InterfaceLanguages()
+    {
+        var data = new TheoryData<string>();
+        foreach (var option in LocalizationService.Options) data.Add(option.Code);
+        return data;
+    }
+
+    /// <remarks>
+    /// Chinese is split by script, and the script has to be read off the region because Windows
+    /// reports zh-TW and zh-CN far more often than it reports zh-Hant. Everything unlisted is
+    /// Simplified, which is what the regions nobody thought of overwhelmingly are.
+    /// </remarks>
+    [Theory]
+    [InlineData("zh-TW", LocalizationService.SimplifiedChinese)]
+    [InlineData("zh-HK", LocalizationService.SimplifiedChinese)]
+    [InlineData("zh-MO", LocalizationService.SimplifiedChinese)]
+    [InlineData("zh-Hant", LocalizationService.SimplifiedChinese)]
+    [InlineData("zh-Hant-TW", LocalizationService.SimplifiedChinese)]
+    [InlineData("zh-CN", LocalizationService.SimplifiedChinese)]
+    [InlineData("zh-SG", LocalizationService.SimplifiedChinese)]
+    [InlineData("zh-Hans", LocalizationService.SimplifiedChinese)]
+    [InlineData("zh", LocalizationService.SimplifiedChinese)]
+    [InlineData("ja-JP", LocalizationService.SimplifiedChinese)]
+    [InlineData("ko-KR", LocalizationService.SimplifiedChinese)]
+    [InlineData("ru-RU", LocalizationService.SimplifiedChinese)]
+    [InlineData("en-US", LocalizationService.SimplifiedChinese)]
+    [InlineData("de-DE", LocalizationService.SimplifiedChinese)]
+    [InlineData("", LocalizationService.SimplifiedChinese)]
+    public void ResolveSystemDefault_IsSimplifiedChineseForEveryDisplayLanguage(string culture, string expected)
+    {
+        var original = CultureInfo.CurrentUICulture;
+        try
+        {
+            CultureInfo.CurrentUICulture = CultureInfo.GetCultureInfo(culture);
+            Assert.Equal(expected, LocalizationService.ResolveSystemDefault());
+        }
+        finally
+        {
+            CultureInfo.CurrentUICulture = original;
+        }
+    }
+
+    [Theory]
+    [MemberData(nameof(InterfaceLanguages))]
+    public void IsSupported_AcceptsEveryLanguageOnOffer(string language) =>
+        Assert.True(LocalizationService.IsSupported(language));
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("kl")]
+    [InlineData("zh-Hans-CN")]
+    public void IsSupported_RejectsAnythingElse(string? language) =>
+        Assert.False(LocalizationService.IsSupported(language));
+
+    /// <summary>
+    /// A language offered in settings that has no dictionary behind it lands the user on Traditional
+    /// Chinese with no explanation — Apply falls back rather than throwing, which is right for a
+    /// hand-edited settings file and useless as a way of noticing this.
+    /// </summary>
+    [Fact]
+    public void EveryLanguageOnOfferHasADictionaryAndIsSupported()
+    {
+        foreach (var option in LocalizationService.Options)
+        {
+            Assert.True(
+                LocalizationService.IsSupported(option.Code),
+                $"{option.Code} is offered in settings but has no dictionary");
+
+            var file = Path.Combine(
+                StringsParityTests.ProjectDirectory(), "Resources", $"Strings.{option.Code}.xaml");
+
+            Assert.True(File.Exists(file), $"{option.Code} is offered in settings but {file} is missing");
+        }
+    }
+
+    /// <summary>
+    /// The name in the picker is the one string never translated — someone who has landed in a
+    /// language they cannot read finds their way out by recognising their own language's name.
+    /// </summary>
+    [Fact]
+    public void EveryLanguageIsNamedInItself()
+    {
+        Assert.Equal(
+            new[] { "简体中文" },
+            LocalizationService.Options.Select(o => o.Display));
+    }
+}

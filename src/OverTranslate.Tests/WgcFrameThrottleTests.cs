@@ -1,0 +1,188 @@
+using OverTranslate.Services.Realtime.Capture;
+using Windows.Graphics;
+using Xunit;
+
+namespace OverTranslate.Tests;
+
+/// <summary>
+/// The capture backends' readback throttle, driven by a timeline instead of a compositor.
+/// </summary>
+/// <remarks>
+/// Capture only emits a frame when the screen changes. Measured on a still comic page scrolled once:
+/// a marker repainted just before the scroll was read back, the scroll's own frame arrived 68ms
+/// later and was thrown away as too soon, and nothing else arrived for 0.8s — so every poll in
+/// between compared the old page against itself and saw no change.
+/// </remarks>
+public class WgcFrameThrottleTests
+{
+    private static readonly TimeSpan MaxFrameAge = TimeSpan.FromMilliseconds(120);
+    private static readonly TimeSpan IdleAfter = TimeSpan.FromSeconds(1);
+
+    [Fact]
+    public void TheLastFrameOfABurstReachesTheNextPollOnAStillScreen()
+    {
+        var capture = new Timeline();
+        capture.Frame(0, id: 1);
+        capture.Frame(68, id: 2);   // the scroll, too soon after the read before it
+        // Nothing else is ever composed: the page holds still from here on.
+        Assert.Equal(1, capture.Poll(100));
+        Assert.Equal(2, capture.Poll(250));
+    }
+
+    [Fact]
+    public void TheKeptFrameIsReadAsSoonAsTheLimitAllowsNotWhenAPollComes()
+    {
+        var capture = new Timeline();
+        capture.Poll(0);
+        capture.Frame(0, id: 1);
+        capture.Frame(68, id: 2);
+        Assert.Equal(2, capture.Poll(121));
+        Assert.Equal([0.0, 120.0], capture.Reads);
+    }
+
+    [Fact]
+    public void ANewerFrameReplacesTheOneHeld()
+    {
+        var capture = new Timeline();
+        capture.Frame(0, id: 1);
+        capture.Frame(40, id: 2);
+        capture.Frame(90, id: 3);
+        Assert.Equal(3, capture.Poll(150));
+    }
+
+    [Fact]
+    public void AMovingPictureIsStillReadBackAtMostOncePerMaxFrameAge()
+    {
+        // A video or a game: a frame every refresh at 144Hz, polled every 150ms for ten seconds.
+        var capture = new Timeline();
+        var nextPoll = 0.0;
+        for (var at = 0.0; at < 10_000; at += 1000.0 / 144)
+        {
+            while (nextPoll <= at)
+            {
+                capture.Poll(nextPoll);
+                nextPoll += 150;
+            }
+            capture.Frame(at, id: (int)at);
+        }
+
+        var gaps = capture.Reads.Zip(capture.Reads.Skip(1), (a, b) => b - a);
+        Assert.All(gaps, gap => Assert.True(gap >= MaxFrameAge.TotalMilliseconds, $"reads {gap}ms apart"));
+        Assert.InRange(capture.Reads.Count, 60, (int)(10_000 / MaxFrameAge.TotalMilliseconds) + 1);
+    }
+
+    [Fact]
+    public void NothingIsHeldOnceNobodyIsPolling()
+    {
+        Assert.Equal(
+            WgcFrameThrottle.Arrival.Skip,
+            WgcFrameThrottle.OnArrival(true, TimeSpan.FromMilliseconds(10), TimeSpan.FromSeconds(2), MaxFrameAge, IdleAfter));
+        Assert.Equal(
+            WgcFrameThrottle.Arrival.Read,
+            WgcFrameThrottle.OnArrival(false, TimeSpan.Zero, TimeSpan.FromSeconds(2), MaxFrameAge, IdleAfter));
+    }
+
+    [Fact]
+    public void AFrameOfAnotherSizeAsksForTheRebuild()
+    {
+        Assert.True(WgcFrameThrottle.NeedsResize(Size(1920, 1040), Size(1936, 1056), null));
+        Assert.False(WgcFrameThrottle.NeedsResize(Size(1936, 1056), Size(1936, 1056), null));
+    }
+
+    [Fact]
+    public void ASizeThePoolRefusedIsNotAskedForAgain()
+    {
+        Assert.False(WgcFrameThrottle.NeedsResize(Size(1920, 1040), Size(1936, 1056), Size(1920, 1040)));
+        // The window really changing size afterwards is a new request.
+        Assert.True(WgcFrameThrottle.NeedsResize(Size(1280, 720), Size(1936, 1056), Size(1920, 1040)));
+    }
+
+    [Fact]
+    public void ARefusedRebuildNoLongerReadsBackEveryFrame()
+    {
+        // 2.7.1 on Windows 10, reported: received=61908 read=61853 rebuilds=0. Every frame of the
+        // wrong size was read at once, and the rebuild it asked for failed every time.
+        var pool = Size(1936, 1056);
+        var content = Size(1920, 1040);
+        SizeInt32? failedAt = null;
+        var reads = 0;
+        var frames = 0;
+        var lastRead = 0.0;
+        for (var at = 0.0; at < 10_000; at += 1000.0 / 60, frames++)
+        {
+            var resize = WgcFrameThrottle.NeedsResize(content, pool, failedAt);
+            var arrival = WgcFrameThrottle.OnArrival(
+                reads > 0, TimeSpan.FromMilliseconds(at - lastRead), TimeSpan.Zero, MaxFrameAge, IdleAfter);
+            if (arrival == WgcFrameThrottle.Arrival.Read || resize)
+            {
+                reads++;
+                lastRead = at;
+            }
+            if (resize) failedAt = content;   // Recreate threw
+        }
+
+        Assert.InRange(reads, 1, (int)(10_000 / MaxFrameAge.TotalMilliseconds) + 2);
+        Assert.True(reads * 5 < frames, $"{reads} reads for {frames} frames");
+    }
+
+    private static SizeInt32 Size(int width, int height) => new() { Width = width, Height = height };
+
+    /// <summary>
+    /// The backend's bookkeeping around the policy, with times in milliseconds: the frame handler,
+    /// the timer that reads a kept frame on the same thread, and the polls.
+    /// </summary>
+    private sealed class Timeline
+    {
+        private int? _latest;
+        private double _latestAt;
+        private double _lastGrabAt;
+        private int? _held;
+        private double _heldDue;
+
+        public List<double> Reads { get; } = [];
+
+        public void Frame(double at, int id)
+        {
+            Advance(at);
+            var sinceRead = Ms(at - _latestAt);
+            _held = null;
+            switch (WgcFrameThrottle.OnArrival(
+                _latest is not null, sinceRead, Ms(at - _lastGrabAt), MaxFrameAge, IdleAfter))
+            {
+                case WgcFrameThrottle.Arrival.Hold:
+                    _held = id;
+                    _heldDue = at + WgcFrameThrottle.HeldFrameDueIn(sinceRead, MaxFrameAge).TotalMilliseconds;
+                    break;
+                case WgcFrameThrottle.Arrival.Skip:
+                    break;
+                default:
+                    Read(at, id);
+                    break;
+            }
+        }
+
+        public int? Poll(double at)
+        {
+            Advance(at);
+            _lastGrabAt = at;
+            return _latest;
+        }
+
+        // The timer: fires once its time has come, and lets the frame go if nobody is polling.
+        private void Advance(double to)
+        {
+            if (_held is not { } held || _heldDue > to) return;
+            _held = null;
+            if (Ms(_heldDue - _lastGrabAt) <= IdleAfter) Read(_heldDue, held);
+        }
+
+        private void Read(double at, int id)
+        {
+            _latest = id;
+            _latestAt = at;
+            Reads.Add(at);
+        }
+
+        private static TimeSpan Ms(double ms) => TimeSpan.FromMilliseconds(ms);
+    }
+}

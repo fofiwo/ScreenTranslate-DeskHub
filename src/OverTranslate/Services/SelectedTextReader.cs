@@ -1,0 +1,300 @@
+﻿using System.Runtime.InteropServices;
+using System.Text.RegularExpressions;
+using NLog;
+using Clipboard = System.Windows.Clipboard;
+
+namespace OverTranslate.Services;
+
+/// <summary>
+/// Whatever the user had selected in the application they were reading, at the moment a shortcut
+/// was pressed.
+/// </summary>
+/// <remarks>
+/// Windows has no way to ask another process what it has selected. UI Automation's TextPattern is
+/// the closest thing and it answers for a minority of applications — not Chrome's page content, not
+/// most games, not anything drawing its own text — so the general mechanism is the one every other
+/// dictionary tool on this platform uses: synthesise the copy shortcut and read the clipboard.
+///
+/// That means borrowing something that belongs to the user, so most of this file is about giving it
+/// back: the clipboard's previous contents are snapshotted before the copy and restored after it,
+/// and a failure anywhere leaves the caller with an empty string rather than an exception. Coming
+/// back with nothing is not an error condition here — the popup opens with an empty box and the
+/// user types, which is exactly what it does when nothing was selected.
+/// </remarks>
+internal static class SelectedTextReader
+{
+    private static readonly Logger Log = LogManager.GetCurrentClassLogger();
+
+    /// <summary>
+    /// How long the foreground application is given to start answering the copy.
+    /// </summary>
+    /// <remarks>
+    /// An empty selection produces no clipboard event at all. Keeping this separate from the longer
+    /// completion timeout lets that common path open the popup promptly without giving up on a copy
+    /// that has already started publishing its formats.
+    /// </remarks>
+    private static readonly TimeSpan CopyStartTimeout = TimeSpan.FromMilliseconds(150);
+
+    /// <summary>How long an observed clipboard update may take to publish readable text.</summary>
+    private static readonly TimeSpan CopyCompletionTimeout = TimeSpan.FromMilliseconds(320);
+
+    private static readonly TimeSpan PollInterval = TimeSpan.FromMilliseconds(15);
+
+    /// <summary>
+    /// The most text 替換翻譯 will carry over from a selection.
+    /// </summary>
+    /// <remarks>
+    /// 替換翻譯 pastes its answer straight over the selection with nothing in between to look at
+    /// first: a selection longer than this was a drag that got away, or a Ctrl+A, and replacing it
+    /// whole is not something the user asked for. 取詞翻譯 shows the text in a box before anything
+    /// happens to it, and reads up to <see cref="SourceTextLimit.MaxLength"/> instead.
+    /// </remarks>
+    public const int MaxLength = 1000;
+
+    /// <summary>Runs of whitespace, newlines included.</summary>
+    private static readonly Regex Whitespace = new(@"\s+", RegexOptions.Compiled);
+
+    /// <summary>Runs of whitespace within one line.</summary>
+    private static readonly Regex InlineWhitespace = new(@"[^\S\r\n]+", RegexOptions.Compiled);
+
+    /// <summary>Any one line break, whichever convention it was written in.</summary>
+    private static readonly Regex LineBreak = new(@"\r\n|\r|\n", RegexOptions.Compiled);
+
+    /// <summary>
+    /// Copies the current selection out of the foreground application, restoring the clipboard.
+    /// </summary>
+    /// <remarks>
+    /// Must be awaited before the popup is shown. Showing it first takes the foreground away from
+    /// the application holding the selection, and the copy would then be sent to a text box that has
+    /// nothing in it.
+    /// </remarks>
+    /// <param name="maxLength">Where the text is cut.</param>
+    /// <param name="keepLineBreaks">Whether the text keeps its lines — see <see cref="KeepLines"/>.</param>
+    /// <param name="copiedSince">
+    /// Set when the shortcut was Ctrl+C+C: the clipboard's sequence number from before the user's own
+    /// copy. See <see cref="ReadUserCopyAsync"/>.
+    /// </param>
+    public static async Task<string> ReadAsync(int maxLength, bool keepLineBreaks = false, uint? copiedSince = null)
+    {
+        if (copiedSince is { } userCopyBefore)
+            return await ReadUserCopyAsync(userCopyBefore, maxLength, keepLineBreaks);
+
+        object? snapshot;
+        uint before;
+
+        try
+        {
+            snapshot = ClipboardBackup.Capture();
+            before = GetClipboardSequenceNumber();
+        }
+        catch (Exception ex)
+        {
+            // The clipboard is one system-wide resource and any process can have it locked. With no
+            // snapshot there is nothing to put back, so the copy is not attempted at all.
+            Log.Debug(ex, "Could not snapshot the clipboard; the selection is read as empty");
+            return "";
+        }
+
+        try
+        {
+            await SendCopy();
+
+            var maxStartPolls = (int)Math.Ceiling(
+                CopyStartTimeout.TotalMilliseconds / PollInterval.TotalMilliseconds);
+            var maxCompletionPolls = (int)Math.Ceiling(
+                CopyCompletionTimeout.TotalMilliseconds / PollInterval.TotalMilliseconds);
+            var text = await PollForCopiedTextAsync(
+                before,
+                GetClipboardSequenceNumber,
+                ReadClipboardTextIfAvailable,
+                () => Task.Delay(PollInterval),
+                maxStartPolls,
+                maxCompletionPolls);
+            return Sanitize(text, maxLength, keepLineBreaks);
+        }
+        catch (Exception ex)
+        {
+            Log.Debug(ex, "Reading the selection failed; it is read as empty");
+            return "";
+        }
+        finally
+        {
+            ClipboardBackup.Restore(snapshot);
+        }
+    }
+
+    /// <summary>
+    /// Reads the copy the user has just made with the first Ctrl+C of Ctrl+C+C.
+    /// </summary>
+    /// <remarks>
+    /// <para>The user has already done what <see cref="ReadAsync"/> would do for them, so nothing is
+    /// sent and the clipboard is not borrowed: what they copied is theirs to keep, which is what the
+    /// key they pressed means everywhere else. Sending another Ctrl+C here would also arrive while
+    /// they are still holding Ctrl and C, and leave the system believing both were released.</para>
+    ///
+    /// <para>The clipboard is not simply read, though. With nothing selected the copy changes nothing,
+    /// and reading would hand back whatever was copied last, from anywhere, as if it were the
+    /// selection. <paramref name="before"/> is the sequence number from just before that copy reached
+    /// the application, so the same poll that waits out a slow copy also tells "copied" from "nothing
+    /// to copy". The copy started a key press ago, so the wait is usually already over.</para>
+    /// </remarks>
+    private static async Task<string> ReadUserCopyAsync(uint before, int maxLength, bool keepLineBreaks)
+    {
+        try
+        {
+            var maxStartPolls = (int)Math.Ceiling(
+                CopyStartTimeout.TotalMilliseconds / PollInterval.TotalMilliseconds);
+            var maxCompletionPolls = (int)Math.Ceiling(
+                CopyCompletionTimeout.TotalMilliseconds / PollInterval.TotalMilliseconds);
+            var text = await PollForCopiedTextAsync(
+                before,
+                GetClipboardSequenceNumber,
+                ReadClipboardTextIfAvailable,
+                () => Task.Delay(PollInterval),
+                maxStartPolls,
+                maxCompletionPolls);
+            return Sanitize(text, maxLength, keepLineBreaks);
+        }
+        catch (Exception ex)
+        {
+            Log.Debug(ex, "Reading the user's copy failed; it is read as empty");
+            return "";
+        }
+    }
+
+    /// <summary>
+    /// Waits for a copy operation to publish readable text after changing the clipboard.
+    /// </summary>
+    /// <remarks>
+    /// A clipboard sequence change means that an update started, not that every format is ready.
+    /// Applications commonly empty the clipboard before publishing text, and another process can
+    /// briefly hold it between those steps. Returning on that first change mistakes an in-progress
+    /// copy for an empty selection and restores the old clipboard over the result that is still
+    /// arriving.
+    /// </remarks>
+    internal static async Task<string> PollForCopiedTextAsync(
+        uint before,
+        Func<uint> getSequenceNumber,
+        Func<string?> readText,
+        Func<Task> delay,
+        int maxStartPolls,
+        int maxCompletionPolls)
+    {
+        var changed = false;
+        var startPolls = 0;
+        var completionPolls = 0;
+
+        while (true)
+        {
+            changed |= getSequenceNumber() != before;
+
+            if (changed && readText() is { } text)
+                return text;
+
+            if (changed)
+            {
+                if (completionPolls >= maxCompletionPolls)
+                {
+                    Log.Debug("Copy changed the clipboard but did not publish readable text before timeout");
+                    return "";
+                }
+                completionPolls++;
+            }
+            else
+            {
+                if (startPolls >= maxStartPolls)
+                {
+                    Log.Debug("Copy did not change the clipboard before timeout");
+                    return "";
+                }
+                startPolls++;
+            }
+
+            await delay();
+        }
+    }
+
+    /// <summary>Returns null while copied text is not published or cannot be read yet.</summary>
+    private static string? ReadClipboardTextIfAvailable()
+    {
+        try
+        {
+            return Clipboard.ContainsText() ? Clipboard.GetText() : null;
+        }
+        catch (Exception ex)
+        {
+            // Clipboard ownership changes asynchronously. A lock here is a state to poll through,
+            // not the final answer to the user's copy request.
+            Log.Trace(ex, "Copied text is not readable yet");
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Trims the copied text down to one line of at most <paramref name="maxLength"/> characters, or
+    /// with <paramref name="keepLineBreaks"/> to tidied lines — see <see cref="KeepLines"/>.
+    /// </summary>
+    /// <remarks>
+    /// Whitespace is collapsed rather than kept by default because a selection dragged across a web
+    /// page or a PDF arrives hard-wrapped at whatever width it was laid out to, and those line breaks
+    /// belong to the page rather than to the sentence. Left in, they reach the translation engine as
+    /// sentence boundaries that are not there.
+    /// </remarks>
+    public static string Sanitize(string? raw, int maxLength = MaxLength, bool keepLineBreaks = false) =>
+        Cap(keepLineBreaks ? KeepLines(raw) : Fold(raw), maxLength);
+
+    private static string Cap(string text, int maxLength) =>
+        text.Length <= maxLength ? text : text[..maxLength].TrimEnd();
+
+    /// <summary>
+    /// Folds the text onto one line, with no cap on its length.
+    /// </summary>
+    /// <remarks>
+    /// For text the user pasted in on purpose, which the box it lands in caps at its own length.
+    /// </remarks>
+    public static string Fold(string? raw) =>
+        string.IsNullOrWhiteSpace(raw) ? "" : Whitespace.Replace(raw, " ").Trim();
+
+    /// <summary>
+    /// Tidies the text the way <see cref="Fold"/> does, but line by line, keeping the breaks.
+    /// </summary>
+    /// <remarks>
+    /// For 取詞翻譯's 多行輸入, which is for someone who wants an article translated as it was laid
+    /// out. Spaces inside a line are still collapsed and each line is trimmed; a run of blank lines
+    /// becomes one, which is still a paragraph break to every engine. Lines are joined with
+    /// <see cref="Environment.NewLine"/> because that is what a TextBox inserts for Enter, so the
+    /// box never holds two conventions at once.
+    /// </remarks>
+    public static string KeepLines(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw)) return "";
+
+        var lines = new List<string>();
+        foreach (var line in LineBreak.Split(raw))
+        {
+            var tidy = InlineWhitespace.Replace(line, " ").Trim();
+            if (tidy.Length == 0 && (lines.Count == 0 || lines[^1].Length == 0)) continue;
+            lines.Add(tidy);
+        }
+
+        while (lines.Count > 0 && lines[^1].Length == 0) lines.RemoveAt(lines.Count - 1);
+        return string.Join(Environment.NewLine, lines);
+    }
+
+    /// <summary>
+    /// Sends Ctrl+C to whatever has the foreground — see <see cref="KeyboardInput"/> for how the
+    /// chord is shaped so an application on the other end actually sees it.
+    /// </summary>
+    private static Task SendCopy() => KeyboardInput.SendControlChordAsync(KeyboardInput.VK_C);
+
+    /// <summary>
+    /// Counts every change to the clipboard, system-wide.
+    /// </summary>
+    /// <remarks>
+    /// Polled rather than reading the text back and comparing, because the two cases that matter are
+    /// indistinguishable by content: nothing was selected, and the selection happened to be the text
+    /// already on the clipboard. The sequence number separates them.
+    /// </remarks>
+    [DllImport("user32.dll")]
+    private static extern uint GetClipboardSequenceNumber();
+}

@@ -1,0 +1,126 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <!-- Two separate questions, and they have had the same answer only by accident. The first half
+         is which Windows APIs may be named at all: realtime capture needs Windows.Graphics.Capture
+         from 1903 (Direct3D11CaptureFramePool.CreateFreeThreaded, GraphicsCaptureSession.
+         IsSupported) and has to be able to *ask about* things newer than that — whether the capture
+         indicator can be turned off, whether this system has the window exclusion list — so the
+         compile-time surface is the newest SDK projection available. It is backward compatible and
+         nothing here is bound at load time.
+
+         SupportedOSPlatformVersion is the half that decides who may run this, and it stays where it
+         was: OverTranslate still starts and still translates on Windows 10 1809. Raising it because
+         one feature wanted a newer API would take the whole application away from those users to
+         pay for something only realtime capture uses. The price is that every call newer than 1809
+         must be guarded — CA1416 will say so — which is the right conversation to be forced into. -->
+    <TargetFramework>net8.0-windows10.0.26100.0</TargetFramework>
+    <SupportedOSPlatformVersion>10.0.17763.0</SupportedOSPlatformVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <!-- Two places, both at the capture ABI. Reading a captured frame back off the GPU hands over a
+         raw pointer and a length, and copying it row by row is what that memory is for (see
+         WgcInterop.ReadBack); the window exclusion list is called through the interface's vtable,
+         because the projection this builds against does not have it (see WgcWindowExclusion). -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>icons\app.ico</ApplicationIcon>
+    <StartupObject>OverTranslate.App</StartupObject>
+    <Version>0.2.3</Version>
+    <AssemblyName>ScreenTranslate</AssemblyName>
+    <RootNamespace>OverTranslate</RootNamespace>
+    <Product>ScreenTranslate</Product>
+    <Description>Personal screen translation, based on OverTranslate</Description>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <!-- WFAC010 tells WinForms apps to declare DPI awareness through Application.SetHighDpiMode.
+         This is a WPF app that only references WinForms types; ApplicationConfiguration.Initialize
+         is never called, so the manifest is the only mechanism that takes effect. -->
+    <NoWarn>$(NoWarn);WFAC010</NoWarn>
+    <!-- Microsoft.AI.DirectML (pulled in by the DirectML runtime) copies DirectML.dll, its PDB and its debug
+         layer by default. None of them ship: DirectML.dll is downloaded with the manga models, the only thing
+         that uses it (ocrmodels/manga-vertical.json, DirectMlDevice). onnxruntime.dll imports it delay-loaded,
+         so nothing else ever asks for it. -->
+    <Microsoft_AI_DirectML_SkipLibraryCopy>true</Microsoft_AI_DirectML_SkipLibraryCopy>
+    <Microsoft_AI_DirectML_SkipDebugLayerCopy>true</Microsoft_AI_DirectML_SkipDebugLayerCopy>
+    <!-- The self-contained runtime brings WPF/WinForms resource satellites for 13 cultures (built-in dialog text,
+         exception messages). Keep the ones matching the UI languages the app ships (Resources\Strings.*.xaml);
+         anyone else gets the neutral English built into the framework assemblies. About 4 MB compressed. -->
+    <SatelliteResourceLanguages>en;ja;ko;ru;zh-Hans;zh-Hant</SatelliteResourceLanguages>
+  </PropertyGroup>
+
+  <!-- The runtime a self-contained publish carries is the newest patch the building SDK knows about, so it moves
+       whenever CI's setup-dotnet happens to pick up a new SDK. 2.8.0 got 8.0.32 that way and its delta grew to 14 MB,
+       13.4 MB of it .NET/WPF runtime files, while every local test (and 2.7.2) ran on 8.0.31. Pinned to 8.0.31 for
+       both runtime packs: Microsoft.NETCore.App, and Microsoft.WindowsDesktop.App, where the WPF/WinForms DLLs come
+       from (the .WPF and .WindowsForms profiles resolve to that same pack, so they are pinned with it).
+       RuntimeFrameworkVersion is not used because it also overrides the runtime pack version of
+       Microsoft.Windows.SDK.NET.Ref. Only the runtime packs move; the targeting packs stay whatever the SDK brings.
+       The update also lands on the SDK's entries for other target frameworks (an item condition cannot look at
+       their metadata outside a target); nothing here uses those. Remove this when moving to .NET 10; the condition
+       keeps it from pinning anything but net8.0 in the meantime. -->
+  <ItemGroup Condition="$(TargetFramework.StartsWith('net8.0'))">
+    <KnownFrameworkReference Update="Microsoft.NETCore.App;Microsoft.WindowsDesktop.App;Microsoft.WindowsDesktop.App.WPF;Microsoft.WindowsDesktop.App.WindowsForms"
+                             LatestRuntimeFrameworkVersion="8.0.31" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ApplicationDefinition Remove="App.xaml" />
+    <Page Include="App.xaml" />
+    <None Update="appsettings.json">
+      <CopyToOutputDirectory>Never</CopyToOutputDirectory>
+      <CopyToPublishDirectory>Never</CopyToPublishDirectory>
+    </None>
+    <None Update="ocrmodels\**">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <!-- Korean is a language pack (ocrmodels\lang-korean.json), downloaded when first chosen. The copy
+         stays in the repository for the tests and the OCR harness, which link it in themselves. -->
+    <None Update="ocrmodels\onnx\korean\**">
+      <CopyToOutputDirectory>Never</CopyToOutputDirectory>
+    </None>
+    <None Update="NLog.config">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <!-- onnxruntime.dll links the Visual C++ runtime dynamically (MSVCP140, MSVCP140_1, VCRUNTIME140, VCRUNTIME140_1)
+         and nothing else in the package brings it: the self-contained .NET runtime only carries its own renamed
+         vcruntime140_cor3.dll. Most machines have the VC++ Redistributable from some game or driver, a clean Windows
+         does not, and there every OCR call dies in the NativeMethods type initializer. App-local deployment from
+         VS's redist folder (VC\Redist\MSVC\<version>\x64\Microsoft.VC145.CRT, 14.51 here); it has to be at least the
+         toolset onnxruntime.dll was linked with (14.44 for 1.24.4). Placed next to onnxruntime.dll, which is the
+         first place the loader looks. -->
+    <None Include="vcruntime\*.dll">
+      <Link>%(Filename)%(Extension)</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <!-- Also as a file: the notification registration points Windows at it (NotificationIdentityService). -->
+    <None Update="icons\app.ico">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <EmbeddedResource Include="icons\app.ico" />
+    <EmbeddedResource Include="icons\app-compact.ico" />
+    <Resource Include="icons\screentranslate-logo.png" />
+    <Resource Include="Resources\Cursors\capture_crosshair.cur" />
+    <EmbeddedResource Include="Services\Library\model-platforms.json" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\OverTranslate.Translation\OverTranslate.Translation.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="NLog" Version="5.0.4" />
+    <PackageReference Include="OpenccNetLib" Version="1.6.2" />
+    <PackageReference Include="RapidOcrNet" Version="3.0.0" ExcludeAssets="build" />
+    <!-- One onnxruntime.dll for the whole process, the DirectML build (the vertical manga models run on the GPU).
+         RapidOcrNet 3.0.0 asks for Microsoft.ML.OnnxRuntime 1.27 (CPU native + managed); the DirectML package stops
+         at 1.24.4, so the CPU native package is referenced only to exclude its assets. The managed wrapper stays at
+         1.27 (RapidOcrNet binds to that assembly version); its OrtApi table was checked field by field against the
+         1.24.4 native header. Redo that check whenever RapidOcrNet moves the managed package past 1.27. -->
+    <PackageReference Include="Microsoft.ML.OnnxRuntime.DirectML" Version="1.24.4" />
+    <PackageReference Include="Microsoft.ML.OnnxRuntime" Version="1.27.0" ExcludeAssets="all" />
+    <PackageReference Include="Velopack" Version="1.2.0" />
+  </ItemGroup>
+</Project>

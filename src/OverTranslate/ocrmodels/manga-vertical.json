@@ -1,0 +1,96 @@
+{
+  "version": "2",
+  "sources": [
+    {
+      "name": "huggingface",
+      "url": "https://huggingface.co/hon-lu/comic-text-and-bubble-detector-onnx-fp16/resolve/v1/{name}",
+      "files": [
+        "detector.fp16.onnx"
+      ]
+    },
+    {
+      "name": "huggingface",
+      "url": "https://huggingface.co/hon-lu/manga-ocr-base-CPT-flex-onnx-fp16/resolve/v1/{name}",
+      "files": [
+        "ocr-encoder.fp16.onnx",
+        "ocr-decoder-cross.fp16.onnx",
+        "ocr-decoder-step.fp16.onnx",
+        "vocab.txt"
+      ]
+    },
+    {
+      "name": "huggingface",
+      "url": "https://huggingface.co/hon-lu/craft-mlt-25k-onnx-fp16/resolve/v1/{name}",
+      "files": [
+        "craft.fp16.onnx"
+      ]
+    },
+    {
+      "name": "github",
+      "url": "https://github.com/Hon-Lu/OverTranslate-assets/releases/download/manga-vertical-v2/{name}"
+    }
+  ],
+  "files": [
+    {
+      "role": "detector",
+      "name": "detector.fp16.onnx",
+      "size": 84725998,
+      "sha256": "2ed2ab1f56543d9844025a87a88a96f2ff8fba1f93d5c0c89b55c0f594b29c25"
+    },
+    {
+      "role": "encoder",
+      "name": "ocr-encoder.fp16.onnx",
+      "size": 171982123,
+      "sha256": "f86a0455d63f87d955fe56be1380762ad621ce0dc34d0e4f3e6c512e2562b418"
+    },
+    {
+      "role": "decoder-cross",
+      "name": "ocr-decoder-cross.fp16.onnx",
+      "size": 4732209,
+      "sha256": "f96b76dc239d49978d9167b55c58bf65fc786aa9bf3b3792f18c60aa264047ca"
+    },
+    {
+      "role": "decoder-step",
+      "name": "ocr-decoder-step.fp16.onnx",
+      "size": 56062492,
+      "sha256": "3c5e51e18c4f96c0c71cc1ba0122c75067092a1ce269f703c143d3211352b4d5"
+    },
+    {
+      "role": "vocabulary",
+      "name": "vocab.txt",
+      "size": 27001,
+      "sha256": "a380ec969e2d73858cd84f43cdadb78b8527b12194ea4f797368ac21a24fa98c"
+    },
+    {
+      "role": "columns",
+      "name": "craft.fp16.onnx",
+      "size": 41546100,
+      "sha256": "36acd499de472a1573f285c4769b0e864311e2e7b336d6910ca5535da84378ff"
+    }
+  ],
+  "directml": {
+    "version": "1.15.4",
+    "sources": [
+      {
+        "name": "nuget",
+        "url": "https://api.nuget.org/v3-flatcontainer/microsoft.ai.directml/1.15.4/microsoft.ai.directml.1.15.4.nupkg",
+        "entry": "bin/x64-win/DirectML.dll",
+        "files": [
+          "DirectML.dll"
+        ]
+      },
+      {
+        "name": "github",
+        "url": "https://github.com/Hon-Lu/OverTranslate-assets/releases/download/directml-1.15.4/{name}"
+      }
+    ],
+    "files": [
+      {
+        "role": "directml",
+        "name": "DirectML.dll",
+        "size": 18527776,
+        "sha256": "9c9e6d822561c6c41b90e6994b3e8857cf1d66dbfb1e0c4c799c7c89b4e92da1"
+      }
+    ]
+  }
+}

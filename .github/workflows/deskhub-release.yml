@@ -1,0 +1,68 @@
+name: DeskHub build and publish
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'build-screen-translate-installer.ps1'
+      - '.github/workflows/deskhub-release.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: deskhub-release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    if: github.repository == 'fofiwo/ScreenTranslate-DeskHub'
+    runs-on: windows-latest
+    timeout-minutes: 30
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Validate update and sync behavior
+        shell: pwsh
+        run: |
+          dotnet test src/OverTranslate.Tests -c Release --filter 'FullyQualifiedName~DeskHubUpdateTests|FullyQualifiedName~DeltaAwareUpdateManagerTests|FullyQualifiedName~ReleaseNotesTests|FullyQualifiedName~UnifiedLanSyncTests|FullyQualifiedName~LibrarySyncTests|FullyQualifiedName~InstallationDataTests' --logger 'console;verbosity=minimal'
+          if ($LASTEXITCODE -ne 0) { throw 'Required tests failed' }
+      - name: Install pinned packaging tool
+        shell: pwsh
+        run: |
+          dotnet tool install vpk --version 1.2.0 --tool-path .tools/velopack
+          if ($LASTEXITCODE -ne 0) { throw 'Packaging tool install failed' }
+      - name: Build clean installer and update feed
+        shell: pwsh
+        run: |
+          $version = '0.3.${{ github.run_number }}'
+          ./build-screen-translate-installer.ps1 -Version $version
+          if ($LASTEXITCODE -ne 0) { throw 'Build failed' }
+          "RELEASE_VERSION=$version" >> $env:GITHUB_ENV
+      - name: Publish complete stable release
+        shell: pwsh
+        run: |
+          $tag = "v$env:RELEASE_VERSION"
+          $notes = @'
+          ScreenTranslate DeskHub 安装版，适用于 Windows x64。
+
+          - 启动及每 30 分钟自动检查更新，左下角、关于及托盘可检查并安装新版。
+          - 包含截图翻译、剪贴板历史、局域网双向同步及提示词与模型资料库。
+          - 安装包不包含开发者的用户数据；升级保留独立数据目录。
+
+          首次使用请下载 ScreenTranslate-win-Setup.exe。已有早期本地版需手动安装一次，之后可在应用内更新。
+          模型同步包含 API Key；仅与自己的可信设备配对。未签名安装包可能触发 Windows 发布者提示。
+          '@
+          $notes | Set-Content release-notes.md -Encoding utf8
+          gh release create $tag --draft --target '${{ github.sha }}' --title "ScreenTranslate DeskHub $env:RELEASE_VERSION" --notes-file release-notes.md
+          if ($LASTEXITCODE -ne 0) { throw 'Draft release creation failed' }
+          gh release upload $tag artifacts/releases/ScreenTranslate-win-Setup.exe artifacts/releases/ScreenTranslate-win-Setup.exe.sha256 "artifacts/releases/ScreenTranslate-$($env:RELEASE_VERSION)-full.nupkg" artifacts/releases/releases.win.json artifacts/releases/RELEASES
+          if ($LASTEXITCODE -ne 0) { throw 'Release upload failed; draft remains unpublished' }
+          gh release edit $tag --draft=false --latest
+          if ($LASTEXITCODE -ne 0) { throw 'Release publication failed' }

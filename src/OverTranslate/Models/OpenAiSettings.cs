@@ -1,0 +1,232 @@
+namespace OverTranslate.Models;
+
+/// <summary>
+/// One named setting for an OpenAI-compatible model: which model, at what temperature, told what.
+/// </summary>
+/// <remarks>
+/// The whole configuration rather than a prompt, which is the lesson of pointing this provider at
+/// more than one local model. A prompt is written for a model — the format the model's own
+/// documentation asks for — and the temperature that model wants goes with it. Keeping the three
+/// apart meant that changing model was three edits in three places, and getting two of the three
+/// right left a setup that quietly translated worse than it should.
+///
+/// So a profile is switched as a unit, which is also what makes the list worth having: 「Hy-MT2」
+/// beside 「Qwen 測試」 says which model is in use, and two prompts that both open "Translate the
+/// following" does not.
+/// </remarks>
+public class OpenAiModelProfile
+{
+    /// <summary>
+    /// Identifies this profile for <see cref="OpenAiSettings.SelectedProfileId"/>.
+    /// </summary>
+    /// <remarks>
+    /// A stored id rather than the position in the list, because deleting the first of three would
+    /// otherwise silently move the selection onto a different profile. Assigned once when the
+    /// profile is created — see <see cref="OpenAiSettings.NewId"/> — and never rewritten, so the
+    /// selection survives a rename.
+    /// </remarks>
+    public string Id { get; set; } = "";
+
+    /// <summary>What the list calls it. The user's own words, capped at a readable length.</summary>
+    public string Name { get; set; } = "";
+
+    /// <summary>
+    /// The model to ask for, exactly as the server names it.
+    /// </summary>
+    /// <remarks>
+    /// Required on a profile the user wrote: empty is a configuration error rather than a fallback,
+    /// and the editor will not save without it — see
+    /// <see cref="Services.Providers.OpenAiCompatibleProvider.TranslateAsync"/>.
+    /// </remarks>
+    public string Model { get; set; } = "";
+
+    /// <summary>
+    /// Whether the request carries a temperature at all.
+    /// </summary>
+    /// <remarks>
+    /// Every sampling parameter here is a pair — whether to send it, and what to send. Separate,
+    /// because "no temperature" is not a number: the reasoning models on the hosted APIs reject the
+    /// field outright rather than clamping it, so a request to them has to leave it out, and there is
+    /// no value that means "never mind". Which parameters a server accepts at all is the server's
+    /// business, so all three can be switched off one at a time.
+    /// </remarks>
+    public bool TemperatureEnabled { get; set; } = true;
+
+    /// <summary>
+    /// How much randomness the model is asked for, when <see cref="TemperatureEnabled"/>.
+    /// </summary>
+    /// <remarks>
+    /// Low rather than zero. This is translation, so the same line on screen should come back the
+    /// same way twice — but a small local model at exactly 0 can fall into repeating itself and
+    /// never come out, and a little slack is what the recommended model's own documentation asks
+    /// for. <see cref="Seed"/> is what makes the result repeatable at a non-zero temperature.
+    /// </remarks>
+    public double Temperature { get; set; } = DefaultTemperature;
+
+    /// <inheritdoc cref="TemperatureEnabled"/>
+    public bool TopPEnabled { get; set; } = true;
+
+    /// <summary>
+    /// How much of the probability mass the model may pick from, when <see cref="TopPEnabled"/>.
+    /// </summary>
+    /// <remarks>
+    /// Narrows the field before the temperature chooses from it: the lower it is, the fewer
+    /// candidates survive to be chosen between at all.
+    /// </remarks>
+    public double TopP { get; set; } = DefaultTopP;
+
+    /// <inheritdoc cref="TemperatureEnabled"/>
+    public bool SeedEnabled { get; set; } = true;
+
+    /// <summary>
+    /// The number that makes generation repeatable, when <see cref="SeedEnabled"/>.
+    /// </summary>
+    /// <remarks>
+    /// With the model, the prompts and the other parameters unchanged, the same seed usually gives
+    /// the same output. That is what lets the temperature sit above zero without the same screen
+    /// being translated differently each time it is captured.
+    /// </remarks>
+    public int Seed { get; set; } = DefaultSeed;
+
+    /// <summary>The values a new setting starts on, and the ones the built-in setting sends.</summary>
+    /// <remarks>
+    /// Named rather than written twice: they are both the initialisers above and what
+    /// <see cref="Services.Providers.OpenAiCompatibleProvider.BuiltInProfile"/> ships, and a new
+    /// setting that opened on different numbers from the one it was copied from would be a
+    /// difference nobody chose.
+    /// </remarks>
+    public const double DefaultTemperature = 0.7;
+
+    /// <inheritdoc cref="DefaultTemperature"/>
+    public const double DefaultTopP = 0.6;
+
+    /// <inheritdoc cref="DefaultTemperature"/>
+    public const int DefaultSeed = 42;
+
+    /// <summary>
+    /// Whether the request carries <c>reasoning_effort: "none"</c>; off, the field is not sent at all.
+    /// </summary>
+    /// <remarks>
+    /// Off by default, unlike the three sampling switches above, and off means the field is not sent
+    /// — no detection, and nothing remembered about a server that refused it. The built-in model does
+    /// not reason, so the field would buy nothing there, and a hosted model that does not know it
+    /// answers 400. It is for the general chat models that think before answering unless told not
+    /// to: through the OpenAI-compatible route only this field turns that off, and left on, one
+    /// screen takes longer than the timeout.
+    ///
+    /// A switch rather than a choice of effort: "none" is the one value a translation wants, and the
+    /// others only buy a slower answer. The list of efforts and its own switch never shipped, so their
+    /// keys are not read — a file that has them opens with this off.
+    /// </remarks>
+    public bool ThinkingOff { get; set; }
+
+    /// <summary>What <see cref="ThinkingOff"/> sends.</summary>
+    public const string ThinkingOffEffort = "none";
+
+    /// <summary>
+    /// Whether a screen goes as few requests as fit rather than a text at a time — see
+    /// <see cref="OverTranslate.Translation.OpenAi.OpenAiChatRequest.Batch"/>.
+    /// </summary>
+    /// <remarks>
+    /// Off by default: a local server runs one request at a time, so a batch saves it nothing and
+    /// comes back with more lines untranslated. On the profile rather than beside the address,
+    /// because each way has its own default template and the template is the profile's — and a
+    /// profile is how a model is switched, a hosted one included.
+    /// </remarks>
+    public bool Batch { get; set; }
+
+    /// <summary>
+    /// The whole message each request sends, the user's own, or empty for the application's — see
+    /// <see cref="Services.Providers.OpenAiCompatibleProvider.BuildPrompt"/>.
+    /// </summary>
+    /// <remarks>
+    /// <para>One template whatever the source language: the language placeholders say what changes.
+    /// <c>{context}</c> is where the screen and the session's earlier lines go, and a template
+    /// without it is sent none; <c>{text}</c> is where the text goes, and a template without it has
+    /// the text written straight after its end, as the user prompts it replaces did.</para>
+    ///
+    /// <para>Empty rather than a copy of the application's, so the application's follows the
+    /// interface language, any later revision of it, and <see cref="Batch"/> — empty is the default
+    /// of whichever way the profile sends. Line breaks are stored bare — see
+    /// <see cref="OpenAiSettings.NormaliseLineBreaks"/>.</para>
+    /// </remarks>
+    public string Template { get; set; } = "";
+}
+
+/// <summary>
+/// Everything the OpenAI-compatible provider keeps that is not one value on one line.
+/// </summary>
+/// <remarks>
+/// A group of its own, following <see cref="RealtimeSettings"/>: the profiles are a list of objects
+/// rather than a value, and a list belongs under the feature that owns it rather than flat beside
+/// the endpoint. The connection — <see cref="AppSettings.OpenAiBaseUrl"/> and
+/// <see cref="AppSettings.OpenAiApiKey"/> — deliberately stays where it shipped, and deliberately
+/// stays out of the profiles: it is the server, and switching which model to ask that server for is
+/// not switching servers.
+///
+/// The keys that did ship and are gone — <c>OpenAiPromptAuto</c>, <c>OpenAiPromptExplicit</c>,
+/// <c>AutoPrompts</c>, <c>ExplicitPrompts</c>, <c>OpenAiModel</c> and the flat temperature pair —
+/// were dropped rather than migrated, on the owner's call. A stored prompt has no name and no model
+/// beside it, and carrying one into this list would mean inventing both. A profile's own
+/// <c>Auto</c> and <c>Explicit</c> prompt pairs went the same way when templates came in: every
+/// profile starts on the default template, and the file from before is kept beside the new one —
+/// see <see cref="Services.SettingsBackup"/>.
+/// </remarks>
+public class OpenAiSettings
+{
+    /// <summary>
+    /// How many profiles the user may keep.
+    /// </summary>
+    /// <remarks>
+    /// Five, on top of the built-in one that is always there. A cap rather than an open list because
+    /// this is a settings panel and not a library: the list is picked from in place, without a
+    /// scroller of its own. Nothing breaks at six — the cap is there to keep the panel legible, so
+    /// the Add button simply stops offering.
+    /// </remarks>
+    public const int MaxProfiles = 5;
+
+    /// <summary>How long a profile name may be. Enough for a phrase, not for a sentence.</summary>
+    public const int MaxNameLength = 40;
+
+    /// <summary>
+    /// The same text with every line break written as a bare <c>\n</c>.
+    /// </summary>
+    /// <remarks>
+    /// A WPF TextBox inserts <c>\r\n</c> when Return is pressed, while the built-in wordings and any
+    /// text loaded into the box from them use bare <c>\n</c>. A prompt someone edits therefore ends
+    /// up with both, and a mixed template is not just untidy: the preview splits prose on <c>\n</c>
+    /// to place its line breaks, so a <c>\r</c> left at the end of a piece renders as a second break
+    /// and the paragraph gap doubles on screen. It also means two prompts that read identically are
+    /// sent to the model as different strings.
+    ///
+    /// Normalised where the text is committed rather than where it is drawn, so the settings file
+    /// holds one form. The preview normalises too, because presets saved before this did not.
+    /// </remarks>
+    public static string NormaliseLineBreaks(string text) =>
+        text.Replace("\r\n", "\n").Replace('\r', '\n');
+
+    /// <summary>The user's own model settings, in the order the list shows them.</summary>
+    public List<OpenAiModelProfile> Profiles { get; set; } = [];
+
+    /// <summary>
+    /// Which profile is in use, by <see cref="OpenAiModelProfile.Id"/>, or empty for the built-in
+    /// one.
+    /// </summary>
+    /// <remarks>
+    /// Empty is both the default and the fallback: an id naming a profile that has since been
+    /// deleted resolves to the built-in setting rather than to nothing, so a settings file edited by
+    /// hand cannot leave the provider with no model and no instruction.
+    /// </remarks>
+    public string SelectedProfileId { get; set; } = "";
+
+    /// <summary>The selected profile, or null when the built-in setting is in use.</summary>
+    public OpenAiModelProfile? SelectedProfile()
+    {
+        if (SelectedProfileId.Length == 0) return null;
+
+        return Profiles.FirstOrDefault(p => p.Id == SelectedProfileId);
+    }
+
+    /// <summary>A fresh <see cref="OpenAiModelProfile.Id"/>, unique against everything stored.</summary>
+    public static string NewId() => Guid.NewGuid().ToString("N");
+}

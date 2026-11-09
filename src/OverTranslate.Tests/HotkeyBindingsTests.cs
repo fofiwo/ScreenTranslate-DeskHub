@@ -1,0 +1,218 @@
+using OverTranslate.Models;
+using OverTranslate.Services;
+using Xunit;
+
+namespace OverTranslate.Tests;
+
+public class HotkeyBindingsTests
+{
+    [Fact]
+    public void LibraryHasOneSharedShortcutAndNeverTakesAnExistingActionsCombination()
+    {
+        var settings = new AppSettings { LibraryHotkeyModifiers = 3, LibraryHotkeyVirtualKey = 0x41 };
+        var library = Assert.Single(HotkeyBindings.Resolve(settings).Where(b => b.Action == HotkeyAction.LibraryWindow));
+        Assert.False(library.IsActive);
+        Assert.Equal(HotkeyAction.Capture, library.ShadowedBy);
+        settings.LibraryHotkeyEnabled = false;
+        Assert.DoesNotContain(HotkeyBindings.Active(settings), b => b.Action == HotkeyAction.LibraryWindow);
+    }
+    private const uint CtrlAlt = 3;
+
+    [Fact]
+    public void EveryDefaultCombinationIsDistinctSoAllOfThemStayOn()
+    {
+        var active = HotkeyBindings.Active(new AppSettings()).ToList();
+
+        Assert.Equal(
+            [
+                HotkeyAction.Capture,
+                HotkeyAction.TranslationWindow,
+                HotkeyAction.RealtimePause,
+                HotkeyAction.OcrExtract,
+                HotkeyAction.LibraryWindow,
+                HotkeyAction.ClipboardHistory,
+            ],
+            active.Select(binding => binding.Action));
+    }
+
+    [Fact]
+    public void TheShortcutAddedLastLosesToOneSomebodyAlreadyChose()
+    {
+        // The upgrade this whole type exists for. 暫停 / 繼續 defaults to Ctrl+Alt+S, and an existing
+        // installation may already have put Ctrl+Alt+S on the translation window — a combination its
+        // owner picked, against one they have never seen. Left to Windows, whichever registered
+        // second would simply fail and the user would be told nothing.
+        var settings = new AppSettings
+        {
+            TranslationWindowHotkeyModifiers = CtrlAlt,
+            TranslationWindowHotkeyVirtualKey = 0x53,
+            TranslationWindowHotkeyDisplay = "Ctrl+Alt+S",
+        };
+
+        var resolved = HotkeyBindings.Resolve(settings);
+        var window = resolved.Single(b => b.Action == HotkeyAction.TranslationWindow);
+        var pause = resolved.Single(b => b.Action == HotkeyAction.RealtimePause);
+
+        Assert.True(window.IsActive);
+        Assert.False(pause.IsActive);
+        Assert.Equal(HotkeyAction.TranslationWindow, pause.ShadowedBy);
+    }
+
+    [Fact]
+    public void CaptureOutranksEverythingBecauseItIsWhatTheApplicationIsFor()
+    {
+        var settings = new AppSettings
+        {
+            TranslationWindowHotkeyModifiers = CtrlAlt,
+            TranslationWindowHotkeyVirtualKey = 0x41, // the capture default
+            RealtimePauseHotkeyModifiers = CtrlAlt,
+            RealtimePauseHotkeyVirtualKey = 0x41,
+        };
+
+        var resolved = HotkeyBindings.Resolve(settings);
+
+        Assert.True(resolved.Single(b => b.Action == HotkeyAction.Capture).IsActive);
+        Assert.Equal(
+            HotkeyAction.Capture,
+            resolved.Single(b => b.Action == HotkeyAction.TranslationWindow).ShadowedBy);
+        Assert.Equal(
+            HotkeyAction.Capture,
+            resolved.Single(b => b.Action == HotkeyAction.RealtimePause).ShadowedBy);
+    }
+
+    [Fact]
+    public void SwitchingOffTheHolderHandsTheCombinationDown()
+    {
+        // A shortcut that is off does not reserve its combination. Without this, turning the window
+        // shortcut off would leave the pause one still shadowed by something no longer running,
+        // which is the kind of state a user cannot reason their way out of.
+        var settings = new AppSettings
+        {
+            TranslationWindowHotkeyModifiers = CtrlAlt,
+            TranslationWindowHotkeyVirtualKey = 0x53,
+            TranslationWindowHotkeyEnabled = false,
+        };
+
+        var pause = HotkeyBindings.Resolve(settings)
+            .Single(binding => binding.Action == HotkeyAction.RealtimePause);
+
+        Assert.True(pause.IsActive);
+        Assert.Null(pause.ShadowedBy);
+    }
+
+    [Fact]
+    public void ASwitchedOffShortcutIsNotRegisteredEvenWithNothingInItsWay()
+    {
+        var settings = new AppSettings { RealtimePauseHotkeyEnabled = false };
+
+        var pause = HotkeyBindings.Resolve(settings)
+            .Single(binding => binding.Action == HotkeyAction.RealtimePause);
+
+        Assert.False(pause.IsActive);
+        Assert.Null(pause.ShadowedBy); // off by choice, not because something took it
+        Assert.DoesNotContain(
+            HotkeyBindings.Active(settings), binding => binding.Action == HotkeyAction.RealtimePause);
+    }
+
+    [Fact]
+    public void CaptureCannotBeSwitchedOff()
+    {
+        // There is no setting for it — see AppSettings.TranslationWindowHotkeyEnabled for why — so
+        // this pins that the resolver never reports it as anything but enabled.
+        Assert.True(HotkeyBindings.Resolve(new AppSettings())
+            .Single(binding => binding.Action == HotkeyAction.Capture).Enabled);
+    }
+
+    [Fact]
+    public void AFunctionKeyMayStandAlone()
+    {
+        // The point of allowing a bare key at all: one key, reachable with the hand already on the
+        // keyboard, and one nothing else on the machine is waiting for.
+        Assert.True(HotkeyBindings.IsBindable(ShortcutTrigger.Keyboard(0, 0x74))); // F5
+        Assert.True(HotkeyBindings.IsBindable(ShortcutTrigger.Keyboard(0, 0x87))); // F24
+    }
+
+    [Fact]
+    public void ATypingKeyOnItsOwnIsRefused()
+    {
+        // RegisterHotKey takes the key from every other application, so binding a bare A would stop
+        // the letter working everywhere — including in the box the user would have to type into to
+        // change it back.
+        Assert.False(HotkeyBindings.IsBindable(ShortcutTrigger.Keyboard(0, 0x41))); // A
+        Assert.False(HotkeyBindings.IsBindable(ShortcutTrigger.Keyboard(0, 0x20))); // Space
+        Assert.False(HotkeyBindings.IsBindable(ShortcutTrigger.Keyboard(0, 0x2E))); // Delete
+    }
+
+    [Fact]
+    public void TheSameTypingKeyIsFineWithAModifier()
+    {
+        Assert.True(HotkeyBindings.IsBindable(ShortcutTrigger.Keyboard(CtrlAlt, 0x41)));
+    }
+
+    [Fact]
+    public void MouseAndGamepadTriggersAreNeverRefused()
+    {
+        // They are observed rather than claimed, so they take nothing away from anybody and the
+        // question this rule answers does not arise.
+        Assert.True(HotkeyBindings.IsBindable(ShortcutTrigger.MouseMiddle()));
+        Assert.True(HotkeyBindings.IsBindable(ShortcutTrigger.Mouse(ShortcutInputKind.MouseX1)));
+        Assert.True(HotkeyBindings.IsBindable(ShortcutTrigger.Mouse(ShortcutInputKind.MouseX2)));
+        Assert.True(HotkeyBindings.IsBindable(ShortcutTrigger.Gamepad(GamepadShortcutButton.Y)));
+    }
+
+    [Fact]
+    public void KeyboardAndGamepadWithSameNumericCodeDoNotCollide()
+    {
+        var settings = new AppSettings
+        {
+            TranslationWindowHotkeyModifiers = 0,
+            TranslationWindowHotkeyVirtualKey = 0x58,
+            RealtimePauseHotkeyInputKind = ShortcutInputKind.Gamepad,
+            RealtimePauseHotkeyGamepadButton = GamepadShortcutButton.X,
+        };
+
+        Assert.True(HotkeyBindings.Resolve(settings)
+            .Single(b => b.Action == HotkeyAction.RealtimePause).IsActive);
+    }
+
+    [Theory]
+    [InlineData(ShortcutInputKind.Gamepad)]
+    [InlineData(ShortcutInputKind.MouseMiddle)]
+    [InlineData(ShortcutInputKind.CtrlCC)]
+    public void LegacyInputKindsCannotActivateNonKeyboardPaths(ShortcutInputKind kind)
+    {
+        var settings = new AppSettings { HotkeyInputKind = kind, HotkeyGamepadButton = GamepadShortcutButton.X,
+            QuickLookupHotkeyEnabled = true, QuickTranslateHotkeyEnabled = true };
+        Assert.All(HotkeyBindings.Active(settings), b => Assert.Equal(ShortcutInputKind.Keyboard, b.InputKind));
+        Assert.Equal(6, HotkeyBindings.Resolve(settings).Count);
+    }
+
+    [Fact]
+    public void ClipboardShortcutDefaultsToCtrlAltVAndRespectsExistingBindings()
+    {
+        var settings = new AppSettings();
+        var clipboard = HotkeyBindings.Resolve(settings).Single(b => b.Action == HotkeyAction.ClipboardHistory);
+        Assert.True(clipboard.IsActive);
+        Assert.Equal(ShortcutTrigger.Keyboard(3, 0x56), clipboard.Trigger);
+        settings.ClipboardHotkeyVirtualKey = settings.LibraryHotkeyVirtualKey;
+        clipboard = HotkeyBindings.Resolve(settings).Single(b => b.Action == HotkeyAction.ClipboardHistory);
+        Assert.False(clipboard.IsActive);
+        Assert.Equal(HotkeyAction.LibraryWindow, clipboard.ShadowedBy);
+        settings.ClipboardHotkeyEnabled = false;
+        Assert.DoesNotContain(HotkeyBindings.Active(settings), b => b.Action == HotkeyAction.ClipboardHistory);
+    }
+
+    [Fact]
+    public void ClipboardShortcutLoadsOldDefaultsAndRoundTripsCustomSettings()
+    {
+        Assert.Equal("Ctrl+Alt+V", SettingsService.Parse("{}").ClipboardHotkeyDisplay);
+        var settings = new AppSettings { ClipboardHotkeyModifiers = 6, ClipboardHotkeyVirtualKey = 0x78,
+            ClipboardHotkeyDisplay = "Ctrl+Shift+F9", ClipboardHotkeyEnabled = false };
+        var restored = SettingsService.Parse(SettingsService.Serialize(settings));
+        Assert.Equal(6u, restored.ClipboardHotkeyModifiers);
+        Assert.Equal(0x78u, restored.ClipboardHotkeyVirtualKey);
+        Assert.Equal("Ctrl+Shift+F9", restored.ClipboardHotkeyDisplay);
+        Assert.False(restored.ClipboardHotkeyEnabled);
+        Assert.Equal(settings.OcrHotkeyVirtualKey, restored.OcrHotkeyVirtualKey);
+    }
+}

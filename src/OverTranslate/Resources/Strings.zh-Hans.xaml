@@ -1,0 +1,547 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:sys="clr-namespace:System;assembly=mscorlib">
+
+    <!-- Mirror of Strings.zh-Hant.xaml in Simplified Chinese. Same keys, same {0} placeholders in
+         the same meaning — StringsParityTests fails the build if the dictionaries drift apart.
+
+         Not a script conversion of the Traditional file. The two write software differently —
+         设置 / 設定, 鼠标 / 滑鼠, 默认 / 預設, 文件 / 檔案, 界面 / 介面 — and a reader notices the
+         wrong side's vocabulary well before they notice the characters. -->
+
+    <!-- ── Shared ── -->
+    <sys:String x:Key="S.Common.Reset">重置</sys:String>
+    <sys:String x:Key="S.Common.Close">关闭</sys:String>
+    <sys:String x:Key="S.Common.Cancel">取消</sys:String>
+    <sys:String x:Key="S.Common.Save">保存</sys:String>
+    <sys:String x:Key="S.Common.ApiKey">API Key</sys:String>
+    <!-- The search box in a language picker. Typing narrows the list and never changes the
+         selection on its own — the user still picks. -->
+    <sys:String x:Key="S.Common.SearchLanguage">搜索语言</sys:String>
+    <sys:String x:Key="S.Common.SearchNoMatch">找不到匹配的语言</sys:String>
+
+    <!-- ── Shell window ── -->
+    <sys:String x:Key="S.Shell.About">关于此软件</sys:String>
+    <sys:String x:Key="S.Shell.QuickTools">随时调用</sys:String>
+    <sys:String x:Key="S.Shell.CaptureTranslate">截图翻译</sys:String>
+    <sys:String x:Key="S.Shell.RealtimeTranslate">持续翻译</sys:String>
+    <sys:String x:Key="S.Shell.Settings">设置</sys:String>
+    <sys:String x:Key="S.Shell.HideSidebar">收起侧边栏</sys:String>
+    <sys:String x:Key="S.Shell.ShowSidebar">展开侧边栏</sys:String>
+    <sys:String x:Key="S.Shell.CaptureBlockedByRealtimeFraming">正在框选实时翻译区块，请先点击「开始翻译」再使用截图翻译</sys:String>
+
+    <!-- ── Tray menu ── -->
+    <sys:String x:Key="S.Tray.OpenWindow">打开翻译窗口</sys:String>
+    <sys:String x:Key="S.Tray.RealtimeWindow">实时翻译窗口</sys:String>
+    <sys:String x:Key="S.Tray.Settings">设置</sys:String>
+    <sys:String x:Key="S.Tray.Exit">退出</sys:String>
+
+    <!-- ── About ── -->
+    <sys:String x:Key="S.About.Website">前往官方网站</sys:String>
+    <sys:String x:Key="S.About.Star">给颗 Star，让更多人看到</sys:String>
+    <sys:String x:Key="S.About.StarTip">前往 GitHub</sys:String>
+    <sys:String x:Key="S.About.Sponsor">赞助支持</sys:String>
+    <sys:String x:Key="S.About.SponsorTip">通过 Buy Me a Coffee 赞助</sys:String>
+    <sys:String x:Key="S.About.Version">版本 {0}</sys:String>
+    <sys:String x:Key="S.About.OpenSource">免费开源，可自由使用。</sys:String>
+
+    <!-- ── Toast ── -->
+    <sys:String x:Key="S.Toast.CopyMessage">复制消息</sys:String>
+    <sys:String x:Key="S.Toast.Copied">已复制到剪贴板</sys:String>
+    <sys:String x:Key="S.Toast.CopyFailed">复制失败，请稍后再试。</sys:String>
+
+    <!-- ── Update ── -->
+    <sys:String x:Key="S.Update.WindowTitle">发现新版本</sys:String>
+    <sys:String x:Key="S.Update.Heading">发现新版本！</sys:String>
+    <sys:String x:Key="S.Update.HeadingDownloading">正在下载更新…</sys:String>
+    <sys:String x:Key="S.Update.HeadingInstalling">正在安装更新…</sys:String>
+    <sys:String x:Key="S.Update.HistoryHeading">更新记录</sys:String>
+    <sys:String x:Key="S.Update.HistoryCurrent">当前版本 {0}</sys:String>
+    <sys:String x:Key="S.Update.IncludesVersions">包含 {0} 个版本的更新</sys:String>
+    <sys:String x:Key="S.Update.LatestTag">最新</sys:String>
+    <sys:String x:Key="S.Update.CurrentTag">当前版本</sys:String>
+    <sys:String x:Key="S.Update.EarlierVersions">还有 {0} 个更早的版本</sys:String>
+    <sys:String x:Key="S.Update.EarlierLink">在 GitHub 查看</sys:String>
+    <sys:String x:Key="S.Update.AllVersionsLink">在 GitHub 查看所有版本</sys:String>
+    <sys:String x:Key="S.Update.HistoryUnavailable">目前无法获取更新内容。</sys:String>
+    <sys:String x:Key="S.Update.PeekSeparator" xml:space="preserve">、</sys:String>
+    <sys:String x:Key="S.Update.Explanation">点击“立即更新”后将自动下载并应用，完成后自动重新启动。</sys:String>
+    <sys:String x:Key="S.Update.NotesBefore" xml:space="preserve">想了解这次更新了什么？</sys:String>
+    <sys:String x:Key="S.Update.NotesLink">查看更新内容</sys:String>
+    <sys:String x:Key="S.Update.Later">稍后再说</sys:String>
+    <sys:String x:Key="S.Update.Now">立即更新</sys:String>
+    <sys:String x:Key="S.Update.Skip">跳过此版本，不再提醒我</sys:String>
+    <sys:String x:Key="S.Update.DownloadingDelta">下载更新包 {0}</sys:String>
+    <sys:String x:Key="S.Update.DownloadingFull">下载完整安装包 {0}</sys:String>
+    <sys:String x:Key="S.Update.Patching">应用更新中…</sys:String>
+    <sys:String x:Key="S.Update.Preparing">准备安装…</sys:String>
+    <sys:String x:Key="S.Update.Applying">安装中…</sys:String>
+    <sys:String x:Key="S.Update.FellBackToFull">更新包无法应用，已切换为完整更新</sys:String>
+    <sys:String x:Key="S.Update.SlowBefore" xml:space="preserve">下载速度较慢？</sys:String>
+    <sys:String x:Key="S.Update.SlowLink">前往 GitHub 手动下载</sys:String>
+    <sys:String x:Key="S.Update.Cancel">取消更新</sys:String>
+    <sys:String x:Key="S.Update.Cancelling">取消中…</sys:String>
+    <sys:String x:Key="S.Update.Retry">重试</sys:String>
+    <sys:String x:Key="S.Update.Failed">下载更新失败：{0}</sys:String>
+    <sys:String x:Key="S.Update.CloseBlocked">更新进行中，完成后会自动重新启动</sys:String>
+
+    <!-- ── Service errors ── -->
+    <sys:String x:Key="S.Error.OpenAiHttp">OpenAI Compatible API 返回 {0}：{1}</sys:String>
+    <sys:String x:Key="S.Error.OpenAiUnparsable">OpenAI Compatible API 响应格式无法解析。</sys:String>
+    <sys:String x:Key="S.Error.OpenAiNoTranslation">OpenAI Compatible API 未返回译文。</sys:String>
+    <sys:String x:Key="S.Error.OpenAiTimeout">OpenAI Compatible API 在 {0} 秒内没有响应。可在「翻译服务设置」中调整超时秒数。</sys:String>
+    <sys:String x:Key="S.Error.OpenAiBadUrl">OpenAI Compatible API 地址必须是有效的 HTTP 或 HTTPS 网址。</sys:String>
+    <sys:String x:Key="S.Error.OpenAiNoModel">尚未指定模型名称。请在「翻译服务设置」中填入要使用的模型。</sys:String>
+    <sys:String x:Key="S.Error.UnknownError">未知错误</sys:String>
+    <sys:String x:Key="S.Error.NoErrorContent">未提供错误内容</sys:String>
+    <sys:String x:Key="S.Error.OcrUnsupportedLanguage">目前 OCR 仅支持 AUTO、EN、ZH、ZH-HANT、JA、KO、RU、UK；“{0}”尚未支持。</sys:String>
+    <sys:String x:Key="S.Error.OcrSwapTimeout">等待其他识别结束以切换 OCR 模型时超时。</sys:String>
+    <sys:String x:Key="S.Error.OcrImageConvert">无法将图像转换为 ONNX OCR 可读的格式。</sys:String>
+    <sys:String x:Key="S.Error.OcrModelMissing">找不到 OCR 模型文件：{0}</sys:String>
+    <sys:String x:Key="S.Error.NotTranslated">未翻译</sys:String>
+
+    <!-- ── Text translation page ── -->
+    <!-- The note at the foot of the page and the greyed speaker's tooltip are the same sentence:
+         the note is what is read, the tooltip is for whoever hovers the button instead. -->
+
+    <!-- ── In-place translation ── Only ever seen on the hint card, so each line stays to one: it sits
+         over the window the reader is working in. -->
+
+    <!-- ── Rich dictionary ── -->
+    <sys:String x:Key="S.Dictionary.Alternatives">其他翻译</sys:String>
+    <sys:String x:Key="S.Dictionary.PartOfSpeech.Adjective">形容词</sys:String>
+    <sys:String x:Key="S.Dictionary.PartOfSpeech.Adverb">副词</sys:String>
+    <sys:String x:Key="S.Dictionary.PartOfSpeech.Article">冠词</sys:String>
+    <sys:String x:Key="S.Dictionary.PartOfSpeech.Conjunction">连词</sys:String>
+    <sys:String x:Key="S.Dictionary.PartOfSpeech.Determiner">限定词</sys:String>
+    <sys:String x:Key="S.Dictionary.PartOfSpeech.Interjection">叹词</sys:String>
+    <sys:String x:Key="S.Dictionary.PartOfSpeech.ModalVerb">情态动词</sys:String>
+    <sys:String x:Key="S.Dictionary.PartOfSpeech.Noun">名词</sys:String>
+    <sys:String x:Key="S.Dictionary.PartOfSpeech.Other">其他</sys:String>
+    <sys:String x:Key="S.Dictionary.PartOfSpeech.Phrase">短语</sys:String>
+    <sys:String x:Key="S.Dictionary.PartOfSpeech.Preposition">介词</sys:String>
+    <sys:String x:Key="S.Dictionary.PartOfSpeech.Pronoun">代词</sys:String>
+    <sys:String x:Key="S.Dictionary.PartOfSpeech.Verb">动词</sys:String>
+
+    <!-- ── Quick lookup popup ── -->
+    <!-- Automatic is not switched off here the way it is on the text translation page: once the
+         translation is back the engine has said which language the original was in, so the only
+         gap is before the first result. -->
+
+    <!-- ── Capture toolbar ── -->
+    <sys:String x:Key="S.Toolbar.Translate">翻译</sys:String>
+    <sys:String x:Key="S.Toolbar.Translating">翻译中...</sys:String>
+    <sys:String x:Key="S.Toolbar.Recognising">识别中...</sys:String>
+    <sys:String x:Key="S.Toolbar.Retranslate">重新翻译</sys:String>
+    <sys:String x:Key="S.Toolbar.ShowSource">显示原文</sys:String>
+    <sys:String x:Key="S.Toolbar.ShowTranslation">显示译文</sys:String>
+    <sys:String x:Key="S.Toolbar.CopyText">复制文字</sys:String>
+    <sys:String x:Key="S.Toolbar.CopyTranslation">复制译文</sys:String>
+    <sys:String x:Key="S.Toolbar.Screenshot">截图</sys:String>
+    <sys:String x:Key="S.Toolbar.ShowSourceHint">暂时移除译文，查看框选范围原本的画面</sys:String>
+    <sys:String x:Key="S.Toolbar.ShowTranslationHint">把译文放回画面上</sys:String>
+    <sys:String x:Key="S.Toolbar.CopyTextHint">把框选范围里的原文复制到剪贴板</sys:String>
+    <sys:String x:Key="S.Toolbar.CopyTranslationHint">把译文复制到剪贴板</sys:String>
+    <sys:String x:Key="S.Toolbar.ScreenshotHint">把框选范围现在的画面复制到剪贴板</sys:String>
+    <sys:String x:Key="S.Toolbar.SettingsHint">自动翻译、截图后自动关闭、保存截图等设置</sys:String>
+    <sys:String x:Key="S.Toolbar.Swap">互换原文与译文语言</sys:String>
+    <sys:String x:Key="S.Toolbar.Close">结束截图翻译</sys:String>
+    <sys:String x:Key="S.Toolbar.Direction">原文的书写方向</sys:String>
+    <sys:String x:Key="S.Toolbar.DirectionHorizontal">横排</sys:String>
+    <sys:String x:Key="S.Toolbar.DirectionVertical">竖排</sys:String>
+    <sys:String x:Key="S.Toolbar.DirectionHorizontalHint">原文横向排列，从左到右</sys:String>
+    <sys:String x:Key="S.Toolbar.DirectionVerticalHint">原文从上到下排列，主要用于竖排文字，也可翻译部分横排文字（日文书籍、漫画）</sys:String>
+    <sys:String x:Key="S.Toolbar.LayoutMode">框选内容的类型</sys:String>
+    <sys:String x:Key="S.Toolbar.LayoutModeGeneral">一般</sys:String>
+    <sys:String x:Key="S.Toolbar.LayoutModeInterface">界面</sys:String>
+    <sys:String x:Key="S.Toolbar.LayoutModeGeneralHint">按阅读顺序整理文字，并适度合并相邻内容，适合文章、漫画、对话与大多数一般情境。</sys:String>
+    <sys:String x:Key="S.Toolbar.LayoutModeInterfaceHint">优先保留原有排列与区块分离，并采用较严格的文字合并判断，适合游戏 UI、菜单与多栏界面。</sys:String>
+
+    <!-- ── Capture overlay ── -->
+    <sys:String x:Key="S.Capture.CancelTip">取消截图</sys:String>
+    <sys:String x:Key="S.Capture.DragPrompt">拖动选取翻译区域</sys:String>
+    <sys:String x:Key="S.Capture.PressPrefix">按</sys:String>
+    <sys:String x:Key="S.Capture.CancelSuffix">取消</sys:String>
+    <sys:String x:Key="S.Overlay.Recognising">识别中</sys:String>
+
+    <!-- ── Secret box ── -->
+    <sys:String x:Key="S.Secret.Show">显示内容</sys:String>
+    <sys:String x:Key="S.Secret.Hide">隐藏内容</sys:String>
+
+    <!-- ── Tray notifications and capture balloons ── -->
+    <sys:String x:Key="S.Main.MinimizedTitle">ScreenTranslate 已最小化</sys:String>
+    <sys:String x:Key="S.Main.MinimizedBody">程序已最小化到系统托盘，可使用 {0} 开始进行截图翻译。</sys:String>
+    <sys:String x:Key="S.Main.DefaultShortcutName">已设置的快捷键</sys:String>
+    <sys:String x:Key="S.Main.RealtimeRunningTitle">实时翻译进行中</sys:String>
+    <sys:String x:Key="S.Main.RealtimeRunningBody">编辑翻译区块时无法使用取词翻译。</sys:String>
+    <sys:String x:Key="S.Main.MissingApiKeyTitle">缺少 API Key</sys:String>
+    <sys:String x:Key="S.Main.MissingApiKeyBody">请在设置中输入 API Key。</sys:String>
+    <sys:String x:Key="S.Main.RecogniseFailedTitle">识别失败</sys:String>
+    <sys:String x:Key="S.Main.NoImageBody">找不到框选图像，请重新框选。</sys:String>
+    <sys:String x:Key="S.Main.Recognising">识别中</sys:String>
+    <sys:String x:Key="S.Main.NoTextTitle">未检测到文字</sys:String>
+    <sys:String x:Key="S.Main.NoTextBody">所选区域中未找到可识别的文字。</sys:String>
+    <sys:String x:Key="S.Main.Translating">翻译中</sys:String>
+    <sys:String x:Key="S.Main.TranslateFailedTitle">翻译失败</sys:String>
+    <sys:String x:Key="S.Main.TranslateFailedBody">目前使用的翻译源可能暂时无法使用。
+请切换其他翻译源后再试一次。
+详细信息：{0}</sys:String>
+    <sys:String x:Key="S.Main.CopiedTitle">已复制</sys:String>
+    <sys:String x:Key="S.Main.CopiedBody">已将框选截图复制到剪贴板。</sys:String>
+    <sys:String x:Key="S.Main.TextCopiedBody">已将识别文字复制到剪贴板。</sys:String>
+    <sys:String x:Key="S.Main.TranslationCopiedBody">已将译文复制到剪贴板。</sys:String>
+    <sys:String x:Key="S.Main.CopyFailedTitle">复制失败</sys:String>
+    <sys:String x:Key="S.Main.CopyFailedBody">无法复制截图：{0}</sys:String>
+    <sys:String x:Key="S.Main.CopyTextFailedBody">剪贴板目前无法使用，请稍后再试。</sys:String>
+
+    <!-- ── Realtime translation ── -->
+    <sys:String x:Key="S.Realtime.Title">持续翻译</sys:String>
+    <sys:String x:Key="S.Realtime.Subtitle">选择窗口或屏幕区域；画面变化后更新译文，窗口移动时重新定位。</sys:String>
+
+    <sys:String x:Key="S.Realtime.TranslationSettings">翻译设置</sys:String>
+    <sys:String x:Key="S.Realtime.SourceLanguage">源语言</sys:String>
+    <sys:String x:Key="S.Realtime.SourceLanguagePrompt">请选择源语言</sys:String>
+    <sys:String x:Key="S.Realtime.TargetLanguage">目标语言</sys:String>
+    <sys:String x:Key="S.Realtime.Provider">翻译服务</sys:String>
+
+    <sys:String x:Key="S.Realtime.ScreenHint">实时翻译目前只支持单个屏幕画面。</sys:String>
+    <sys:String x:Key="S.Realtime.BlockCountProgress">区块 {0} / {1}</sys:String>
+
+    <sys:String x:Key="S.Realtime.Appearance">显示外观</sys:String>
+    <sys:String x:Key="S.Realtime.Preview">预览</sys:String>
+    <sys:String x:Key="S.Realtime.PreviewText">文字会像这样显示在画面上</sys:String>
+    <sys:String x:Key="S.Realtime.TextColor">文字颜色</sys:String>
+    <sys:String x:Key="S.Realtime.TextColorHint">设置翻译文字的颜色。选择“自动”会沿用画面上原文字的颜色。</sys:String>
+    <sys:String x:Key="S.Realtime.TextColorMode">文字颜色模式</sys:String>
+    <sys:String x:Key="S.Realtime.FontSize">文字大小</sys:String>
+    <sys:String x:Key="S.Realtime.FontSizeHint">设置翻译文字的大小。选择“自动”会依照原文字大小调整。</sys:String>
+    <sys:String x:Key="S.Realtime.FontSizeMode">文字大小模式</sys:String>
+    <sys:String x:Key="S.Realtime.FontSizeValue">文字大小（px）</sys:String>
+    <sys:String x:Key="S.Realtime.FontSizeIncrease">放大文字</sys:String>
+    <sys:String x:Key="S.Realtime.FontSizeDecrease">缩小文字</sys:String>
+    <sys:String x:Key="S.Realtime.ScrimColor">底色</sys:String>
+    <sys:String x:Key="S.Realtime.ScrimColorHint">设置翻译框的背景颜色。选择“自动”会用周围画面补出背景，让译文更融入画面。</sys:String>
+    <sys:String x:Key="S.Realtime.ScrimColorMode">底色模式</sys:String>
+    <sys:String x:Key="S.Realtime.ScrimOpacity">底色不透明度</sys:String>
+    <sys:String x:Key="S.Realtime.ScrimOpacityHint">数值越高，翻译框的底色越不透明。</sys:String>
+    <sys:String x:Key="S.Realtime.ColorAuto">自动</sys:String>
+    <sys:String x:Key="S.Realtime.ColorFixed">固定</sys:String>
+    <sys:String x:Key="S.Realtime.Border">边框</sys:String>
+    <sys:String x:Key="S.Realtime.BorderHint">为翻译框加上边框，让译文与画面更容易分辨。</sys:String>
+    <sys:String x:Key="S.Realtime.BorderColor">边框颜色</sys:String>
+    <sys:String x:Key="S.Realtime.ResetAppearance">恢复显示外观默认值</sys:String>
+    <sys:String x:Key="S.ColorPicker.Undo">返回上一个颜色</sys:String>
+    <sys:String x:Key="S.ColorPicker.Hex">颜色代码</sys:String>
+    <sys:String x:Key="S.ColorPicker.Square">饱和度与亮度</sys:String>
+    <sys:String x:Key="S.ColorPicker.Hue">色相</sys:String>
+    <sys:String x:Key="S.Realtime.AutoModeBestFor">“自动”的文字颜色与底色不一定适合所有画面；部分影音或复杂背景可能出现文字不易阅读、擦色较突兀的情况，可根据实际画面改用“固定”。</sys:String>
+
+    <sys:String x:Key="S.Realtime.HowItWorks">工作方式</sys:String>
+    <sys:String x:Key="S.Realtime.Step1">1. 点击“选取翻译区块”，在画面上框选要翻译的区域。</sys:String>
+    <sys:String x:Key="S.Realtime.Step2">2. 点击浮动窗口栏的“开始翻译”，内容变化时会自动重新识别并更新译文。</sys:String>
+    <sys:String x:Key="S.Realtime.Step3">3. 翻译中的区域不会影响游戏或界面操作，如需调整翻译区块，请点击“编辑”。</sys:String>
+    <sys:String x:Key="S.Realtime.Step4">4. 也可以按 {0}：未启动时开始框选，框选时开始翻译，翻译中可暂停／继续；暂停时会还原画面原文内容。</sys:String>
+
+    <sys:String x:Key="S.Realtime.SelectBlocks">选取翻译区块</sys:String>
+    <sys:String x:Key="S.Realtime.StopSession">结束实时翻译</sys:String>
+    <sys:String x:Key="S.Realtime.ActiveHint">实时翻译进行中，可用屏幕上的浮动窗口栏调整或结束。</sys:String>
+    <sys:String x:Key="S.Realtime.NoApiKey">尚未设置 API Key，请先到“设置”输入，否则实时翻译将无法获取译文。</sys:String>
+    <sys:String x:Key="S.Realtime.ScreenItem">屏幕 {0} · {1}×{2}</sys:String>
+    <sys:String x:Key="S.Realtime.ScreenItemPrimary">屏幕 {0} · {1}×{2}（主屏幕）</sys:String>
+    <sys:String x:Key="S.Realtime.CaptureInProgress">截图翻译进行中，请先结束后再启动实时翻译。</sys:String>
+    <sys:String x:Key="S.Realtime.ChooseSourceFirst">请先选择原文语言。</sys:String>
+    <sys:String x:Key="S.Realtime.NoScreens">找不到可用的屏幕，请重新打开此页面。</sys:String>
+
+    <!-- Floating control bar -->
+    <sys:String x:Key="S.Realtime.EditHint">在屏幕上拖动创建要翻译的区块</sys:String>
+    <sys:String x:Key="S.Realtime.StartTranslating">开始翻译</sys:String>
+    <sys:String x:Key="S.Realtime.Running">实时翻译中</sys:String>
+    <sys:String x:Key="S.Realtime.Paused">已暂停</sys:String>
+    <sys:String x:Key="S.Realtime.LoadingModels">加载模型中…</sys:String>
+    <sys:String x:Key="S.Realtime.Pause">暂停实时翻译</sys:String>
+    <sys:String x:Key="S.Realtime.Resume">继续实时翻译</sys:String>
+    <sys:String x:Key="S.Realtime.EditBlocks">编辑翻译区块</sys:String>
+    <sys:String x:Key="S.Realtime.CollapseBar">收起浮动窗口栏</sys:String>
+    <sys:String x:Key="S.Realtime.ExpandBar">展开浮动窗口栏</sys:String>
+    <sys:String x:Key="S.Realtime.ChangeSourceLanguage">更换源语言</sys:String>
+    <sys:String x:Key="S.Realtime.ChangeTargetLanguage">更换目标语言</sys:String>
+    <sys:String x:Key="S.Realtime.LanguageNoMatch">找不到“{0}”</sys:String>
+    <sys:String x:Key="S.Realtime.DismissMessage">单击收起消息</sys:String>
+    <sys:String x:Key="S.Realtime.CrosshairOff">暂停框选，改为操作下方画面</sys:String>
+    <sys:String x:Key="S.Realtime.CrosshairOn">恢复框选</sys:String>
+    <sys:String x:Key="S.Realtime.CompareDisplay">原文对照</sys:String>
+    <sys:String x:Key="S.Realtime.CompareDisplayOn">已开启</sys:String>
+    <sys:String x:Key="S.Realtime.CompareDisplayOff">已关闭</sys:String>
+    <sys:String x:Key="S.Realtime.CompareDisplayOnHint">原文对照：关闭后，译文将直接覆盖在原文画面上</sys:String>
+    <sys:String x:Key="S.Realtime.CompareDisplayOffHint">原文对照：开启后，将保留原文画面，译文显示在对照区域</sys:String>
+    <sys:String x:Key="S.Realtime.CompareCopyHint">拖动可移动对照框，双击标签回到自动位置</sys:String>
+    <sys:String x:Key="S.Realtime.CompareHideBlock">关闭此区块的原文对照</sys:String>
+    <sys:String x:Key="S.Realtime.CompareShowBlock">显示此区块的原文对照</sys:String>
+    <sys:String x:Key="S.Realtime.CompareCopyCenter">译文显示位置</sys:String>
+    <sys:String x:Key="S.Realtime.CrosshairOffHint">已暂停框选，可直接操作下方画面</sys:String>
+
+    <!-- Control bar and edit window messages -->
+    <sys:String x:Key="S.Realtime.MovedToFront">已将实时翻译窗口移到最上层</sys:String>
+    <sys:String x:Key="S.Realtime.TooManyBlocks">最多同时 {0} 个区块，请先移除一个</sys:String>
+    <sys:String x:Key="S.Realtime.NeedOneBlock">请先拖动创建至少一个区块</sys:String>
+    <sys:String x:Key="S.Realtime.CaptureSourceLost">被翻译的窗口已关闭，实时翻译已停止</sys:String>
+    <sys:String x:Key="S.Realtime.ScreenCaptureUnavailable">这台机器无法用“屏幕捕获”做实时翻译。请改用“窗口捕获”，选择要翻译的那个窗口</sys:String>
+    <sys:String x:Key="S.Realtime.CaptureSourceScreen">屏幕捕获</sys:String>
+    <sys:String x:Key="S.Realtime.CaptureSourceWindow">窗口捕获</sys:String>
+    <sys:String x:Key="S.Realtime.CaptureSourceScreenHint">捕获整个屏幕画面上的所有内容。</sys:String>
+    <sys:String x:Key="S.Realtime.ScreenModeUnsupported">此系统目前不支持“屏幕捕获”。</sys:String>
+    <sys:String x:Key="S.Realtime.RealtimeUnsupported">实时翻译需要画面捕获功能，这台 Windows 没有提供</sys:String>
+    <sys:String x:Key="S.Realtime.CaptureSourceWindowHint">捕获指定窗口内的内容。</sys:String>
+    <sys:String x:Key="S.Realtime.Step1Label">步骤 1</sys:String>
+    <sys:String x:Key="S.Realtime.Step1Name">选择捕获方式</sys:String>
+    <sys:String x:Key="S.Realtime.Step1Desc">选择要捕获的范围类型。</sys:String>
+    <sys:String x:Key="S.Realtime.Step2Label">步骤 2</sys:String>
+    <sys:String x:Key="S.Realtime.Step2Name">选择画面或窗口</sys:String>
+    <sys:String x:Key="S.Realtime.Step2Desc">按照上一步选的方式，指定要捕获的屏幕或窗口。</sys:String>
+    <sys:String x:Key="S.Realtime.ScreenPrompt">选择要捕获的屏幕。</sys:String>
+    <sys:String x:Key="S.Realtime.CaptureWindowPromptLine">选择要捕获的窗口。</sys:String>
+    <sys:String x:Key="S.Realtime.CaptureWindowPrompt">请选择窗口</sys:String>
+    <sys:String x:Key="S.Realtime.CaptureWindowHint">窗口列表会在点击“刷新”时更新；若刚打开新的程序，请刷新后再选择。</sys:String>
+    <sys:String x:Key="S.Realtime.CaptureWindowNone">找不到可以捕获的窗口，请先打开要翻译的程序，再点击刷新。</sys:String>
+    <sys:String x:Key="S.Realtime.CaptureWindowDetail">来自 {0}</sys:String>
+    <sys:String x:Key="S.Realtime.CaptureWindowOnScreen">字幕框选会在{0}上进行。</sys:String>
+    <sys:String x:Key="S.Realtime.RefreshWindows">刷新</sys:String>
+    <sys:String x:Key="S.Realtime.ChooseWindowFirst">请先选择要翻译的窗口</sys:String>
+    <sys:String x:Key="S.Realtime.WindowCaptureUnsupported">当前的 Windows 版本不支持此画面捕获功能。</sys:String>
+    <sys:String x:Key="S.Realtime.WindowCaptureGone">指定的窗口已关闭或最小化，请重新选择窗口。</sys:String>
+    <sys:String x:Key="S.Realtime.WindowCaptureFailed">无法捕获此窗口，请切换到“无边框窗口”或“窗口化”后再试一次。</sys:String>
+    <sys:String x:Key="S.Realtime.WindowCaptureFullscreen">当前的显示模式无法捕获，请切换到“无边框窗口”或“窗口化”后再试一次。</sys:String>
+    <sys:String x:Key="S.Realtime.WindowCaptureNoFrame">无法获取窗口画面，请切换到“无边框窗口”或“窗口化”后再试一次。</sys:String>
+    <sys:String x:Key="S.Realtime.SessionEndedTitle">实时翻译已结束</sys:String>
+    <sys:String x:Key="S.Realtime.RemoveBlock">移除此区块</sys:String>
+
+    <!-- Block mode picker -->
+    <sys:String x:Key="S.Realtime.ModeSubtitle">字幕 / 漫画</sys:String>
+    <sys:String x:Key="S.Realtime.ModeGameUi">游戏 / 界面</sys:String>
+    <sys:String x:Key="S.Realtime.ModeSubtitleSummary">一段连续的话，整段换成下一段——视频字幕、剧情对话、漫画对白</sys:String>
+    <sys:String x:Key="S.Realtime.ModeGameUiSummary">各自独立的零散短文字——HUD、菜单、物品说明、聊天室</sys:String>
+    <sys:String x:Key="S.Realtime.ModeSubtitleGuidance">适合影音字幕、游戏剧情对话、漫画文字等情境；若内容以连续阅读的文字为主，建议使用此模式。</sys:String>
+    <sys:String x:Key="S.Realtime.ModeGameUiGuidance">适合游戏画面、聊天室、菜单与界面文字等情境；若内容不是字幕、剧情对话或漫画文字，建议使用此模式。</sys:String>
+    <sys:String x:Key="S.Realtime.CollapseGuidance">收起模式说明</sys:String>
+    <sys:String x:Key="S.Realtime.ExpandGuidance">展开模式说明</sys:String>
+
+    <!-- Session failures -->
+    <sys:String x:Key="S.Realtime.SessionAborted">实时翻译已中止：{0}</sys:String>
+    <sys:String x:Key="S.Realtime.MissingApiKey">缺少 API Key，请先在设置中输入。</sys:String>
+    <sys:String x:Key="S.Realtime.RetryingAfterFailure">翻译暂时失败，将持续重试：{0}</sys:String>
+
+    <!-- ── Translation providers ── -->
+    <sys:String x:Key="S.Provider.Google">Google 翻译 (标准)</sys:String>
+    <sys:String x:Key="S.Provider.GoogleChrome">Google 翻译 (Beta)</sys:String>
+    <sys:String x:Key="S.Provider.GoogleChromeHint">译文较自然，但专有名词可能被意译或省略</sys:String>
+    <sys:String x:Key="S.Provider.Bing">Bing 翻译</sys:String>
+    <sys:String x:Key="S.Provider.Microsoft">Microsoft 翻译</sys:String>
+    <sys:String x:Key="S.Provider.Youdao">有道翻译</sys:String>
+    <sys:String x:Key="S.Provider.TranSmart">腾讯翻译</sys:String>
+    <sys:String x:Key="S.Provider.Yandex">Yandex 翻译</sys:String>
+    <sys:String x:Key="S.Provider.DeepL">DeepL 翻译</sys:String>
+    <sys:String x:Key="S.Provider.DeepLHint">需到 DeepL 官方注册并获取 API Key</sys:String>
+    <sys:String x:Key="S.Provider.OpenAI">OpenAI</sys:String>
+    <sys:String x:Key="S.Provider.OpenAIHint">支持 OpenAI 兼容 API（如 Ollama、LM Studio、OpenRouter），建议使用本地 LLM。</sys:String>
+
+    <!-- ── Settings page ── -->
+
+    <!-- The checkbox carries no text, so this is its ToolTip rather than a label -->
+    <!-- The shortcut box has no label of its own; this is its ToolTip -->
+
+    <sys:String x:Key="S.Settings.AutoTranslateCheck">截图翻译框选完成时立即翻译，不需要再手动点击。</sys:String>
+
+    <sys:String x:Key="S.Settings.ServiceDialogTitle">{0}设置</sys:String>
+    <sys:String x:Key="S.Settings.ApiBaseUrl">API 地址</sys:String>
+    <sys:String x:Key="S.Settings.OpenAiTimeout">超时</sys:String>
+    <sys:String x:Key="S.Settings.OpenAiMode">翻译模式</sys:String>
+    <sys:String x:Key="S.Settings.OpenAiModeSegment">标准</sys:String>
+    <sys:String x:Key="S.Settings.OpenAiModeBatch">整批</sys:String>
+    <sys:String x:Key="S.Settings.OpenAiModeSegmentHint">依次逐一翻译画面上的文字区块。</sys:String>
+    <sys:String x:Key="S.Settings.OpenAiModeBatchHint">将画面上的文字区块组合后一起翻译。</sys:String>
+    <sys:String x:Key="S.Settings.OpenAiModeSegmentPro1">本地模型上速度较快</sys:String>
+    <sys:String x:Key="S.Settings.OpenAiModeSegmentPro2">不易漏翻</sys:String>
+    <sys:String x:Key="S.Settings.OpenAiModeBatchPro1">参考整个画面，语意更连贯</sys:String>
+    <sys:String x:Key="S.Settings.OpenAiModeBatchPro2">请求次数较少，更适合云端服务</sys:String>
+    <sys:String x:Key="S.Settings.OpenAiModeSuits">适合</sys:String>
+    <sys:String x:Key="S.Settings.OpenAiModeSegmentTag1">影片字幕</sys:String>
+    <sys:String x:Key="S.Settings.OpenAiModeSegmentTag2">剧情对话</sys:String>
+    <sys:String x:Key="S.Settings.OpenAiModeBatchTag1">漫画</sys:String>
+    <sys:String x:Key="S.Settings.OpenAiModeBatchTag2">聊天室</sys:String>
+    <sys:String x:Key="S.Settings.PromptModeSwitchTitle">切换翻译模式</sys:String>
+    <sys:String x:Key="S.Settings.PromptModeSwitchToBatch">当前使用自定义提示词，要切换成“整批”的默认提示词吗？</sys:String>
+    <sys:String x:Key="S.Settings.PromptModeSwitchToSegment">当前使用自定义提示词，要切换成“标准”的默认提示词吗？</sys:String>
+    <sys:String x:Key="S.Settings.PromptModeUseDefault">切换默认</sys:String>
+    <sys:String x:Key="S.Settings.PromptModeKeep">保留</sys:String>
+    <sys:String x:Key="S.Settings.OpenAiTimeoutUnit">秒</sys:String>
+    <sys:String x:Key="S.Settings.OpenAiTimeoutMin">最少 {0} 秒</sys:String>
+    <sys:String x:Key="S.Settings.ModelName">模型名称</sys:String>
+    <sys:String x:Key="S.Settings.ModelRequired">必填</sys:String>
+    <sys:String x:Key="S.Settings.OllamaGuide">本地 LLM 搭建教程</sys:String>
+    <sys:String x:Key="S.Settings.ModelProfiles">模型设置</sys:String>
+    <sys:String x:Key="S.Settings.ProfileAdd">新增设置（{0}/{1}）</sys:String>
+    <sys:String x:Key="S.Settings.ProfileListHint">点击选择要使用的设置</sys:String>
+    <sys:String x:Key="S.Settings.ProfileBuiltInNote">系统默认会随版本更新；想保留当前的内容，点击系统默认右侧的复制按钮另存一份。</sys:String>
+    <sys:String x:Key="S.Settings.ProfileCopy">复制为新设置</sys:String>
+    <sys:String x:Key="S.Settings.ProfileTagCustomPrompt">自定义提示词</sys:String>
+    <sys:String x:Key="S.Settings.ProfileSnapshotName">系统默认 v{0}</sys:String>
+    <sys:String x:Key="S.Settings.PromptDeleteTitle">删除设置</sys:String>
+    <sys:String x:Key="S.Settings.PromptDeleteConfirm">确定要删除“{0}”吗？删除后无法恢复。</sys:String>
+    <sys:String x:Key="S.Settings.PromptDefaultName">系统默认</sys:String>
+    <sys:String x:Key="S.Settings.PromptReadOnly">只读</sys:String>
+    <sys:String x:Key="S.Settings.PromptAddTitle">新增设置</sys:String>
+    <sys:String x:Key="S.Settings.PromptEditTitle">编辑设置</sys:String>
+    <sys:String x:Key="S.Settings.PromptDelete">删除</sys:String>
+    <sys:String x:Key="S.Settings.PromptName">名称</sys:String>
+    <sys:String x:Key="S.Settings.PromptNamePlaceholder">为这个设置命名</sys:String>
+    <sys:String x:Key="S.Settings.PromptParams">可用参数</sys:String>
+    <sys:String x:Key="S.Settings.PromptParamSourceName">源语言名称</sys:String>
+    <sys:String x:Key="S.Settings.PromptParamSourceCode">源语言代码</sys:String>
+    <sys:String x:Key="S.Settings.PromptParamTargetName">目标语言名称</sys:String>
+    <sys:String x:Key="S.Settings.PromptParamTargetCode">目标语言代码</sys:String>
+    <sys:String x:Key="S.Settings.PromptParamSourceNameExample">英语</sys:String>
+    <sys:String x:Key="S.Settings.PromptParamTargetNameExample">日语</sys:String>
+    <sys:String x:Key="S.Settings.PromptParamsTipAuto">源语言为“自动”时，源语言名称为 any language，代码为空。</sys:String>
+    <sys:String x:Key="S.Settings.PromptTemplate">提示词</sys:String>
+    <sys:String x:Key="S.Settings.PromptTemplateHint">翻译时发送给模型的内容。花括号标示的参数会替换成实际的文字。</sys:String>
+    <sys:String x:Key="S.Settings.PromptTemplateReset">恢复默认</sys:String>
+    <sys:String x:Key="S.Settings.PromptParamText">要翻译的原文，一次只发送一个文字区块进行翻译。未使用此参数时，{text} 会自动附加在提示词末尾。</sys:String>
+    <sys:String x:Key="S.Settings.PromptParamTextBatch">要翻译的原文，画面上的文字区块会组合后一起发送，每块一行并加上编号，例如 &lt;1&gt;text...&lt;/1&gt;。未使用此参数时，{text} 会自动附加在提示词末尾。</sys:String>
+    <sys:String x:Key="S.Settings.PromptParamContext">先前的翻译内容，可供模型参考上下文及用词，让语意更连贯。没有可参考的内容时，会自动移除此部分及多余的空行。未使用此参数时，模型将无法参考先前的翻译内容。</sys:String>
+    <sys:String x:Key="S.Settings.PromptNewName">我的设置 {0}</sys:String>
+    <sys:String x:Key="S.Settings.OpenAiAdvanced">高级</sys:String>
+    <sys:String x:Key="S.Settings.ModelResetTip">带入推荐模型</sys:String>
+    <sys:String x:Key="S.Settings.ThinkingOff">关闭思考</sys:String>
+    <sys:String x:Key="S.Settings.ThinkingOffDetail">发送 reasoning_effort: none</sys:String>
+    <sys:String x:Key="S.Settings.ThinkingOffTip" xml:space="preserve">要求模型直接回答、不先思考。部分通用模型默认会先思考再回答，翻译会明显变慢，甚至超时；翻译专用模型通常不需要。
+有些服务不认识这个参数会返回错误，这时请取消勾选。</sys:String>
+    <sys:String x:Key="S.Settings.AdvancedHint">未勾选的参数不会发送。各模型支持的参数与范围不同，请以模型文档为准。</sys:String>
+    <sys:String x:Key="S.Settings.Temperature">Temperature</sys:String>
+    <sys:String x:Key="S.Settings.TemperatureRange">范围：0.0 ~ 2.0</sys:String>
+    <sys:String x:Key="S.Settings.TemperatureTip" xml:space="preserve">调整模型对高概率结果的偏好程度。数值越低，越倾向选择最可能的表达；
+数值越高，其他可能的表达也更有机会被选中。</sys:String>
+    <sys:String x:Key="S.Settings.TopP">Top P</sys:String>
+    <sys:String x:Key="S.Settings.TopPRange">范围：0.0 ~ 1.0</sys:String>
+    <sys:String x:Key="S.Settings.TopPTip" xml:space="preserve">限制模型可选择的候选范围。数值越低，只保留概率较高的少数候选；
+数值越高，可选择的候选越多。</sys:String>
+    <sys:String x:Key="S.Settings.Seed">Seed</sys:String>
+    <sys:String x:Key="S.Settings.SeedRange">整数</sys:String>
+    <sys:String x:Key="S.Settings.SeedTip" xml:space="preserve">用于让生成结果更容易重现。在模型、提示词与其他设置相同时，
+使用相同 Seed 通常可得到相同结果。</sys:String>
+
+    <sys:String x:Key="S.Settings.MangaModels">漫画竖排模型</sys:String>
+    <sys:String x:Key="S.Settings.MangaModelsDesc1">日文漫画竖排专用，识别更完整、速度更快。</sys:String>
+    <sys:String x:Key="S.Settings.MangaModelsDesc2">需 1 GB 以上 VRAM，建议 2 GB。</sys:String>
+    <sys:String x:Key="S.Settings.MangaModelsDesc2Unsupported">显卡不支持 DirectX 12，将改用一般识别。</sys:String>
+    <sys:String x:Key="S.Settings.MangaModelsFeatureVertical">日文竖排</sys:String>
+    <sys:String x:Key="S.Settings.MangaModelsFeatureMissed">漏句更少</sys:String>
+    <sys:String x:Key="S.Settings.MangaModelsFeatureFast">速度更快</sys:String>
+    <sys:String x:Key="S.Settings.MangaModelsDownload">下载（{0} MB）</sys:String>
+    <sys:String x:Key="S.Settings.MangaModelsCancel">取消</sys:String>
+    <sys:String x:Key="S.Settings.MangaModelsDelete">删除模型</sys:String>
+    <sys:String x:Key="S.Settings.MangaModelsRetry">重试</sys:String>
+    <sys:String x:Key="S.Settings.MangaModelsDeleteFailed">无法删除模型：{0}</sys:String>
+    <sys:String x:Key="S.Settings.MangaModelsNotDownloaded">尚未下载</sys:String>
+    <sys:String x:Key="S.Settings.MangaModelsDownloading">下载中</sys:String>
+    <sys:String x:Key="S.Settings.MangaModelsReady">已就绪</sys:String>
+    <sys:String x:Key="S.Settings.MangaModelsDisabled">已停用</sys:String>
+    <sys:String x:Key="S.Settings.MangaModelsNoGpu">无法使用</sys:String>
+    <sys:String x:Key="S.Settings.MangaModelsFailed">下载失败</sys:String>
+    <sys:String x:Key="S.Settings.MangaModelsUnsupported">不支持</sys:String>
+    <sys:String x:Key="S.Settings.MangaModelsOutdated">有新版本</sys:String>
+    <sys:String x:Key="S.Settings.MangaModelsUpdated">模型已更新，重新下载前暂用默认模型。</sys:String>
+    <sys:String x:Key="S.Settings.MangaModelsProgress">{0} / {1} MB · {2}%</sys:String>
+    <sys:String x:Key="S.Settings.MangaModelsEnabled">已启用漫画竖排模型</sys:String>
+    <sys:String x:Key="S.Settings.MangaModelsSwitchedOff">已停用（使用默认模型）</sys:String>
+    <sys:String x:Key="S.Settings.MangaModelsReasonLoadFailed">模型无法在 {0} 上加载，竖排改用一般识别。</sys:String>
+    <sys:String x:Key="S.Settings.MangaModelsReasonReadFailed">在 {0} 上识别时出错，竖排改用一般识别。</sys:String>
+    <sys:String x:Key="S.Settings.MangaModelsErrorNetwork">无法连接下载服务器，请检查网络后重试。</sys:String>
+    <sys:String x:Key="S.Settings.MangaModelsErrorServer">下载服务器返回错误（{0}）。</sys:String>
+    <sys:String x:Key="S.Settings.MangaModelsErrorChecksum">下载的文件不完整或已损坏。</sys:String>
+    <sys:String x:Key="S.Settings.MangaModelsErrorDisk">无法保存模型，请确认磁盘空间是否足够。</sys:String>
+    <sys:String x:Key="S.Settings.MangaModelsErrorOther">下载没有完成，请重试。</sys:String>
+
+
+    <sys:String x:Key="S.Settings.UploadBundle">上传</sys:String>
+
+    <sys:String x:Key="S.Settings.AutoSaveHint">设置变更后会自动保存</sys:String>
+
+    <!-- Settings page, composed in code-behind -->
+
+    <!-- ── Diagnostics note ── -->
+    <sys:String x:Key="S.Settings.NoteTitle">反馈问题</sys:String>
+    <sys:String x:Key="S.Settings.NoteIntro">你填写的内容会随诊断信息一起发送，仅用于协助排查问题。</sys:String>
+    <sys:String x:Key="S.Settings.NotePlaceholder">可补充问题发生时的操作情况或其他相关信息，帮助开发者更快找到原因。此栏可以留空。</sys:String>
+    <sys:String x:Key="S.Settings.NoteSending">上传中…</sys:String>
+    <sys:String x:Key="S.Settings.NoteUploadFailed">这次没有上传成功。文件还在你的电脑上，可以再试一次。</sys:String>
+    <sys:String x:Key="S.Settings.NoteAttachFailed">无法将内容写入诊断文件，因此没有发送任何数据，请再试一次。</sys:String>
+    <sys:String x:Key="S.Settings.NoteReportManually">改用 GitHub 反馈</sys:String>
+
+    <!-- ── Language names ── -->
+    <!-- The language names in the pickers. LangItem.English carries the English name
+         separately and the pickers show it alongside these, so only this interface's own word
+         for each language belongs here. -->
+    <sys:String x:Key="S.Lang.Automatic">自动</sys:String>
+    <sys:String x:Key="S.Lang.AutomaticOcr">自动（中英日）</sys:String>
+    <sys:String x:Key="S.Lang.English">英语</sys:String>
+    <sys:String x:Key="S.Lang.Japanese">日语</sys:String>
+    <sys:String x:Key="S.Lang.Korean">韩语</sys:String>
+    <sys:String x:Key="S.Lang.TraditionalChinese">繁体中文</sys:String>
+    <sys:String x:Key="S.Lang.SimplifiedChinese">简体中文</sys:String>
+    <sys:String x:Key="S.Lang.Bulgarian">保加利亚语</sys:String>
+    <sys:String x:Key="S.Lang.Czech">捷克语</sys:String>
+    <sys:String x:Key="S.Lang.Danish">丹麦语</sys:String>
+    <sys:String x:Key="S.Lang.German">德语</sys:String>
+    <sys:String x:Key="S.Lang.Greek">希腊语</sys:String>
+    <sys:String x:Key="S.Lang.Spanish">西班牙语</sys:String>
+    <sys:String x:Key="S.Lang.Estonian">爱沙尼亚语</sys:String>
+    <sys:String x:Key="S.Lang.Persian">波斯语</sys:String>
+    <sys:String x:Key="S.Lang.Finnish">芬兰语</sys:String>
+    <sys:String x:Key="S.Lang.French">法语</sys:String>
+    <sys:String x:Key="S.Lang.Hungarian">匈牙利语</sys:String>
+    <sys:String x:Key="S.Lang.Indonesian">印度尼西亚语</sys:String>
+    <sys:String x:Key="S.Lang.Italian">意大利语</sys:String>
+    <sys:String x:Key="S.Lang.Lithuanian">立陶宛语</sys:String>
+    <sys:String x:Key="S.Lang.Latvian">拉脱维亚语</sys:String>
+    <sys:String x:Key="S.Lang.Norwegian">挪威语</sys:String>
+    <sys:String x:Key="S.Lang.Dutch">荷兰语</sys:String>
+    <sys:String x:Key="S.Lang.Polish">波兰语</sys:String>
+    <sys:String x:Key="S.Lang.Portuguese">葡萄牙语</sys:String>
+    <sys:String x:Key="S.Lang.Romanian">罗马尼亚语</sys:String>
+    <sys:String x:Key="S.Lang.Russian">俄语</sys:String>
+    <sys:String x:Key="S.Lang.Slovak">斯洛伐克语</sys:String>
+    <sys:String x:Key="S.Lang.Slovenian">斯洛文尼亚语</sys:String>
+    <sys:String x:Key="S.Lang.Swedish">瑞典语</sys:String>
+    <sys:String x:Key="S.Lang.Turkish">土耳其语</sys:String>
+    <sys:String x:Key="S.Lang.Ukrainian">乌克兰语</sys:String>
+    <sys:String x:Key="S.Lang.Vietnamese">越南语</sys:String>
+
+    <sys:String x:Key="S.Toolbar.CloseAfterCopy">截图后自动关闭</sys:String>
+    <sys:String x:Key="S.Toolbar.CloseAfterCopyTip">点击“截图”复制到剪贴板后，直接结束截图翻译</sys:String>
+    <sys:String x:Key="S.Toolbar.MoreGeneral">常规</sys:String>
+    <sys:String x:Key="S.Toolbar.AutoTranslate">自动翻译</sys:String>
+    <sys:String x:Key="S.Toolbar.ModelHintSwitch">显示模型提示</sys:String>
+    <sys:String x:Key="S.Toolbar.ModelHintSwitchTip">在源语言下方提示当前将使用哪个模型。</sys:String>
+    <sys:String x:Key="S.Toolbar.MangaHintChooseJapanese">当前为默认模型，指定日语后将自动切换为漫画竖排模型</sys:String>
+    <sys:String x:Key="S.Toolbar.MangaHintApplied">已套用漫画竖排模型</sys:String>
+    <sys:String x:Key="S.Toolbar.MangaHintDownloading">漫画竖排模型下载中</sys:String>
+    <sys:String x:Key="S.Toolbar.MangaHintNotInstalled">尚未安装漫画竖排模型，可在设置中下载</sys:String>
+    <sys:String x:Key="S.Toolbar.MangaHintOutdated">漫画竖排模型已更新，暂用默认模型，可在设置中重新下载</sys:String>
+    <sys:String x:Key="S.Realtime.MangaHintApplied">已套用漫画竖排模型（横排为默认模型）</sys:String>
+    <sys:String x:Key="S.Realtime.MangaHintNotInstalled">尚未安装漫画竖排模型，可在设置中下载（横排为默认模型，无需额外下载）</sys:String>
+    <sys:String x:Key="S.Realtime.MangaHintOutdated">漫画竖排模型已更新，暂用默认模型，可在设置中重新下载</sys:String>
+    <!-- Two lines, one per half of the switch. xml:space is what keeps the break: without it XAML
+         collapses the &#x0A; away and the two sentences run together. -->
+
+    <!-- Recognition languages downloaded on demand: OcrLanguagePackCard, OcrLanguagePacksCard. -->
+    <sys:String x:Key="S.OcrPack.CyrillicLanguages">俄语和乌克兰语</sys:String>
+    <sys:String x:Key="S.OcrPack.AskTitle">下载{0}识别模型？</sys:String>
+    <sys:String x:Key="S.OcrPack.AskBody">识别这种语言需要另外下载模型。{0}共用这个模型，只需下载一次。</sys:String>
+    <sys:String x:Key="S.OcrPack.AskBodySingle">识别这种语言需要另外下载模型，只需下载一次。</sys:String>
+    <sys:String x:Key="S.OcrPack.Size">约 {0} MB</sys:String>
+    <sys:String x:Key="S.OcrPack.RowSize">{0} MB</sys:String>
+    <sys:String x:Key="S.OcrPack.Download">下载</sys:String>
+    <sys:String x:Key="S.OcrPack.Downloading">正在下载{0}识别模型</sys:String>
+    <sys:String x:Key="S.Settings.OcrPacks">识别语言包</sys:String>
+    <sys:String x:Key="S.Settings.OcrPacksDesc">这些语言的模型没有内置，选择时才下载。</sys:String>
+</ResourceDictionary>

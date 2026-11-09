@@ -1,0 +1,1517 @@
+using System.Windows;
+using System.Windows.Threading;
+using NLog;
+using OverTranslate.Services;
+using OverTranslate.Services.Realtime;
+using OverTranslate.Services.Realtime.Capture;
+
+namespace OverTranslate.Views.Realtime;
+
+/// <param name="ScreenBounds">
+/// The one screen the session may use, in physical pixels. Realtime translation is deliberately
+/// single-screen: every block then shares one DPI and one capture path, and the loop never has to
+/// reason about a window that straddles two monitors at different scales.
+/// </param>
+/// <param name="Provider">
+/// The engine this session translates with. Carried on the request rather than read from settings
+/// because 即時翻譯 keeps its choices to itself — see RealtimePage.
+/// </param>
+/// <param name="TextColor">
+/// Subtitle colours as "#RRGGBB", carried here like everything else this sitting runs with. They are
+/// read from the settings file rather than chosen per session — see AppSettings — and arrive on the
+/// request. The running bar's 顯示外觀 panel changes them halfway (#355) by writing the file and
+/// handing the session a request re-read from it — see RealtimeSessionController.ApplyAppearance.
+/// </param>
+/// <param name="ScrimOpacity">
+/// How opaque the band behind the text is, 0–100. Travels with the colours for the same reason and
+/// under the same rule.
+/// </param>
+/// <param name="NaturalBackground">
+/// Whether to repair the picture under the source line instead of drawing the band — 顯示外觀 →
+/// 進階選項. Off unless asked for; see AppSettings for why that is the honest default. Travels here
+/// under the same rule as the colours: the page that sets it is behind the shell window a running
+/// session has hidden.
+/// </param>
+/// <param name="SampleSourceTextColor">
+/// Whether to draw the translation in a colour read off the source line rather than in
+/// <paramref name="TextColor"/>. Independent of <paramref name="NaturalBackground"/> — the two fail
+/// in different places, so either can be had without the other.
+/// </param>
+/// <param name="CaptureMode">Which of the two sources this session reads.</param>
+/// <param name="SourceWindow">
+/// The window to read in <see cref="RealtimeCaptureMode.Window"/>, and
+/// <see cref="IntPtr.Zero"/> otherwise. A handle, so it dies with the window — which is the point:
+/// the session ends with it rather than quietly reading something else.
+/// </param>
+/// <param name="Border">Whether a border is drawn around the band — 顯示外觀 → 邊框.</param>
+/// <param name="FixedBorderColor">
+/// The border's colour as "#RRGGBB", or null for a colour per group chosen from its source text.
+/// </param>
+/// <param name="FixedFontSize">
+/// The size every horizontal line is set at — 顯示外觀 → 文字大小 → 固定 — or null for 自動. Travels
+/// with the colours, under the same rule.
+/// </param>
+public sealed record RealtimeStartRequest(
+    System.Drawing.Rectangle ScreenBounds,
+    string SourceLanguage,
+    string TargetLanguage,
+    Models.TranslationProvider Provider,
+    string TextColor,
+    string ScrimColor,
+    int ScrimOpacity,
+    bool NaturalBackground,
+    bool SampleSourceTextColor,
+    Models.RealtimeCaptureMode CaptureMode = Models.RealtimeCaptureMode.Screen,
+    IntPtr SourceWindow = default,
+    bool Border = false,
+    string? FixedBorderColor = null,
+    double? FixedFontSize = null);
+
+/// <summary>
+/// Owns a realtime session end to end: the edit layer, the per-block overlays, the floating control
+/// and the polling loop, plus the shell window it hid to get out of the way.
+/// </summary>
+/// <remarks>
+/// A single instance, like the capture session in <see cref="MainWindow"/> and for the same reason:
+/// these windows are Topmost and cover the screen, so a second set would be unclosable furniture on
+/// top of the first. It runs on the shared engines in <see cref="AppServices"/> rather than creating
+/// its own — a second <see cref="OcrService"/> would load a second copy of the ONNX runtime, and the
+/// two features would then fight over the CPU instead of queueing.
+/// </remarks>
+internal sealed class RealtimeSessionController
+{
+    private static readonly Logger Log = LogManager.GetCurrentClassLogger();
+
+    public static RealtimeSessionController Instance { get; } = new();
+
+    private RealtimeStartRequest? _request;
+    private RealtimeControlWindow? _control;
+    private RealtimeEditWindow? _edit;
+    private RealtimeTranslationSession? _session;
+    // Owned here rather than by the session, because it outlives a pause and is torn down by the
+    // same two things that tear down the overlays it was built around: going back to edit mode, and
+    // ending the session.
+    private IRealtimeCaptureBackend? _capture;
+    private GlobalEscapeHook? _escapeHook;
+    // 視窗擷取 only, for the whole session: see UpdateBlockVisibility.
+    private ForegroundChangeWatch? _foregroundWatch;
+    private Window? _hiddenShell;
+
+    private readonly Dictionary<int, RealtimeBlockWindow> _blockWindows = [];
+    // Every window this session draws, as handles, for a capture backend that has to leave them out
+    // of its frames — see RefreshOverlayHandles. Written on the UI thread, read on the polling one.
+    private IReadOnlyList<IntPtr> _overlayHandles = [];
+    private List<RealtimeBlockPlacement> _blocks = [];
+    private System.Drawing.Rectangle _sourceClientBounds;
+    private System.Drawing.Rectangle _pendingClientBounds;
+    private long _sourceGeometryChangedAt;
+    private bool _resumeAfterMove;
+    private readonly DispatcherTimer _sourceGeometryWatch = new() { Interval = TimeSpan.FromMilliseconds(150) };
+    // What each block window is showing, by region id, so 對照顯示 can be switched mid-session by
+    // building the windows again in their new places and putting the same words back — see
+    // ToggleCompareDisplay. Cleared with the screen on 暫停, for the same reason the windows are.
+    private readonly Dictionary<int, IReadOnlyList<TranslatedBlock>> _shownLines = [];
+
+    // 對照顯示, read from the settings file when the session starts and written back on every press.
+    // Held here as well because the press has to reach whichever layers are up at the time.
+    private bool _compareDisplay;
+
+    // UI updates are dispatched asynchronously. Carrying the session's generation here prevents an
+    // update queued before a pause from restoring text after the screen was cleared.
+    private int _visibleGeneration;
+
+    // What the capture currently on screen took from this session, so ResumeAfterCapture gives back
+    // exactly that and nothing more. Default — every flag false — means no capture is standing on it.
+    private RealtimeCaptureInterlude _interlude;
+
+    /// <summary>
+    /// The layout the last sitting ended with, offered back to the next one.
+    /// </summary>
+    /// <remarks>
+    /// Ending a session is not usually the user finishing — it is them going back to change the
+    /// language, the engine or a colour, all of which live on a page a running session has hidden.
+    /// Redrawing three blocks by hand every time they touch one of those is the tax that made this
+    /// worth keeping, and the modes go with the rectangles because re-answering 字幕 / 對話 vs 遊戲 / UI for
+    /// each block is the same tax again. The writing direction rides along for the same reason.
+    ///
+    /// Held here and not written to the settings file, which is the line RealtimePage draws for
+    /// everything else about a sitting: this survives 結束即時翻譯 and nothing more. The screen it
+    /// was drawn on is kept alongside it because these are physical pixels on one monitor — offered
+    /// back for a different screen, or the same one at a different resolution, they would be blocks
+    /// the user never drew, in places nothing is.
+    /// </remarks>
+    private RememberedBlocks? _remembered;
+
+    private sealed record RememberedBlocks(
+        System.Drawing.Rectangle Screen, IReadOnlyList<RealtimeBlockPlacement> Blocks);
+
+    /// <summary>
+    /// Keeps the layers at the front of the topmost band — see <see cref="AlwaysOnTop"/> for why
+    /// they slide behind other topmost windows without it, and why they cannot simply activate
+    /// themselves instead.
+    /// </summary>
+    /// <remarks>
+    /// A second is short enough that being covered is a blink rather than a state the user has to
+    /// do something about, and long enough that the cost is a handful of SetWindowPos calls — no
+    /// redraw, no allocation, nothing that touches the session.
+    /// </remarks>
+    private readonly DispatcherTimer _stayOnTop = new() { Interval = TimeSpan.FromSeconds(1) };
+
+    // Diagnostics for an edit layer seen stuck under the capture source and never reproduced: when
+    // the timer last ran (cleared wherever it is stopped, so a pause is not read as a stall), and
+    // what was last found above the layer — logged only when that changes.
+    private long _lastStayOnTopTick;
+    private IntPtr _editCoveredBy;
+
+    // The session's screen as it is now, and the name it is found again by after the display
+    // changes — see OnDisplaySettled. A display mode change arrives as several notifications; the
+    // settle timer turns them into one look once they have stopped.
+    private string _screenDeviceName = "";
+    private System.Drawing.Rectangle _screenNow;
+    private readonly DispatcherTimer _displaySettle = new() { Interval = TimeSpan.FromMilliseconds(500) };
+
+    // 載入模型中… on the bar while a start's models load; null outside a sitting.
+    private RealtimeModelLoadingHint? _loadingHint;
+
+    private RealtimeSessionController()
+    {
+        _sourceGeometryWatch.Tick += (_, _) => FollowSourceGeometry();
+        _displaySettle.Tick += (_, _) =>
+        {
+            _displaySettle.Stop();
+            OnDisplaySettled();
+        };
+
+        _stayOnTop.Tick += (_, _) =>
+        {
+            LogStayOnTopStall();
+            UpdateBlockVisibility();
+
+            // Anything of ours opened over the session goes up first and the layers in under it —
+            // see RaiseCompanions for why they are not raised and then covered again.
+            var below = RaiseCompanions();
+            void Raise(Window window)
+            {
+                if (below == IntPtr.Zero || !AlwaysOnTop.PlaceBehind(window, below))
+                    AlwaysOnTop.Reassert(window);
+            }
+
+            // The control bar last, so it ends up above the block layers it may overlap. A block put
+            // away by UpdateBlockVisibility is left where it is: raising it is what used to keep it
+            // over the window that had covered its source.
+            foreach (var block in _blockWindows.Values)
+                if (block.IsVisible) Raise(block);
+            if (_edit is { } edit) Raise(edit);
+            if (_control is { } control) Raise(control);
+
+            // Every tooltip after every window: the control bar is owned by the edit layer, and
+            // raising it brings the layer up too — over any tooltip of the layer's raised before it.
+            if (_edit is { } editTips) AlwaysOnTop.ReassertToolTips(editTips);
+            if (_control is { } controlTips) AlwaysOnTop.ReassertToolTips(controlTips);
+
+            LogEditLayerCovered();
+        };
+    }
+
+    private IntPtr RaiseCompanions()
+    {
+        var layers = Volatile.Read(ref _overlayHandles);
+        var visible = OwnTopLevelWindows.Visible();
+        var backmost = IntPtr.Zero;
+
+        for (var i = visible.Count - 1; i >= 0; i--)
+        {
+            if (layers.Contains(visible[i])
+                || !OwnTopLevelWindows.IsTopmost(visible[i])
+                || OwnTopLevelWindows.IsOwnedByAny(visible[i], layers)) continue;
+
+            AlwaysOnTop.Reassert(visible[i]);
+            if (backmost == IntPtr.Zero) backmost = visible[i];
+        }
+
+        return backmost;
+    }
+
+    internal static IReadOnlyList<IntPtr> ExclusionList(IReadOnlyList<IntPtr> layers, IEnumerable<IntPtr> ownVisible)
+    {
+        var others = ownVisible.Where(hwnd => !layers.Contains(hwnd)).Distinct().Order().ToList();
+        return others.Count == 0 ? layers : [.. layers, .. others];
+    }
+
+    /// <summary>
+    /// Warns when a tick arrives long after the one before: nothing was holding the layers on top
+    /// meanwhile.
+    /// </summary>
+    /// <remarks>
+    /// A late tick is not a blocked UI thread. The timer runs at Background priority, so any run of
+    /// higher-priority work starves it while the thread keeps answering — measured over a display
+    /// mode change: ticks 3–8s late while the thread never took more than 1.4s to answer a message,
+    /// most of the gap spent in WPF waiting on its render thread. The message says what was measured
+    /// and no more.
+    /// </remarks>
+    private void LogStayOnTopStall()
+    {
+        long now = System.Diagnostics.Stopwatch.GetTimestamp();
+        if (_lastStayOnTopTick != 0)
+        {
+            var gap = System.Diagnostics.Stopwatch.GetElapsedTime(_lastStayOnTopTick, now);
+            if (gap > TimeSpan.FromSeconds(3))
+                Log.Warn("Realtime stay-on-top timer was delayed: ticked {Gap:F1}s after the previous tick, the layers were not re-asserted meanwhile",
+                    gap.TotalSeconds);
+        }
+        _lastStayOnTopTick = now;
+    }
+
+    /// <summary>
+    /// Checks, right after the layer was put back on top, whether another application's window is
+    /// still above it — which would mean the re-assert did not take, or that window is topmost too.
+    /// </summary>
+    private void LogEditLayerCovered()
+    {
+        var edit = _edit is { } window ? new System.Windows.Interop.WindowInteropHelper(window).Handle : IntPtr.Zero;
+        var cover = edit == IntPtr.Zero ? null : WindowZOrderDiagnostics.FindForeignWindowAbove(edit);
+        var coveredBy = cover?.Hwnd ?? IntPtr.Zero;
+        if (coveredBy == _editCoveredBy) return;
+
+        if (cover is { } c)
+            Log.Warn(
+                "Realtime edit layer is under hwnd={Hwnd:X} class={Class} process={Process} exstyle={ExStyle:X8} topmost={Topmost}; edit exstyle={EditExStyle:X8}",
+                c.Hwnd, c.ClassName, c.ProcessName, c.ExStyle, c.IsTopmost, WindowZOrderDiagnostics.ExStyle(edit));
+        else if (edit != IntPtr.Zero)
+            Log.Info("Realtime edit layer is no longer under hwnd={Hwnd:X}", _editCoveredBy);
+
+        _editCoveredBy = coveredBy;
+    }
+
+    /// <summary>
+    /// In 視窗擷取, takes the overlays off the screen while their source is not there to be seen —
+    /// minimised, hidden, cloaked — and, while it is, hides each translation box another
+    /// application's window is touching. Everything comes back when that ends.
+    /// </summary>
+    /// <remarks>
+    /// The capture reads the window itself, so a covered game goes on being translated, and the
+    /// overlays drawn from it went on being re-asserted on top of whatever covered it: switching to
+    /// a second game left the first one's subtitles and repaired background floating over it, which
+    /// reads as the screen having frozen. See SourceWindowCoverage for what counts as covering.
+    ///
+    /// By box, not by block: a window over one line takes that line away and leaves the others, and
+    /// one over an empty part of a block takes nothing — see RealtimeBoxCoverage. A 對照顯示 copy is
+    /// a block window of its own where it is drawn, so it is judged where it is, not where its source
+    /// line is.
+    ///
+    /// On the stay-on-top timer rather than a timer of its own: it is the same question the timer is
+    /// already asking — which layers belong on top. And at once whenever another application comes
+    /// to the foreground (ForegroundChangeWatch), which is when a source is usually covered, so the
+    /// tick is only the backstop for what no switch announces. Not in 螢幕擷取, which reads the
+    /// screen as it is: there is no source window to be covered, and whatever is on top is what the
+    /// user meant to translate.
+    /// </remarks>
+    private void UpdateBlockVisibility()
+    {
+        if (!IsTranslating || _interlude.HideLayers || _blockWindows.Count == 0) return;
+        if (_request is not { CaptureMode: Models.RealtimeCaptureMode.Window } request) return;
+
+        var view = SourceWindowCoverage.Look(request.SourceWindow);
+
+        foreach (var (id, window) in _blockWindows)
+        {
+            var show = !view.Hidden;
+            if (show != window.IsVisible)
+            {
+                window.Visibility = show ? Visibility.Visible : Visibility.Hidden;
+                Log.Debug("Realtime block {Id} {State}: source {Source}", id, show ? "shown" : "hidden",
+                    show ? "back on screen" : "not on screen");
+            }
+
+            // Left as they were while the whole overlay is away: the next look with the source on
+            // the screen settles them against whatever is over it then.
+            if (!show) continue;
+            if (window.ApplyCovers(view.Covers) > 0)
+                Log.Debug("Realtime block {Id}: {Covered} translation box(es) covered", id, window.CoveredBoxes);
+        }
+    }
+
+    // Raised on a thread of the system's choosing, so it only starts the settle timer, on the
+    // dispatcher.
+    private void OnDisplaySettingsChanged(object? sender, EventArgs e) =>
+        OnDispatcher(() =>
+        {
+            if (!IsActive) return;
+            _displaySettle.Stop();
+            _displaySettle.Start();
+        });
+
+    /// <summary>
+    /// The display has stopped changing: finds the session's screen again and puts the bar back on
+    /// it — see RealtimeSessionScreen — then settles the blocks at once rather than on the next tick.
+    /// </summary>
+    private void OnDisplaySettled()
+    {
+        if (!IsActive || _control is not { } control) return;
+
+        var screens = System.Windows.Forms.Screen.AllScreens
+            .Select(screen => new RealtimeSessionScreen.Screen(screen.DeviceName, screen.Bounds))
+            .ToList();
+        var now = RealtimeSessionScreen.Resolve(_screenDeviceName, _screenNow, screens);
+        if (now != _screenNow)
+            Log.Info("Realtime session screen changed from {From} to {To}", _screenNow, now);
+
+        _screenNow = now;
+        control.UpdateScreenBounds(now);
+        UpdateBlockVisibility();
+    }
+
+    /// <summary>Raised when the session starts or ends, so the page can re-render its controls.</summary>
+    public event EventHandler? StateChanged;
+
+    /// <summary>
+    /// Raised when a session ended on its own rather than because the user said so, carrying the
+    /// message to show them.
+    /// </summary>
+    /// <remarks>
+    /// Separate from <see cref="StateChanged"/> because the two have different audiences. That one
+    /// is for anything drawing this feature's controls, and fires whoever ended the session. This
+    /// one exists only for the case where nobody asked — the user has no reason to be looking at
+    /// this application, so it needs a listener that can reach them outside it.
+    /// </remarks>
+    public event EventHandler<string>? SessionEnded;
+
+    public bool IsActive => _control != null;
+
+    /// <summary>
+    /// True while the polling loop is running, as opposed to the user framing blocks. The edit layer
+    /// is the whole difference: <see cref="EnterEditMode"/> creates it and <see cref="StartTranslating"/>
+    /// closes it, so its absence during a session is what "translating" means here.
+    /// </summary>
+    public bool IsTranslating => IsActive && _edit is null;
+
+    /// <summary>
+    /// Starts a session and drops straight into edit mode. <paramref name="shellToHide"/> is put
+    /// away for the duration and brought back by <see cref="Stop"/> — the user is about to frame
+    /// something on the screen the shell is sitting on.
+    /// </summary>
+    public void Start(RealtimeStartRequest request, Window? shellToHide, IReadOnlyList<RealtimeBlockPlacement>? initialBlocks = null)
+    {
+        if (IsActive) return;
+
+        Log.Info(
+            "Realtime session starting on screen {Screen}, {Src}->{Tgt}",
+            request.ScreenBounds, request.SourceLanguage, request.TargetLanguage);
+
+        _request = request;
+        _blocks = initialBlocks is not null ? [.. initialBlocks] : _remembered is { } kept && kept.Screen == request.ScreenBounds
+            ? [.. kept.Blocks]
+            : [];
+        _hiddenShell = shellToHide;
+        _hiddenShell?.Hide();
+        _compareDisplay = SettingsService.Instance.Current.Realtime.CompareDisplay;
+
+        // The same two engines the capture side uses — see AppServices. There is no fallback to get
+        // wrong any more: nothing here has to find a window first, so there is no path on which a
+        // second inference runtime could be built by accident.
+        _session = new RealtimeTranslationSession(AppServices.Ocr, AppServices.Translation);
+        Volatile.Write(ref _visibleGeneration, 0);
+        _session.RegionUpdated += OnRegionUpdated;
+        _session.Failed += OnSessionFailed;
+        _session.FailureChanged += OnFailureChanged;
+        _session.BusyChanged += OnBusyChanged;
+
+        var control = new RealtimeControlWindow(request.ScreenBounds);
+        control.StartRequested += (_, _) => StartTranslating();
+        control.EditRequested += (_, _) => EnterEditMode();
+        control.CloseRequested += (_, _) => Stop();
+        control.PauseToggleRequested += (_, _) => TogglePause();
+        // Handed on rather than acted on here: standing this session down is only half of a capture,
+        // and the half that owns the screen afterwards belongs to MainWindow. The button is on the
+        // running capsule only, which is the one state a capture is allowed in anyway.
+        control.CaptureRequested += (_, _) => StartCaptureFromBar();
+        // Wired here rather than in EnterEditMode, which runs again on every trip back into framing
+        // and would stack a fresh handler each time. The layer it talks to is whichever one is up:
+        // there is none while translating, and the button that raises this is not on screen then.
+        control.CrosshairToggleRequested += (_, enabled) => _edit?.SetCrosshairEnabled(enabled);
+        // Wired once for the same reason, and unlike the crosshair it is live in both modes — the
+        // button is on the bar and on the capsule, and both are this one state.
+        control.CompareDisplayToggleRequested += (_, _) => ToggleCompareDisplay();
+        control.SetCompareDisplay(_compareDisplay);
+        control.SetCollapsed(SettingsService.Instance.Current.Realtime.ControlBarCollapsed);
+        control.CollapsedChanged += (_, collapsed) => SaveControlBarCollapsed(collapsed);
+        control.LanguagesChangeRequested += (_, pair) => ChangeLanguages(pair.Source, pair.Target);
+        control.AppearanceChanged += (_, _) => ApplyAppearance();
+        _control = control;
+        control.Show();
+
+        _loadingHint = new RealtimeModelLoadingHint(shown =>
+        {
+            Log.Info("Realtime bar: model loading hint {State}", shown ? "shown" : "hidden");
+            _control?.SetLoadingModels(shown);
+        }, OnDispatcher);
+        RefreshOverlayHandles();
+
+        _screenNow = request.ScreenBounds;
+        _screenDeviceName = System.Windows.Forms.Screen.FromRectangle(request.ScreenBounds).DeviceName;
+        Microsoft.Win32.SystemEvents.DisplaySettingsChanged += OnDisplaySettingsChanged;
+
+        if (request.CaptureMode == Models.RealtimeCaptureMode.Window)
+            _foregroundWatch = ForegroundChangeWatch.Install(UpdateBlockVisibility);
+
+        EnterEditMode();
+        StateChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    /// <summary>
+    /// Puts every layer back at the front of the topmost band, on demand.
+    /// </summary>
+    /// <remarks>
+    /// The way out of the one case the timer cannot win on its own: another topmost window that
+    /// re-asserts itself just as persistently, leaving the control bar unreachable and the session
+    /// unstoppable — the running session deliberately has no global Esc, because it would swallow
+    /// the key from the game underneath. Reached by clicking the tray icon, which does nothing
+    /// useful during a session anyway: it opens the translation window, and that window cannot be
+    /// used while the layers own the screen.
+    /// </remarks>
+    public void BringToFront()
+    {
+        if (!IsActive) return;
+
+        foreach (var block in _blockWindows.Values) AlwaysOnTop.Reassert(block);
+        if (_edit is { } edit) AlwaysOnTop.Reassert(edit);
+        if (_control is { } control)
+        {
+            AlwaysOnTop.Reassert(control);
+            // Says the click did something even when nothing was covering the bar, which is the
+            // more common case: a user who tries this is looking for a sign of life.
+            control.ShowMessage(LocalizationService.Get("S.Realtime.MovedToFront"));
+        }
+
+        Log.Info("Realtime layers re-asserted on top by request");
+    }
+
+    /// <summary>
+    /// Stops or restarts the watching, without ending the session — see
+    /// <see cref="RealtimeTranslationSession.Pause"/> for what a pause gives back.
+    /// </summary>
+    /// <remarks>
+    /// One entry point for both directions, because both callers are toggles: one button and one
+    /// shortcut, each pressed by a user who can see on the bar which of the two states they are in.
+    ///
+    /// Does nothing while the user is framing blocks: there is nothing running to pause, and the
+    /// caller (the pause shortcut) is deliberately silent in that mode rather than explaining a
+    /// rule about a feature the user has not started.
+    ///
+    /// Nothing either while a capture has the session stood down. The shortcut is still live then —
+    /// the bar it belongs to is off the screen, so the key is the only way to reach this at all —
+    /// and pressing it would start the loops reading the capture's own dim layer, then hand
+    /// <see cref="ResumeAfterCapture"/> a session in the opposite state from the one it recorded.
+    /// The session comes back in the state the capture found it, and that is the whole promise.
+    /// </remarks>
+    /// <returns>Whether there was a running session to toggle.</returns>
+    public bool TogglePause()
+    {
+        if (!_pendingClientBounds.IsEmpty)
+        {
+            _resumeAfterMove = !_resumeAfterMove;
+            _control?.SetPaused(!_resumeAfterMove);
+            return true;
+        }
+        if (_interlude.HideLayers) return false;
+        if (!IsTranslating || _session is null || _control is not { } control) return false;
+
+        if (_session.IsPaused)
+        {
+            // Before the loops start, so the first result cannot arrive to a bar still saying 已暫停.
+            control.SetPaused(false);
+            _session.Resume();
+            _loadingHint?.Wait(_session.ModelsLoading);
+            return true;
+        }
+
+        var pauseGeneration = _session.Pause();
+        Volatile.Write(ref _visibleGeneration, pauseGeneration);
+
+        // The whole point of the feature: 暫停 takes the words and their scrims off the screen
+        // rather than freezing them there, because a frozen translation over a scene that has moved
+        // on is worse than none. Updates queued before this carry an older generation and
+        // OnRegionUpdated refuses to put them back.
+        foreach (var window in _blockWindows.Values)
+            window.SetLines([]);
+        _shownLines.Clear();
+        _control?.SetActualServices([]);
+
+        control.SetPaused(true);
+        return true;
+    }
+
+    /// <summary>
+    /// Sends the running capsule's 截圖翻譯 press on to the one place that owns a capture.
+    /// </summary>
+    /// <remarks>
+    /// Nothing is decided here on purpose. <see cref="TryYieldToCapture"/> is called from that side
+    /// as well, so the bar, the shortcut and the nav rail all reach the same answer down the same
+    /// path rather than down three that can drift apart.
+    /// </remarks>
+    private static void StartCaptureFromBar()
+    {
+        if (System.Windows.Application.Current.MainWindow is MainWindow main)
+            main.StartCaptureFromRealtimeBar();
+    }
+
+    /// <summary>
+    /// Stands the session down so a screenshot capture can have the screen, and reports whether the
+    /// capture may start at all.
+    /// </summary>
+    /// <remarks>
+    /// <see cref="RealtimeCaptureInterlude"/> holds the rule and why it is the way it is; this does
+    /// the three things it asks for, in an order the screen depends on.
+    ///
+    /// The layers have to genuinely leave the screen, not merely be emptied: a capture grabs the
+    /// desktop with CopyFromScreen, and these windows stopped carrying WDA_EXCLUDEFROMCAPTURE when
+    /// keeping them out of frame became the realtime backend's job alone (#105). Left up, the
+    /// control bar and whatever the blocks were drawing would be baked into the very image the user
+    /// is about to select from — and could then be recognised and translated back to them.
+    ///
+    /// Idempotent, because the capture shortcut is also what closes a capture: the second press
+    /// arrives here with the session already stood down and must not hide anything twice or take a
+    /// second reading of a state this call itself changed.
+    /// </remarks>
+    /// <returns>False only while the user is framing blocks, which is where a capture is refused.</returns>
+    public bool TryYieldToCapture()
+    {
+        if (_interlude.HideLayers) return true;
+
+        var interlude = RealtimeCaptureInterlude.For(IsActive, IsTranslating, _session is { IsPaused: true });
+        if (!interlude.Allowed) return false;
+        if (!interlude.HideLayers || _control is not { } control) return true;
+
+        // First, and before this session is marked as stood down — TogglePause refuses once it is.
+        // This is what frees the OCR engine: the loops stop before the capture asks for a model of
+        // its own, so the two never read at the same time, and the swap AcquireRuntime may have to
+        // make waits only for a pass already in flight.
+        //
+        // What it reports is kept rather than what was intended, so the resume is the exact inverse
+        // of what happened here: a pause that did not take must not come back as a resume that does.
+        if (interlude.PauseWatching && !TogglePause())
+            interlude = interlude with { PauseWatching = false };
+
+        _interlude = interlude;
+
+        // Nothing to keep on top while the layers are away, and a tick that fired mid-capture would
+        // be re-asserting them over the window that asked them to leave.
+        _stayOnTop.Stop();
+        _lastStayOnTopTick = 0;
+
+        // One wait for the composition rather than one per window: they go together, and the user is
+        // holding a shortcut waiting for the screen to freeze.
+        List<Window> layers = [.. _blockWindows.Values];
+        layers.Add(control);
+        WindowScreenPresence.HideAndWaitForScreen(layers);
+
+        Log.Info("Realtime session yielded to a capture (paused by the capture: {Paused})",
+            interlude.PauseWatching);
+        return true;
+    }
+
+    /// <summary>
+    /// Puts the session back the way the capture found it, once that capture is off the screen.
+    /// </summary>
+    /// <remarks>
+    /// Gives back only what <see cref="TryYieldToCapture"/> took. A session the user had paused
+    /// themselves comes back paused: they pressed 暫停 for a reason of their own, and a capture that
+    /// resumed it on the way out would be moving a switch nobody touched.
+    ///
+    /// Safe to call when no capture ever stood on the session, which is what lets the capture
+    /// teardown call it unconditionally.
+    /// </remarks>
+    public void ResumeAfterCapture()
+    {
+        if (!_interlude.HideLayers) return;
+
+        var interlude = _interlude;
+        _interlude = default;
+
+        // The session can have ended while the capture was up — 結束即時翻譯 is on the tray menu, and
+        // a failing capture source ends one on its own. There is nothing left to put back then.
+        if (!IsActive || _control is not { } control) return;
+
+        // Re-asserted as they come back rather than left to the timer's next tick: the capture was
+        // topmost too, and a second of the bar sitting under whatever it left behind reads as the
+        // session having been lost.
+        foreach (var block in _blockWindows.Values)
+        {
+            block.Show();
+            AlwaysOnTop.Reassert(block);
+        }
+
+        control.Show();
+        AlwaysOnTop.Reassert(control);
+        _stayOnTop.Start();
+
+        if (interlude.PauseWatching) TogglePause();
+
+        Log.Info("Realtime session restored after a capture (resumed by the capture: {Resumed})",
+            interlude.PauseWatching);
+    }
+
+    public void Stop()
+    {
+        if (!IsActive) return;
+        _sourceGeometryWatch.Stop();
+        _pendingClientBounds = default;
+
+        Log.Info("Realtime session ending");
+
+        _stayOnTop.Stop();
+        _lastStayOnTopTick = 0;
+        DisposeEscapeHook();
+
+        // A static event: left subscribed, it would keep this session's handler alive and running.
+        Microsoft.Win32.SystemEvents.DisplaySettingsChanged -= OnDisplaySettingsChanged;
+        _displaySettle.Stop();
+        _foregroundWatch?.Dispose();
+        _foregroundWatch = null;
+
+        // Before the bar goes. A load still under way finishes on its own and finds no hint.
+        _loadingHint?.Dispose();
+        _loadingHint = null;
+
+        if (_session != null)
+        {
+            _session.RegionUpdated -= OnRegionUpdated;
+            _session.Failed -= OnSessionFailed;
+            _session.FailureChanged -= OnFailureChanged;
+            _session.BusyChanged -= OnBusyChanged;
+
+            // The one press that means "done with this": the recogniser's memory goes back here
+            // rather than on 暫停, which means "not now" and is followed by 繼續 wanting it again.
+            _session.Stop(releaseRecogniser: true);
+            _session = null;
+        }
+
+        // Taken out of reach now, released last and only after this has returned: everything the
+        // user can see — the overlays, the bar, the shell window — goes back first.
+        var capture = DetachCapture();
+        CloseBlockWindows();
+        CloseEditWindow();
+
+        CloseWindow(_control, nameof(RealtimeControlWindow));
+        _control = null;
+
+        // Kept before the working copy is dropped — see RememberedBlocks for why this one thing
+        // outlives the session while everything else here is torn down.
+        _remembered = _request is { } ended && _blocks.Count > 0
+            ? new RememberedBlocks(ended.ScreenBounds, _blocks)
+            : null;
+
+        _blocks = [];
+        _request = null;
+
+        // A session can be ended from the tray while a capture stands on it. The windows this was
+        // about are gone with it, so the capture's teardown has nothing left to give back.
+        _interlude = default;
+
+        RestoreShell();
+        ReleaseInBackground(capture);
+        StateChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    // ── Modes ────────────────────────────────────────────────────────────────────────────────────
+
+    private void EnterEditMode()
+    {
+        if (_request is not { } request || _control is not { } control) return;
+
+        // Before the block windows go: a backend built around a set of overlays is only valid while
+        // those overlays are the ones on screen, and edit mode is where the user changes them.
+        _session?.Stop();
+        // Released once this has returned — the framing layer is about to go up and must not wait on it.
+        // StartTranslating builds a new backend of its own, so the old one going at its own pace
+        // shares nothing with what comes next.
+        ReleaseInBackground(DetachCapture());
+        CloseBlockWindows();
+        CloseEditWindow();
+
+        // Before the layer that covers the screen goes up. The user named this window in a list,
+        // which they can do with it buried behind everything else — and then framing over it would
+        // start with them putting away the layer they just asked for to go and find it.
+        if (request.CaptureMode is Models.RealtimeCaptureMode.Window)
+            SourceWindowFocus.Raise(request.SourceWindow);
+
+        // Read here rather than carried on the request: the user changes it from inside this layer,
+        // and every later trip through edit mode should open on the answer they gave last.
+        var settings = SettingsService.Instance;
+
+        var edit = new RealtimeEditWindow(
+            request.ScreenBounds, _blocks, Models.RealtimeSettings.MaxBlockCount,
+            settings.Current.Realtime.GuidanceExpanded,
+            settings.Current.Realtime.BlockMode,
+            settings.Current.Realtime.TextOrientation,
+            _compareDisplay);
+        edit.BlocksChanged += (_, _) =>
+        {
+            _blocks = [.. edit.GetPhysicalBlocks()];
+            control.SetBlockCount(_blocks.Count, Models.RealtimeSettings.MaxBlockCount);
+        };
+        // Written on the press rather than at the end of the session: a session over a full-screen
+        // game is as likely to end with the machine being shut down as with 結束即時翻譯.
+        edit.GuidanceExpandedChanged += (_, expanded) =>
+        {
+            if (settings.Current.Realtime.GuidanceExpanded == expanded) return;
+            settings.Current.Realtime.GuidanceExpanded = expanded;
+            settings.Save();
+        };
+        // On the press for the same reason, and the pair together because they arrive together: one
+        // tray being pressed is the user telling this sitting what they are watching.
+        edit.BlockDefaultsChanged += (_, defaults) =>
+        {
+            var realtime = settings.Current.Realtime;
+            if (realtime.BlockMode == defaults.Mode &&
+                realtime.TextOrientation == defaults.Orientation) return;
+            realtime.BlockMode = defaults.Mode;
+            realtime.TextOrientation = defaults.Orientation;
+            settings.Save();
+        };
+        edit.LimitReached += (_, _) =>
+            control.ShowMessage(LocalizationService.Format("S.Realtime.TooManyBlocks", Models.RealtimeSettings.MaxBlockCount));
+        _edit = edit;
+        edit.Show();
+        RefreshOverlayHandles();
+
+        // Ownership, not a Topmost nudge: the edit layer covers the whole screen, so any moment it
+        // is above the control the user's clicks on the bar land on the drawing canvas instead —
+        // which reads as the buttons having stopped working. Re-asserting Topmost puts the control
+        // back on top once; an owned window is guaranteed to stay above its owner no matter what is
+        // clicked afterwards. CloseEditWindow clears this again before closing the owner, or the
+        // control would be closed along with it.
+        control.Owner = edit;
+
+        control.SetMode(RealtimeControlMode.Edit);
+        control.SetBlockCount(_blocks.Count, Models.RealtimeSettings.MaxBlockCount);
+        // Belt and braces alongside the ownership above: cheap, and the failure it guards against is
+        // a control bar the user cannot reach at all.
+        control.BringToFront();
+
+        _stayOnTop.Start();
+
+        // Only while editing. The hook swallows Esc process-wide, and a translating session can run
+        // for hours next to an application that needs its own Esc key.
+        DisposeEscapeHook();
+        _escapeHook = GlobalEscapeHook.Install(Stop);
+    }
+
+    /// <summary>
+    /// The 即時翻譯 shortcut pressed while blocks are being framed: the edit bar's 開始翻譯 (#324).
+    /// </summary>
+    /// <remarks>
+    /// So one key walks the whole way — framing, translating, paused and back — each press the next
+    /// step from wherever the session is. Refused the same way the button is when nothing is framed.
+    /// </remarks>
+    /// <returns>Whether there was a framing session to start.</returns>
+    public bool StartTranslatingFromShortcut()
+    {
+        if (!IsActive || IsTranslating) return false;
+
+        StartTranslating();
+        return true;
+    }
+
+    private void StartTranslating()
+    {
+        if (_request is not { } request || _control is not { } control || _session is null) return;
+
+        if (_blocks.Count == 0)
+        {
+            control.ShowMessage(LocalizationService.Get("S.Realtime.NeedOneBlock"));
+            return;
+        }
+
+        DisposeEscapeHook();
+        CloseEditWindow();
+
+        var regions = Regions();
+
+        ShowBlockWindows(request, regions);
+
+        // Before the backend, which asks for this list as it starts: the overlays are up, and the
+        // first frame it accepts must already be composed without them.
+        RefreshOverlayHandles();
+
+        // Built here and not in Start: the layers exist and have handles now, which is the earliest
+        // a backend can be asked whether it can keep them out of frame — and the last moment before
+        // the loop would begin reading the screen they are drawn on.
+        var capture = CreateCaptureBackend(request, out var refusal);
+        if (capture is null)
+        {
+            EnterEditMode();
+
+            // Sticky: this one names an action the user has to leave this screen to take, so it has
+            // to still be there when they come back to it. See RealtimeControlWindow.ShowMessage.
+            control.ShowMessage(
+                LocalizationService.Get(refusal), RealtimeMessageKind.Failure, sticky: true);
+            return;
+        }
+
+        _capture = capture;
+
+        if (request.CaptureMode == Models.RealtimeCaptureMode.Window)
+        {
+            _sourceClientBounds = WindowRegionGeometry.ClientBounds(request.SourceWindow);
+            _pendingClientBounds = default;
+            _sourceGeometryWatch.Start();
+        }
+
+        // Set before the mode switch renders, so the capsule appears with the pair already in it
+        // rather than showing the placeholder for a frame.
+        control.SetLanguages(request.SourceLanguage, request.TargetLanguage);
+        control.SetMode(RealtimeControlMode.Running);
+        control.BringToFront();
+        _stayOnTop.Start();
+
+        _session.Start(regions, request.SourceLanguage, request.TargetLanguage, request.Provider, capture);
+        _loadingHint?.Wait(_session.ModelsLoading);
+    }
+
+    // Ids are positions in _blocks: the session and the overlays are both built from this list, so a
+    // result arriving for region 1 is for whatever block is second in it.
+    private List<RealtimeRegion> Regions() => _blocks
+        .Select((block, index) => new RealtimeRegion(index, block.Bounds, block.Mode, block.Orientation))
+        .ToList();
+
+    private void FollowSourceGeometry()
+    {
+        if (!IsTranslating || _interlude.HideLayers || _request is not { CaptureMode: Models.RealtimeCaptureMode.Window } request
+            || _session is not { } session || _capture is not { } capture || !CaptureWindowList.StillAvailable(request.SourceWindow)) return;
+        var current = WindowRegionGeometry.ClientBounds(request.SourceWindow);
+        if (current.Width <= 0 || current.Height <= 0) return;
+        if (current == _sourceClientBounds && _pendingClientBounds.IsEmpty) return;
+        if (current != _pendingClientBounds)
+        {
+            if (_pendingClientBounds.IsEmpty)
+            {
+                _resumeAfterMove = !session.IsPaused;
+                Volatile.Write(ref _visibleGeneration, session.Pause());
+                foreach (var window in _blockWindows.Values) window.SetLines([]);
+                _shownLines.Clear();
+                _control?.SetActualServices([]);
+            }
+            _pendingClientBounds = current;
+            _sourceGeometryChangedAt = System.Diagnostics.Stopwatch.GetTimestamp();
+            return;
+        }
+        if (System.Diagnostics.Stopwatch.GetElapsedTime(_sourceGeometryChangedAt).TotalMilliseconds < 250) return;
+        var normalized = WindowRegionGeometry.Normalize(_sourceClientBounds, _blocks);
+        var moved = WindowRegionGeometry.Restore(current, normalized);
+        if (moved.Count == 0) { Stop(); return; }
+        session.Stop();
+        _blocks = moved;
+        _sourceClientBounds = current;
+        _pendingClientBounds = default;
+        var screen = System.Windows.Forms.Screen.FromHandle(request.SourceWindow);
+        _request = request = request with { ScreenBounds = screen.Bounds };
+        _screenNow = screen.Bounds;
+        _screenDeviceName = screen.DeviceName;
+        _control?.UpdateScreenBounds(screen.Bounds);
+        CloseBlockWindows();
+        ShowBlockWindows(request, Regions());
+        RefreshOverlayHandles();
+        if (_resumeAfterMove)
+        {
+            _control?.SetPaused(false);
+            session.Start(Regions(), request.SourceLanguage, request.TargetLanguage, request.Provider, capture, readAtOnce: true, warmUp: false);
+        }
+        else
+        {
+            session.Start(Regions(), request.SourceLanguage, request.TargetLanguage, request.Provider, capture, warmUp: false);
+            Volatile.Write(ref _visibleGeneration, session.Pause());
+        }
+        UpdateBlockVisibility();
+    }
+
+    /// <summary>
+    /// Opens one overlay per region, over its block or — with 對照顯示 on, for a block whose copy the
+    /// user has not turned off — over the block's copy.
+    /// </summary>
+    /// <remarks>
+    /// The two 進階選項 looks are turned off for the copy, whatever the page says. Both exist to make
+    /// the translation sit in the picture where the source was — one erases the source and repairs
+    /// the background, the other reads the source's colour — and under 對照顯示 the source is meant
+    /// to stay visible and the translation is somewhere else. A patch repaired from the block and
+    /// pasted beside it would be a piece of the wrong place; the band is the honest look for a
+    /// translation drawn next to its source, and it costs no screen grabs. A block with its copy
+    /// turned off is drawn over itself, so it gets them back exactly as with the switch off.
+    /// </remarks>
+    private void ShowBlockWindows(RealtimeStartRequest request, IReadOnlyList<RealtimeRegion> regions)
+    {
+        var copies = _compareDisplay ? CompareLocations(request) : null;
+
+        // Resolved before the overlays are shown. They are click-through and belong to this process,
+        foreach (var region in regions)
+        {
+            var block = _blocks[region.Id];
+            bool compared = copies is not null && !block.CompareHidden;
+            var look = RealtimeBlockAppearance.For(request, compared);
+            var window = new RealtimeBlockWindow(
+                region.Id, region.Bounds, GrabUnderlying, request.SourceLanguage, request.TargetLanguage,
+                look.TextColor, look.ScrimColor, look.ScrimOpacity,
+                look.NaturalBackground,
+                look.SampleTextColor,
+                region.Mode, look.Border, look.BorderColor, region.Orientation,
+                compared ? copies![region.Id] : null, compared ? block.CompareScale : 1.0,
+                look.FixedFontSize);
+            _blockWindows[region.Id] = window;
+            window.Show();
+        }
+    }
+
+    /// <summary>
+    /// Where each block's copy goes on screen, indexed like <see cref="_blocks"/> — which is what a
+    /// region's id is. The entry for a block whose copy is turned off means nothing.
+    /// </summary>
+    private System.Drawing.Point[] CompareLocations(RealtimeStartRequest request)
+    {
+        var offsets = RealtimeComparePlacement.Place(
+            [.. _blocks.Select(block =>
+                new RealtimeCompareSlot(
+                    block.Bounds, block.Orientation, block.CompareOffset, block.CompareScale, block.CompareHidden))],
+            request.ScreenBounds);
+
+        return [.. _blocks.Select((block, index) => new System.Drawing.Point(
+            block.Bounds.X + offsets[index].X, block.Bounds.Y + offsets[index].Y))];
+    }
+
+    private static void SaveControlBarCollapsed(bool collapsed)
+    {
+        var settings = SettingsService.Instance;
+        if (settings.Current.Realtime.ControlBarCollapsed == collapsed) return;
+        settings.Current.Realtime.ControlBarCollapsed = collapsed;
+        settings.Save();
+    }
+
+    /// <summary>
+    /// Switches 對照顯示, from the bar or the capsule, without ending anything.
+    /// </summary>
+    /// <remarks>
+    /// <para>Written to the settings file on the press, like the edit layer's own states: a session
+    /// over a full-screen game is as likely to end with the machine shutting down as with
+    /// 結束即時翻譯.</para>
+    ///
+    /// <para>While framing, the edit layer shows or hides the copies' outlines and that is all. While
+    /// translating, the overlays are built again in their new places rather than moved: a window
+    /// pinned beside its block also has to stop repairing the picture under itself (see
+    /// <see cref="ShowBlockWindows"/>), and those choices are made once, when a window is built. The
+    /// session is not touched — no pause, no new reading — and each window is handed back the words
+    /// it was showing, so the switch moves the translation rather than blanking it until the next
+    /// line arrives. A paused session has nothing to hand back, which is the right answer: it is
+    /// paused precisely so that nothing shows.</para>
+    ///
+    /// <para>The capture backend is told about the new handles straight away, because it keeps the
+    /// overlays out of its frames by handle — a window it has not heard of would be read back as
+    /// source text. It drops frames until its list matches, so for that moment nothing is read,
+    /// which is the safe side to be wrong on.</para>
+    /// </remarks>
+    private void ToggleCompareDisplay()
+    {
+        if (_request is not { } request || _control is not { } control) return;
+
+        // The bar is off the screen while a capture stands on the session, so this is unreachable
+        // then — and windows rebuilt now would appear over the capture that hid their predecessors.
+        if (_interlude.HideLayers) return;
+
+        _compareDisplay = !_compareDisplay;
+        control.SetCompareDisplay(_compareDisplay);
+
+        var settings = SettingsService.Instance;
+        if (settings.Current.Realtime.CompareDisplay != _compareDisplay)
+        {
+            settings.Current.Realtime.CompareDisplay = _compareDisplay;
+            settings.Save();
+        }
+
+        _edit?.SetCompareDisplay(_compareDisplay);
+
+        if (!IsTranslating || _blockWindows.Count == 0) return;
+
+        var shown = new Dictionary<int, IReadOnlyList<TranslatedBlock>>(_shownLines);
+
+        CloseBlockWindows();
+        ShowBlockWindows(request, Regions());
+        RefreshOverlayHandles();
+
+        foreach (var (id, lines) in shown)
+        {
+            if (!_blockWindows.TryGetValue(id, out var window)) continue;
+            window.SetLines(lines);
+            _shownLines[id] = lines;
+        }
+
+        // The new windows opened above the bar; it goes back on top of them.
+        control.BringToFront();
+
+        Log.Info("Realtime compare display switched {State} mid-session", _compareDisplay ? "on" : "off");
+    }
+
+    /// <summary>
+    /// Raised after the floating bar changed the session's language pair (#345), once the new pair
+    /// is in the settings file — for the page whose pickers show it.
+    /// </summary>
+    public event EventHandler? LanguagesChanged;
+
+    /// <summary>
+    /// Switches the language pair from the running capsule, without ending anything (#345).
+    /// </summary>
+    /// <remarks>
+    /// <para>Written to the settings file on the press, like 對照顯示, so 結束 lands on a page whose
+    /// pickers already say what the session ended on — and the next session starts on it.</para>
+    ///
+    /// <para>The overlays are built again rather than reused, and built empty. Both languages decide
+    /// how a window draws — the target its font, its punctuation and whether a vertical block is set
+    /// down or across (#315), the pair together whether Latin is being set as CJK — and those are
+    /// fixed when a window is built. Unlike <see cref="ToggleCompareDisplay"/>, nothing is handed
+    /// back: what the windows were showing is the old pair's translation, and drawn in the new
+    /// pair's layout it would be the wrong words in the wrong shape. The session fences what was in
+    /// flight, so nothing read for the old pair reaches the new windows either; they stay empty
+    /// until the first reading in the new pair arrives.</para>
+    ///
+    /// <para>Paused, the session stays paused and the windows stay empty; 繼續 starts on the new
+    /// pair. The blocks — their modes and the direction the user drew them in — are left exactly as
+    /// they were: those describe the picture, and the picture has not changed.</para>
+    /// </remarks>
+    private void ChangeLanguages(string source, string target)
+    {
+        if (_request is not { } request || _control is not { } control || _session is not { } session) return;
+
+        // The bar is off the screen while a capture stands on the session, for the reason
+        // ToggleCompareDisplay gives.
+        if (_interlude.HideLayers || !IsTranslating) return;
+
+        source = Models.LanguageData.GetValidRealtimeSourceCode(source);
+        target = Models.LanguageData.GetValidTargetCode(target);
+        if (string.Equals(source, request.SourceLanguage, StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(target, request.TargetLanguage, StringComparison.OrdinalIgnoreCase)) return;
+
+        var paused = session.IsPaused;
+        var updated = request with { SourceLanguage = source, TargetLanguage = target };
+        _request = updated;
+
+        var settings = SettingsService.Instance;
+        settings.Current.Realtime.SourceLanguage = source;
+        settings.Current.Realtime.TargetLanguage = target;
+        settings.Save();
+
+        // First, so nothing the old pair still had in flight can be drawn: updates carrying an
+        // older generation are refused by OnRegionUpdated from here on.
+        Volatile.Write(ref _visibleGeneration, session.ChangeLanguages(source, target));
+
+        var rebuilt = _blockWindows.Count > 0;
+        if (rebuilt)
+        {
+            CloseBlockWindows();
+            ShowBlockWindows(updated, Regions());
+            RefreshOverlayHandles();
+        }
+
+        control.SetLanguages(source, target);
+        // The new windows opened above the bar; it goes back on top of them.
+        control.BringToFront();
+        if (!paused) _loadingHint?.Wait(session.ModelsLoading);
+
+        Log.Info(
+            "Realtime languages switched mid-session: {OldSrc}->{OldTgt} to {Src}->{Tgt} (overlays rebuilt: {Rebuilt}, paused: {Paused})",
+            request.SourceLanguage, request.TargetLanguage, source, target, rebuilt, paused);
+
+        LanguagesChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    /// <summary>
+    /// Raised after the running bar's 顯示外觀 panel changed the overlays' look (#355), once the
+    /// change is in the settings file — for the page whose card shows it.
+    /// </summary>
+    public event EventHandler? AppearanceChanged;
+
+    /// <summary>
+    /// Redraws the overlays with what 顯示外觀 says now, from the running bar's panel (#355), without
+    /// ending anything.
+    /// </summary>
+    /// <remarks>
+    /// <para>The panel has already written the change to the settings file; the request is re-read
+    /// from it through the same mapping a start uses (RealtimeQuickStart.WithAppearance), so a
+    /// session changed here draws exactly what one started now would.</para>
+    ///
+    /// <para>Each overlay is restyled where it is, keeping its words — see
+    /// RealtimeBlockWindow.ApplyAppearance for why not built again, as 對照顯示 does. The session is not
+    /// touched: the words, the languages and the reading are the same, only how they are drawn has
+    /// changed. A paused session's overlays are empty and stay so.</para>
+    /// </remarks>
+    public void ApplyAppearance()
+    {
+        if (_request is not { } request || _control is null) return;
+
+        // The bar is off the screen while a capture stands on the session, for the reason
+        // ToggleCompareDisplay gives.
+        if (_interlude.HideLayers) return;
+
+        _request = RealtimeQuickStart.WithAppearance(request, SettingsService.Instance.Current.Realtime);
+        AppearanceChanged?.Invoke(this, EventArgs.Empty);
+
+        if (!IsTranslating || _blockWindows.Count == 0) return;
+
+        // Which blocks are drawn as copies is the same answer ShowBlockWindows gave: the switch and
+        // each block's own say have not changed.
+        var compareOn = _compareDisplay;
+        foreach (var (id, window) in _blockWindows)
+        {
+            bool compared = compareOn && id < _blocks.Count && !_blocks[id].CompareHidden;
+            window.ApplyAppearance(RealtimeBlockAppearance.For(_request, compared));
+        }
+
+        Log.Info("Realtime appearance changed mid-session; overlays restyled in place");
+    }
+
+    /// <summary>
+    /// Builds the backend the user asked for, or names why it cannot be had.
+    /// </summary>
+    /// <remarks>
+    /// One mode, one backend, and no path between them. The policy this replaces tried window
+    /// capture first and fell back to the desktop grab when the source could not be inferred, which
+    /// was the right shape while the source was a guess — but it meant the answer to "what is being
+    /// read" depended on what happened to be under the blocks at the moment 開始翻譯 was pressed,
+    /// and the user could neither see that answer nor choose it.
+    ///
+    /// Now they choose, which makes falling back worse than refusing: someone who picked a window
+    /// and silently got the whole screen has been handed the other feature, carrying the other
+    /// feature's requirement — a system new enough to compose a monitor without this application's
+    /// overlays — attached to a choice they never made. So each mode either produces its own backend
+    /// or says what to do instead.
+    /// </remarks>
+    /// <param name="refusal">The string key to show the user, when this returns null.</param>
+    private IRealtimeCaptureBackend? CreateCaptureBackend(
+        RealtimeStartRequest request, out string refusal)
+    {
+        // Once per run of translating, and the first thing to look for in any report about this
+        // feature: which capture path the user was actually on, and what their system offered.
+        Log.Info("Realtime capture capability: {Capability}", WgcCapability.Describe());
+
+        refusal = "S.Realtime.ScreenCaptureUnavailable";
+
+        if (request.CaptureMode is Models.RealtimeCaptureMode.Window)
+            return CreateWindowCapture(request.SourceWindow, out refusal);
+
+        return CreateScreenCapture(request, out refusal);
+    }
+
+    /// <summary>
+    /// The whole screen as a monitor capture with this session's overlays excluded, or null when
+    /// this system cannot do that — in which case the user is sent to 視窗擷取.
+    /// </summary>
+    /// <remarks>
+    /// One backend, one requirement, and no second choice. This used to fall back to grabbing the
+    /// composited desktop on systems with no window exclusion list, with the overlays asked to hide
+    /// themselves via <c>WDA_EXCLUDEFROMCAPTURE</c>. That path is gone (#105), and dropping it was
+    /// the point rather than a side effect: it was the one capture path whose isolation could not be
+    /// checked from inside the program — display affinity fails silently on a layered WPF window, on
+    /// every Windows before 11 24H2, which is how #94 went unnoticed for as long as it did.
+    ///
+    /// What that costs is the band of systems between 24H2 and the exclusion list, who lose 螢幕擷取.
+    /// They are not left without the feature: 視窗擷取 needs neither API — its isolation is that the
+    /// source is somebody else's window — so it works on every system with WGC at all, and the
+    /// refusal below is written to send them there rather than to explain a mechanism they cannot
+    /// act on.
+    /// </remarks>
+    private IRealtimeCaptureBackend? CreateScreenCapture(RealtimeStartRequest request, out string refusal)
+    {
+        refusal = "S.Realtime.ScreenCaptureUnavailable";
+
+        // Normally unreachable: 擷取來源 does not offer this mode on a machine that answers false,
+        // so arriving here means a settings file that named it, or a capability that changed under a
+        // page left open. Kept because the interface offering a mode is not what makes it safe.
+        if (!WgcCapability.SupportsScreenMode)
+        {
+            Log.Info(
+                "Realtime screen capture unavailable: {Capability}", WgcCapability.Describe());
+            return null;
+        }
+
+        return CreateMonitorCapture(request.ScreenBounds);
+    }
+
+    [System.Runtime.Versioning.SupportedOSPlatform("windows10.0.18362.0")]
+    private WgcMonitorCaptureBackend? CreateMonitorCapture(System.Drawing.Rectangle screenBounds)
+    {
+        // The monitor is resolved again on every re-attach rather than captured once: a display that
+        // was unplugged and plugged back in, or that changed mode, is a different HMONITOR for the
+        // same rectangle.
+        var backend = WgcMonitorCaptureBackend.TryCreate(
+            () => WgcMonitorCaptureBackend.MonitorFor(screenBounds),
+            () => ExclusionList(Volatile.Read(ref _overlayHandles), OwnTopLevelWindows.Visible()));
+
+        if (backend is null) return null;
+
+        backend.SourceLost += OnCaptureSourceLost;
+        return backend;
+    }
+
+    /// <summary>
+    /// Records the handles of every window this session draws, for the capture backend to keep out
+    /// of its frames.
+    /// </summary>
+    /// <remarks>
+    /// Taken here and handed over as a snapshot because these are WPF windows: their handles may
+    /// only be read on the thread that owns them, and the backend asks from the polling thread. Kept
+    /// in a stable order — blocks by id, then the bar, then the edit layer — so the backend can tell
+    /// "the same windows as last time" from "a window appeared" by comparing the two lists.
+    ///
+    /// Called wherever one of those windows is created or closed, which is every time the answer can
+    /// change. Missing a call is not a silent hazard: the backend compares this list on every poll,
+    /// so a window that appeared without one is still excluded within a poll — and until the frames
+    /// catch up with the new list, nothing is read at all.
+    /// </remarks>
+    private void RefreshOverlayHandles()
+    {
+        var handles = new List<IntPtr>();
+
+        foreach (var id in _blockWindows.Keys.Order())
+            AddHandle(handles, _blockWindows[id]);
+
+        AddHandle(handles, _control);
+        AddHandle(handles, _edit);
+
+        Volatile.Write(ref _overlayHandles, handles);
+
+        static void AddHandle(List<IntPtr> handles, Window? window)
+        {
+            if (window is null) return;
+
+            // Zero until the window has been shown, which is not worth guarding elsewhere: an
+            // unrealised window is drawing nothing for a capture to pick up.
+            var hwnd = new System.Windows.Interop.WindowInteropHelper(window).Handle;
+            if (hwnd != IntPtr.Zero) handles.Add(hwnd);
+        }
+    }
+
+    /// <summary>
+    /// The picture under a rectangle of the screen, taken from the session's capture backend.
+    /// </summary>
+    /// <remarks>
+    /// The single door through which anything in a running session may see the screen. It is handed
+    /// to every block overlay so the natural-background repair reads what is under it rather than
+    /// photographing itself (#99) — and the point of routing it through here is that it can no
+    /// longer be correct only on some Windows versions. A backend either has an isolated frame or
+    /// has none; there is no third answer it could give that quietly includes our own subtitles.
+    ///
+    /// Resolved on each call rather than captured, because a block overlay is created before the
+    /// backend is — the overlays have to exist and have handles before a monitor capture can be told
+    /// to leave them out. Null before then, and again from the moment the backend is disposed, which
+    /// is a whole tick before the overlays close.
+    /// </remarks>
+    private System.Drawing.Bitmap? GrabUnderlying(System.Drawing.Rectangle screenBounds) =>
+        _capture?.GrabRegion(screenBounds);
+
+    /// <summary>
+    /// Window capture over the handle the user picked, or the reason it is not available.
+    /// </summary>
+    /// <remarks>
+    /// A refusal per reason, because each has a different answer. A system without window capture
+    /// has no realtime capture at all — 螢幕擷取 is built on the same API and needs more of it, not
+    /// less — so that one states the fact and stops. A window that closed between the picker and
+    /// this call needs the list refreshed. A window presenting past the compositor — a
+    /// game in exclusive fullscreen, see <c>WgcWindowCaptureBackend.WaitForUsableFrame</c> — has a
+    /// display setting the user can change. And a capture that produced nothing at all is none of
+    /// those: it is this machine's capture chain, which the user cannot act on, so that one names
+    /// the log instead of an action.
+    ///
+    /// None of them sends the user to 螢幕擷取. Someone who chose 視窗擷取 either has a reason to
+    /// avoid the other mode or is on a machine that does not offer it — this report came from the
+    /// second kind — so the way forward that is always theirs to take is the display mode of the
+    /// application they are translating, and that is what every one of these says.
+    ///
+    /// The last two used to share the fullscreen message, which is how a report of it arrived —
+    /// a Windows 10 user told to leave exclusive fullscreen by a game that was already windowed.
+    /// </remarks>
+    private WgcWindowCaptureBackend? CreateWindowCapture(IntPtr hwnd, out string refusal)
+    {
+        refusal = "S.Realtime.WindowCaptureFailed";
+
+        if (!WgcCapability.IsCaptureSupported)
+        {
+            refusal = "S.Realtime.WindowCaptureUnsupported";
+            Log.Info("Realtime window capture unavailable: this system does not support it");
+            return null;
+        }
+
+        if (!CaptureWindowList.StillAvailable(hwnd))
+        {
+            refusal = "S.Realtime.WindowCaptureGone";
+            Log.Info("Realtime window capture unavailable: hwnd={Hwnd:X} is gone or minimised", hwnd);
+            return null;
+        }
+
+        return CreateWindowBackend(hwnd, ref refusal);
+    }
+
+    [System.Runtime.Versioning.SupportedOSPlatform("windows10.0.18362.0")]
+    private WgcWindowCaptureBackend? CreateWindowBackend(IntPtr hwnd, ref string refusal)
+    {
+        // The same handle every time it is asked, which is what turns the backend's re-attach into a
+        // no-op and lets the closing of that window end the session. Searching for a replacement is
+        // the alternative, and it would have to guess which new window is the same application —
+        // guessing is what this mode exists to stop doing.
+        var backend = WgcWindowCaptureBackend.TryCreate(() => hwnd, out var outcome);
+        if (backend is null)
+        {
+            refusal = outcome switch
+            {
+                WindowCaptureOutcome.Blank => "S.Realtime.WindowCaptureFullscreen",
+                WindowCaptureOutcome.NoFrame => "S.Realtime.WindowCaptureNoFrame",
+                _ => "S.Realtime.WindowCaptureFailed"
+            };
+            return null;
+        }
+
+        backend.SourceLost += OnCaptureSourceLost;
+        return backend;
+    }
+
+    /// <summary>
+    /// The captured window is gone. The session goes with it.
+    /// </summary>
+    /// <remarks>
+    /// It used to drop back to edit mode with the blocks intact, which was the right answer while
+    /// the source was inferred from those blocks — pointing them at something else was a real thing
+    /// to do next. With the window named up front there is nothing left to re-aim: the one thing
+    /// this session was for is closed, and leaving the user in a full-screen editing layer over a
+    /// window that no longer exists is furniture, not a choice.
+    ///
+    /// So it ends, which also puts the shell back. The notice goes out through
+    /// <see cref="SessionEnded"/> rather than the control bar, because the bar is one of the things
+    /// being torn down — and the user is looking at the application they just closed, not at this
+    /// one, so it has to reach them somewhere they will see it.
+    /// </remarks>
+    private void OnCaptureSourceLost(object? sender, string message) =>
+        OnDispatcher(() =>
+        {
+            if (!IsTranslating) return;
+
+            Log.Info("Realtime session ending: the captured window is gone");
+            Stop();
+            SessionEnded?.Invoke(this, message);
+        });
+
+    // ── Session callbacks (raised on the polling thread) ─────────────────────────────────────────
+
+    private void OnRegionUpdated(object? sender, RealtimeRegionUpdate update) =>
+        OnDispatcher(() =>
+        {
+            if (update.Generation != Volatile.Read(ref _visibleGeneration)) return;
+
+            // The user may have gone back to edit mode while this pass was in flight; its window is
+            // gone and the result belongs to a layout that no longer exists.
+            if (_blockWindows.TryGetValue(update.RegionId, out var window))
+            {
+                window.SetLines(update.Lines);
+                _shownLines[update.RegionId] = update.Lines;
+                _control?.SetActualServices(_shownLines.Values.SelectMany(lines => lines));
+            }
+        });
+
+    private void OnSessionFailed(object? sender, string message) =>
+        OnDispatcher(() => _control?.ShowMessage(message, RealtimeMessageKind.Failure));
+
+    // Read when it lands rather than carried with the event: these arrive late and can cross a pause
+    // or a restart on the way, and only what the session says now is worth keeping on the bar.
+    private void OnFailureChanged(object? sender, EventArgs e) =>
+        OnDispatcher(() =>
+        {
+            if (sender is not RealtimeTranslationSession session || session != _session) return;
+            _control?.SetFailure(session.IsPaused ? null : session.CurrentFailure);
+        });
+
+    private void OnBusyChanged(object? sender, bool busy) =>
+        OnDispatcher(() => _control?.SetBusy(busy));
+
+    private static void OnDispatcher(Action action)
+    {
+        var dispatcher = System.Windows.Application.Current?.Dispatcher;
+        if (dispatcher is null) return;
+        dispatcher.BeginInvoke(action, DispatcherPriority.Background);
+    }
+
+    // ── Teardown helpers ─────────────────────────────────────────────────────────────────────────
+
+    private void CloseEditWindow()
+    {
+        // Before the close, always: WPF closes owned windows with their owner, so leaving this set
+        // would take the control bar down with the edit layer.
+        if (_control is { } control && ReferenceEquals(control.Owner, _edit))
+            control.Owner = null;
+
+        CloseWindow(_edit, nameof(RealtimeEditWindow));
+        _edit = null;
+        RefreshOverlayHandles();
+    }
+
+    private void CloseBlockWindows()
+    {
+        foreach (var window in _blockWindows.Values)
+            CloseWindow(window, nameof(RealtimeBlockWindow));
+        _blockWindows.Clear();
+        _shownLines.Clear();
+        _control?.SetActualServices([]);
+        RefreshOverlayHandles();
+    }
+
+    /// <summary>
+    /// Takes the capture backend out of reach — <see cref="GrabUnderlying"/> sees nothing from here on —
+    /// and hands it to the caller to release.
+    /// </summary>
+    private IRealtimeCaptureBackend? DetachCapture()
+    {
+        var capture = _capture;
+        _capture = null;
+        return capture;
+    }
+
+    /// <summary>
+    /// Releases a capture backend on a pool thread, never waited for here — the backend closes its
+    /// capture on its own frame thread; see <see cref="RealtimeCaptureRelease"/>.
+    /// </summary>
+    private static void ReleaseInBackground(IRealtimeCaptureBackend? capture) =>
+        _ = RealtimeCaptureRelease.Release(capture);
+
+    private void DisposeEscapeHook()
+    {
+        _escapeHook?.Dispose();
+        _escapeHook = null;
+    }
+
+    private void RestoreShell()
+    {
+        var shell = _hiddenShell;
+        _hiddenShell = null;
+        if (shell is null || shell.IsVisible) return;
+
+        try
+        {
+            shell.Show();
+            shell.Activate();
+        }
+        catch (Exception ex)
+        {
+            // Racing an app shutdown that already destroyed the window — nothing left to restore,
+            // and it must not take the rest of the teardown down with it.
+            Log.Warn(ex, "Could not restore the shell window after a realtime session");
+        }
+    }
+
+    // Each window is closed independently: these are Topmost layers over the user's screen, so a
+    // throwing Close() must not strand the ones after it.
+    private static void CloseWindow(Window? window, string name)
+    {
+        if (window is null) return;
+        try
+        {
+            window.Close();
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Failed to close {Window} — forcing teardown of the remaining windows", name);
+        }
+    }
+}

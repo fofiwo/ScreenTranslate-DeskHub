@@ -1,0 +1,81 @@
+<UserControl x:Class="OverTranslate.Views.Shell.HomePage"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:ctl="clr-namespace:OverTranslate.Controls">
+    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+        <StackPanel Margin="36,30,36,28">
+            <TextBlock Text="截图翻译" Style="{StaticResource PageTitle}"/>
+            <TextBlock Text="选好语言，框选屏幕。译文就出现在原来的位置。" Style="{StaticResource PageSubtitle}" Margin="0,8,0,20"/>
+            <TextBlock Text="本次翻译" Style="{StaticResource ProductSectionTitle}"/>
+            <Grid KeyboardNavigation.TabNavigation="Local">
+                <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="36"/><ColumnDefinition/><ColumnDefinition Width="24"/><ColumnDefinition/></Grid.ColumnDefinitions>
+                <StackPanel>
+                    <TextBlock Text="原文语言" Style="{StaticResource FieldLabel}" Margin="0,0,0,8"/>
+                    <ComboBox x:Name="SourceBox" Height="40" Style="{StaticResource OcrSourceComboBox}" SelectedValuePath="Code" SelectionChanged="Selection_Changed" AutomationProperties.Name="截图原文语言"/>
+                </StackPanel>
+                <TextBlock Grid.Column="1" Text="&#xE72A;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" Foreground="{DynamicResource AppAccent}" VerticalAlignment="Bottom" HorizontalAlignment="Center" Margin="0,0,0,12" IsHitTestVisible="False"/>
+                <StackPanel Grid.Column="2">
+                    <TextBlock Text="翻译为" Style="{StaticResource FieldLabel}" Margin="0,0,0,8"/>
+                    <ComboBox x:Name="TargetBox" Height="40" Style="{StaticResource ModernComboBox}" ctl:ComboBoxSearch.IsEnabled="True" SelectedValuePath="Code" SelectionChanged="Selection_Changed" AutomationProperties.Name="截图目标语言"/>
+                </StackPanel>
+                <StackPanel Grid.Column="4">
+                    <TextBlock Text="翻译服务" Style="{StaticResource FieldLabel}" Margin="0,0,0,8"/>
+                    <ComboBox x:Name="ProviderBox" Height="40" Style="{StaticResource ModernComboBox}" SelectedValuePath="Provider" SelectionChanged="Selection_Changed" AutomationProperties.Name="截图翻译服务"/>
+                </StackPanel>
+            </Grid>
+            <Grid Margin="0,10,0,16">
+                <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                <TextBlock x:Name="OcrSummary" VerticalAlignment="Center" TextWrapping="Wrap" Style="{StaticResource ProductHint}" Margin="0,0,16,0"/>
+                <Button Grid.Column="1" Content="识别与服务设置" Style="{StaticResource ProductLink}" Click="Settings_Click"/>
+            </Grid>
+            <Border Background="{DynamicResource ProductHeroBg}" CornerRadius="14" Padding="28,22">
+                <Grid>
+                    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                    <StackPanel Margin="0,0,24,0" VerticalAlignment="Center">
+                        <TextBlock Text="框选，即刻读懂" FontSize="25" FontWeight="SemiBold" Foreground="{DynamicResource ProductHeroFg}"/>
+                        <TextBlock Text="拖出要翻译的范围，译文原位显示。" Margin="0,10,0,16" TextWrapping="Wrap" Foreground="{DynamicResource ProductHeroSecondary}" FontSize="13"/>
+                        <StackPanel Orientation="Horizontal">
+                            <Button x:Name="StartCaptureButton" Content="开始框选" Style="{StaticResource ProductButton}" Height="48" Padding="28,0" Click="Capture_Click"/>
+                            <Border Background="{DynamicResource AppSurfaceBg}" CornerRadius="6" Padding="12,0" Margin="12,0,0,0" VerticalAlignment="Center" Height="32">
+                                <TextBlock x:Name="ShortcutText" VerticalAlignment="Center" FontSize="12" FontWeight="SemiBold"/>
+                            </Border>
+                        </StackPanel>
+                    </StackPanel>
+                    <Grid Grid.Column="1" Width="132" Height="104" VerticalAlignment="Center" IsHitTestVisible="False">
+                        <Path Stroke="{DynamicResource ProductFrameAccent}" StrokeThickness="3" Data="M 0,26 L 0,0 26,0 M 106,0 L 132,0 132,26 M 132,78 L 132,104 106,104 M 26,104 L 0,104 0,78"/>
+                        <Border Background="{DynamicResource AppSurfaceBg}" CornerRadius="8" Margin="14,18">
+                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center" HorizontalAlignment="Center">
+                                <TextBlock Text="Aa" FontSize="24" FontWeight="SemiBold" Foreground="{DynamicResource AppTextSecondary}"/>
+                                <TextBlock Text="&#xE72A;" Style="{StaticResource ProductGlyph}" FontSize="14" Margin="10,0" Foreground="{DynamicResource AppAccent}"/>
+                                <TextBlock Text="译" FontSize="23" FontWeight="SemiBold" Foreground="{DynamicResource AppAccent}"/>
+                            </StackPanel>
+                        </Border>
+                    </Grid>
+                </Grid>
+            </Border>
+            <Grid Margin="2,14,0,0">
+                <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                <TextBlock x:Name="StatusText" TextWrapping="Wrap" Style="{StaticResource ProductHint}"/>
+                <Border Grid.Column="1" Background="{DynamicResource ProductWarmBg}" CornerRadius="5" Padding="9,3" Margin="12,0,0,0" VerticalAlignment="Top">
+                    <TextBlock Text="Esc 清除译文" Foreground="{DynamicResource ProductWarmFg}" FontSize="12"/>
+                </Border>
+            </Grid>
+            <TextBlock Text="鼠标可穿透译文操作原界面；滚动或切换窗口时收起旧结果。" Style="{StaticResource ProductHint}" Margin="2,8,0,0"/>
+            <Border Height="1" Background="{DynamicResource AppSubtleBorder}" Margin="0,20,0,16"/>
+            <Grid>
+                <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="28"/><ColumnDefinition/></Grid.ColumnDefinitions>
+                <StackPanel>
+                    <TextBlock Text="让变化的画面持续翻译" FontSize="16" FontWeight="SemiBold"/>
+                    <TextBlock Text="字幕、聊天或应用界面变化时，更新选定区域的译文。" Style="{StaticResource ProductHint}" Margin="0,8,0,8"/>
+                    <Button Content="设置持续翻译 →" Style="{StaticResource ProductLink}" Margin="-10,0,0,0" Click="Realtime_Click"/>
+                </StackPanel>
+                <StackPanel Grid.Column="2">
+                    <TextBlock Text="只想取出屏幕文字" FontSize="16" FontWeight="SemiBold"/>
+                    <TextBlock Text="按 OCR 快捷键框选，识别后自动复制，自己粘贴。" Style="{StaticResource ProductHint}" Margin="0,8,0,8"/>
+                    <Button Content="设置 OCR 快捷键 →" Style="{StaticResource ProductLink}" Margin="-10,0,0,0" Click="Settings_Click"/>
+                </StackPanel>
+            </Grid>
+            <TextBlock Text="截图仅复制到剪贴板。选择在线 OCR 或翻译服务时，所选图像或文字会发送给该服务。" Style="{StaticResource ProductHint}" Margin="0,14,0,0"/>
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

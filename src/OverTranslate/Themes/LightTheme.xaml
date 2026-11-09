@@ -1,0 +1,232 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!-- Window / Surface -->
+    <SolidColorBrush x:Key="AppWindowBg"       Color="#FFFFFF"/>
+    <SolidColorBrush x:Key="AppSurfaceBg"      Color="#FFFFFF"/>
+    <SolidColorBrush x:Key="AppHeaderBg"       Color="#F5F7FC"/>
+    <SolidColorBrush x:Key="AppCardBg"         Color="#FFFFFF"/>
+    <SolidColorBrush x:Key="AppBorder"         Color="#DDE3EF"/>
+    <SolidColorBrush x:Key="AppSubtleBorder"   Color="#E9EDF5"/>
+
+    <!-- The light-theme half of AppInfoBg — see DarkTheme.xaml. Tinted rather than lifted here,
+         because the card underneath is already white and there is nothing above it to lift to. -->
+    <SolidColorBrush x:Key="AppInfoBg"         Color="#F0F4FF"/>
+
+    <!-- Text — two levels, and there is no third. See DarkTheme for why AppTextMuted was removed;
+         its light value (#999999) was 2.75:1, no better. -->
+    <SolidColorBrush x:Key="AppTextPrimary"    Color="#18243D"/>
+    <SolidColorBrush x:Key="AppTextSecondary"  Color="#58647A"/>
+
+    <!-- Accent -->
+    <SolidColorBrush x:Key="AppAccent"         Color="#003DA6"/>
+    <SolidColorBrush x:Key="AppAccentHover"    Color="#00338D"/>
+    <SolidColorBrush x:Key="AppAccentPressed"  Color="#00286F"/>
+    <SolidColorBrush x:Key="AppAccentFg"       Color="#FFFFFF"/>
+
+    <!-- The knob of a switch that is on. White in both themes rather than AppAccentFg,
+         which is what text on the accent needs: the knob is not text on the track, it is the
+         thing that moved, and a dark one reads as a hole in a light track. -->
+    <SolidColorBrush x:Key="AppToggleKnobOn"   Color="#FFFFFF"/>
+    <!-- ~13% AppAccent over white. The old #EEF4FF was mixed against #FFFFFF and works there, but
+         its heaviest duty is the nav rail's selected row, which sits on AppHeaderBg #F5F5F5 — only
+         7 levels of red and 1 of green away from it, so the selection all but vanished. Dark has no
+         such problem (#1A2E3D on #1C1C1C separates by 33 levels of blue), which is why only this
+         theme moves. -->
+    <SolidColorBrush x:Key="AppAccentSubtle"   Color="#EDF2FF"/>
+    <!-- The two ways an OpenAI setting sends, told apart at a glance on its tag: 標準 in the
+         accent, 整批 in a hue of its own beside it. The tag fills are see-through, so a tag
+         still shows on a row already filled with the accent for being chosen. -->
+    <SolidColorBrush x:Key="AppModeBatch"           Color="#0B7A69"/>
+    <SolidColorBrush x:Key="AppModeBatchTagBg"      Color="#220B7A69"/>
+    <SolidColorBrush x:Key="AppModeBatchTagBorder"  Color="#550B7A69"/>
+    <SolidColorBrush x:Key="AppModeSegmentTagBg"    Color="#220078D4"/>
+    <SolidColorBrush x:Key="AppModeSegmentTagBorder" Color="#550078D4"/>
+
+    <!-- Interaction steps for AppAccentSubtle, for tonal surfaces that stay tonal on hover instead
+         of flipping to the solid accent — a full-width nav card is far too large an area to flood
+         with accent on mouse-over the way a 28px toolbar button can. -->
+    <SolidColorBrush x:Key="AppAccentSubtleHover"   Color="#DEE8FF"/>
+    <SolidColorBrush x:Key="AppAccentSubtlePressed" Color="#CFDEFF"/>
+
+    <!-- Buttons -->
+    <SolidColorBrush x:Key="AppButtonBg"       Color="#FFFFFF"/>
+    <SolidColorBrush x:Key="AppButtonBorder"   Color="#CAD3E3"/>
+    <SolidColorBrush x:Key="AppButtonHoverBg"  Color="#F0F4FC"/>
+    <SolidColorBrush x:Key="AppButtonPressedBg" Color="#E3EAF8"/>
+
+    <!-- Inputs -->
+    <SolidColorBrush x:Key="AppInputBg"        Color="#FFFFFF"/>
+    <SolidColorBrush x:Key="AppInputBorder"    Color="#B8C5DC"/>
+    <SolidColorBrush x:Key="AppInputFocusBorder" Color="#003DA6"/>
+
+    <!-- Misc -->
+    <SolidColorBrush x:Key="AppSplitter"       Color="#DDE3EF"/>
+    <SolidColorBrush x:Key="AppSuccess"        Color="#0F7B0F"/>
+    <SolidColorBrush x:Key="AppError"          Color="#C42B1C"/>
+    <!-- The light half of AppWarning — see DarkTheme.xaml. -->
+    <SolidColorBrush x:Key="AppWarning"        Color="#9A6206"/>
+    <SolidColorBrush x:Key="AppWarningSubtle"  Color="#FCF1DD"/>
+    <!-- AppWarning unchanged for the panel outline: a dark warm hairline on a near-white window
+         reads as an edge rather than as a light on it, so it needs none of the dimming its dark
+         half does. See DarkTheme.xaml. -->
+    <SolidColorBrush x:Key="AppWarningBorder"  Color="#9A6206"/>
+
+    <!-- Translation service marks — see DarkTheme.xaml. -->
+    <SolidColorBrush x:Key="AppDeepLMark"      Color="#000000"/>
+    <SolidColorBrush x:Key="AppOpenAiMark"     Color="#000000"/>
+
+    <SolidColorBrush x:Key="AppSectionHeader"  Color="#465573"/>
+
+    <!-- Toolbar specific -->
+    <SolidColorBrush x:Key="ToolbarBg"         Color="#FAFAFA"/>
+    <SolidColorBrush x:Key="ToolbarBorder"     Color="#D0D0D0"/>
+    <!-- The rule between the bar's settings and its actions. Dimmer than the bar's own edge on
+         purpose: an edge separates the bar from the desktop, this only separates one half of
+         the bar from the other, and drawn at the same weight it reads as the bar being cut in
+         two. -->
+    <SolidColorBrush x:Key="ToolbarDivider"    Color="#DFDFDF"/>
+
+    <!-- The hairline around a colour swatch in the 標記 palette. One neutral edge for all
+         eight, so the two that would otherwise vanish into the bar — white here, black in the
+         other theme — are the same object as the six that would not. -->
+    <SolidColorBrush x:Key="ToolbarSwatchEdge" Color="#B8B8B8"/>
+
+
+
+    <!-- The ink in the 螢光筆 icon, which is yellow in the way a trash can is a trash can:
+
+         not the colour currently chosen on the palette, but the one that says at a glance which
+
+         of the three tools this is. Darker in the light theme because the bar there is nearly
+
+         white, and the yellow that reads on a dark bar disappears into a pale one. -->
+
+    <SolidColorBrush x:Key="ToolbarHighlighterInk" Color="#CA8A04"/>
+
+    <!-- The primary action on a floating toolbar. Its own blue rather than AppAccent, for the one
+         place the accent cannot serve: this bar is dark in the dark theme, and there AppAccent is a
+         pale cyan that takes black text — correct Fluent for a filled button on a page, a bright
+         patch shouting off a bar that floats over whatever the user is actually looking at. A blue
+         deep enough to carry white text sits on the bar instead of on top of it. In the light theme
+         the accent already is that blue and already carries white, so there it is the accent.
+
+         Also used by DeepAccentButton, for the same reason in a different place: any filled
+         button whose label has to be white. The name records where it was first needed. -->
+    <SolidColorBrush x:Key="ToolbarPrimaryBg"        Color="#0078D4"/>
+    <SolidColorBrush x:Key="ToolbarPrimaryHoverBg"   Color="#106EBE"/>
+    <SolidColorBrush x:Key="ToolbarPrimaryPressedBg" Color="#005A9E"/>
+    <SolidColorBrush x:Key="ToolbarPrimaryFg"        Color="#FFFFFF"/>
+
+    <!-- The action group on the realtime edit bar: a slightly raised tray holding the two buttons the
+         user chooses between, so they read as one control rather than as more window furniture. Its
+         buttons need their own hover and pressed steps because the bar's are measured against the
+         bar, and against this tray they would be all but invisible. -->
+    <SolidColorBrush x:Key="ToolbarGroupBg"        Color="#EDEDED"/>
+    <SolidColorBrush x:Key="ToolbarGroupHoverBg"   Color="#E0E0E0"/>
+    <SolidColorBrush x:Key="ToolbarGroupPressedBg" Color="#D4D4D4"/>
+
+    <!-- The edge of a menu dropped from a floating bar - see DarkTheme.xaml. Dark rather than white
+         here, which would vanish into a near-white menu. -->
+    <SolidColorBrush x:Key="ToolbarMenuBorder"     Color="#1F000000"/>
+
+    <!-- The pill that marks the chosen half of a two-way switch, riding inside the tray above. White
+         on a grey tray is only a small step in value, so here it does take a hairline border —
+         without it the pill dissolves into the tray on a bright desktop, which is exactly where this
+         theme is used. -->
+    <SolidColorBrush x:Key="ToolbarSegmentThumbBg"     Color="#FFFFFF"/>
+    <SolidColorBrush x:Key="ToolbarSegmentThumbBorder" Color="#D8D8D8"/>
+
+    <!-- The 橫排／直排 switch: see DarkTheme for why the pill is tinted rather than grey. -->
+    <SolidColorBrush x:Key="ToolbarDirectionThumbBg"     Color="#CFE2F8"/>
+    <SolidColorBrush x:Key="ToolbarDirectionThumbBorder" Color="#6FA8E3"/>
+    <SolidColorBrush x:Key="ToolbarDirectionChosenFg"    Color="#005BB0"/>
+    <SolidColorBrush x:Key="ToolbarDirectionIdleFg"      Color="#6E6E6E"/>
+    <Color x:Key="ToolbarShadowColor"          >#000000</Color>
+
+    <!-- What comes up over a control to name or explain it: ToolTip's own template and the
+         capture toolbar's label both draw with these, so the two read as one thing. -->
+    <SolidColorBrush x:Key="TooltipBg"     Color="#FFFFFF"/>
+    <SolidColorBrush x:Key="TooltipBorder" Color="#D0D0D0"/>
+    <SolidColorBrush x:Key="TooltipFg"     Color="#1A1A1A"/>
+    <SolidColorBrush x:Key="TooltipFgDim"  Color="#5A5A5A"/>
+
+    <!-- 替換翻譯's mark. The drawing it was made from is dark-interface artwork — pale plates with
+         dark letters — and see DarkTheme.xaml, where it is kept exactly as drawn. It cannot be
+         carried over here: 設定 sets every mark on an AppAccentSubtle tile, #DEEDFB, and pale plates
+         land within a few percent of that brightness. Deepening them alone was not enough either —
+         plate, tile and letters then all sit in one narrow low-saturation band and the mark reads as
+         muddy rather than light.
+         
+         So the light theme inverts it, which is what a light interface does anyway: solid plates in
+         the blue the marks beside this one are drawn in, and the letters knocked out white. The
+         arrows follow the plates so the mark stays one object. -->
+    <LinearGradientBrush x:Key="QuickTranslateTileFill" StartPoint="0,0" EndPoint="1,1">
+        <GradientStop Offset="0" Color="#2B9FD9"/>
+        <GradientStop Offset="1" Color="#0B72B8"/>
+    </LinearGradientBrush>
+
+    <SolidColorBrush x:Key="QuickTranslateGlyphFill" Color="#FFFFFF"/>
+
+    <LinearGradientBrush x:Key="QuickTranslateArrowStroke" StartPoint="0,0" EndPoint="1,1">
+        <GradientStop Offset="0" Color="#2B9FD9"/>
+        <GradientStop Offset="1" Color="#0B72B8"/>
+    </LinearGradientBrush>
+
+    <!-- 替換翻譯's hint card. The surface colours of the theme, but not quite solid: the card lands
+         in the middle of the user's own text, and letting a little of what is underneath through is
+         what keeps it reading as something laid over that text rather than a hole punched in it. -->
+    <SolidColorBrush x:Key="HintCardBg"     Color="#E8FFFFFF"/>
+    <SolidColorBrush x:Key="HintCardBorder" Color="#E8E0E0E0"/>
+
+    <!-- Separator -->
+    <SolidColorBrush x:Key="AppSeparator"      Color="#E0E0E0"/>
+
+    <!-- Scrollbar — track uses alpha so it reads correctly over both
+         AppSurfaceBg (white) and AppWindowBg (grey) panes -->
+    <SolidColorBrush x:Key="AppScrollThumb"        Color="#C2C2C2"/>
+    <SolidColorBrush x:Key="AppScrollThumbHover"   Color="#8A8A8A"/>
+    <SolidColorBrush x:Key="AppScrollThumbPressed" Color="#5F5F5F"/>
+    <SolidColorBrush x:Key="AppScrollTrack"        Color="#0A000000"/>
+
+    <!-- 漫畫直排模型's card — see DarkTheme.xaml. -->
+    <LinearGradientBrush x:Key="MangaCardBg" StartPoint="0,0" EndPoint="1,1">
+        <GradientStop Offset="0" Color="#EAF3FF"/>
+        <GradientStop Offset="1" Color="#F3F8FF"/>
+    </LinearGradientBrush>
+    <RadialGradientBrush x:Key="MangaCardGlow" Center="1,0" GradientOrigin="1,0" RadiusX="1" RadiusY="1">
+        <GradientStop Offset="0"   Color="#2E3B82F6"/>
+        <GradientStop Offset="0.7" Color="#003B82F6"/>
+    </RadialGradientBrush>
+    <SolidColorBrush x:Key="MangaCardBorder"         Color="#240078D4"/>
+    <SolidColorBrush x:Key="MangaCardFg"             Color="#1B1B1F"/>
+    <SolidColorBrush x:Key="MangaCardColumn"         Color="#121B1B1F"/>
+    <SolidColorBrush x:Key="MangaCardChipBg"         Color="#0D000000"/>
+    <SolidColorBrush x:Key="MangaCardChipBorder"     Color="#14000000"/>
+    <SolidColorBrush x:Key="MangaCardFeatureBg"      Color="#99FFFFFF"/>
+    <SolidColorBrush x:Key="MangaCardFeatureBorder"  Color="#1A0078D4"/>
+    <SolidColorBrush x:Key="MangaCardFeatureDivider" Color="#12000000"/>
+    <SolidColorBrush x:Key="MangaCardFeatureIcon"    Color="#0078D4"/>
+    <SolidColorBrush x:Key="MangaCardTrack"          Color="#14000000"/>
+    <SolidColorBrush x:Key="MangaCardReadyBg"        Color="#1A34C759"/>
+    <SolidColorBrush x:Key="MangaCardReadyBorder"    Color="#4034C759"/>
+    <SolidColorBrush x:Key="MangaCardWarnBg"         Color="#1AFFB800"/>
+    <SolidColorBrush x:Key="MangaCardWarnBorder"     Color="#4DFFB800"/>
+    <SolidColorBrush x:Key="MangaCardErrorBg"        Color="#1AFF453A"/>
+    <SolidColorBrush x:Key="MangaCardErrorBorder"    Color="#4DFF453A"/>
+
+    <!-- 已套用漫畫直排模型 under the source pickers: the card's blue leaning to violet, so the one
+         line that says the models will read the page is recognisably theirs without being
+         mistaken for a link in the accent. 5.4:1 on the toolbar's #FAFAFA, for 11px text. -->
+    <SolidColorBrush x:Key="MangaHintApplied"        Color="#5856D6"/>
+
+
+    <!-- ScreenTranslate 的任务区域与辅助强调色。 -->
+    <SolidColorBrush x:Key="ProductWarmBg" Color="#FFF0C2"/>
+    <SolidColorBrush x:Key="ProductWarmFg" Color="#714400"/>
+    <SolidColorBrush x:Key="ProductHeroBg" Color="#FFBE24"/>
+    <SolidColorBrush x:Key="ProductHeroFg" Color="#302400"/>
+    <SolidColorBrush x:Key="ProductHeroSecondary" Color="#544000"/>
+    <SolidColorBrush x:Key="ProductRailBg" Color="#FFFFFF"/>
+    <SolidColorBrush x:Key="ProductFrameAccent" Color="#003DA6"/>
+</ResourceDictionary>

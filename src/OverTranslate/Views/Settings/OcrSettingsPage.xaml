@@ -1,0 +1,40 @@
+<UserControl x:Class="OverTranslate.Views.Settings.OcrSettingsPage"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Foreground="{DynamicResource AppTextPrimary}" FontSize="13">
+    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+        <StackPanel Margin="0,26,12,20" MaxWidth="760" HorizontalAlignment="Left">
+            <TextBlock Text="识别方式" FontSize="20" FontWeight="SemiBold" Margin="0,0,0,10"/>
+            <TextBlock Text="先选择 OCR 引擎，再保存设置。可用测试文字检查识别结果。" TextWrapping="Wrap" Foreground="{DynamicResource AppTextSecondary}" Margin="0,0,0,22"/>
+            <TextBlock Text="OCR 引擎"/>
+            <ComboBox Height="40" x:Name="OcrProviderBox" Style="{StaticResource ModernComboBox}" Margin="0,8,0,16" SelectionChanged="Provider_Changed" AutomationProperties.Name="OCR 引擎">
+                <ComboBox.ItemTemplate><DataTemplate><TextBlock Text="{Binding}"/></DataTemplate></ComboBox.ItemTemplate>
+            </ComboBox>
+            <TextBlock x:Name="LocalHint" Text="内置 RapidOCR 模型在本机执行，无需启动 Docker。识别语言在截图首页或持续翻译中选择。" Foreground="{DynamicResource AppTextSecondary}" TextWrapping="Wrap" Margin="0,0,0,16"/>
+            <StackPanel x:Name="HttpFields" Visibility="Collapsed">
+                <TextBlock Text="服务地址（HTTPS 或本机 HTTP）"/>
+                <TextBox Style="{StaticResource ModernTextBox}" AutomationProperties.Name="OCR 服务地址" x:Name="EndpointBox" Margin="0,8,0,8" Height="40"/>
+                <TextBlock Text="接口接受 PNG 的 Base64 和语言，返回文字与坐标；需遵循随附的 OCR 接口说明。" TextWrapping="Wrap" Foreground="{DynamicResource AppTextSecondary}" FontSize="12" Margin="0,0,0,16"/>
+            </StackPanel>
+            <StackPanel x:Name="BaiduFields" Visibility="Collapsed">
+                <TextBlock Text="百度 API Key"/><PasswordBox AutomationProperties.Name="百度 API Key" x:Name="ApiKeyBox" Margin="0,8,0,14" Height="40" Padding="8" Background="{DynamicResource AppInputBg}" Foreground="{DynamicResource AppTextPrimary}" BorderBrush="{DynamicResource AppInputBorder}"/>
+                <TextBlock Text="百度 Secret Key"/><PasswordBox AutomationProperties.Name="百度 Secret Key" x:Name="SecretBox" Margin="0,8,0,10" Height="40" Padding="8" Background="{DynamicResource AppInputBg}" Foreground="{DynamicResource AppTextPrimary}" BorderBrush="{DynamicResource AppInputBorder}"/>
+                <TextBlock x:Name="CredentialState" FontSize="12" TextWrapping="Wrap"/>
+                <TextBlock Text="框选图像会发送至百度，持续翻译会消耗 OCR 配额。凭据由当前 Windows 用户加密保存，留空保留现有凭据。" TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource AppTextSecondary}" Margin="0,8,0,14"/>
+                <Button Style="{StaticResource ProductSecondaryButton}" Content="清除百度凭据" Click="ClearCredentials_Click" HorizontalAlignment="Left" Margin="0,0,0,16"/>
+            </StackPanel>
+            <Grid x:Name="ExternalFields" Margin="0,0,0,18" Visibility="Collapsed">
+                <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition/></Grid.ColumnDefinitions>
+                <StackPanel Margin="0,0,12,0"><TextBlock Text="请求超时（秒，2–120）"/><TextBox Style="{StaticResource ModernTextBox}" Height="40" x:Name="TimeoutBox" Margin="0,8,0,0"/></StackPanel>
+                <StackPanel Grid.Column="1"><TextBlock Text="最小间隔（毫秒，500–60000）"/><TextBox Style="{StaticResource ModernTextBox}" Height="40" x:Name="IntervalBox" Margin="0,8,0,0"/></StackPanel>
+            </Grid>
+            <Border Height="1" Background="{DynamicResource AppBorder}" Margin="0,10,0,22"/>
+            <CheckBox x:Name="LiveOverlayBox" Style="{StaticResource ModernCheckBox}" Content="在真实界面上原位覆盖译文，鼠标可穿透" Margin="0,0,0,22"/>
+            <WrapPanel>
+                <Button Style="{StaticResource ProductButton}" Content="保存识别设置" Click="Save_Click" Padding="16,6" Height="42" Margin="0,0,10,0"/>
+                <Button Style="{StaticResource ProductSecondaryButton}" x:Name="TestButton" Content="用测试文字检查 OCR" Click="Test_Click" Padding="16,6" Height="42"/>
+            </WrapPanel>
+            <TextBlock AutomationProperties.LiveSetting="Polite" x:Name="StatusText" Margin="0,14,0,0" TextWrapping="Wrap"/>
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

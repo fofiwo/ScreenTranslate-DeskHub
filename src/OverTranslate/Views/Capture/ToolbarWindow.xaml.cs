@@ -1,0 +1,734 @@
+using System.Globalization;
+using System.Windows;
+using System.Windows.Media;
+using System.Windows.Media.Animation;
+using System.Windows.Threading;
+using OverTranslate.Models;
+using OverTranslate.Services;
+using OverTranslate.Services.Ocr;
+using OverTranslate.Services.Providers;
+
+namespace OverTranslate.Views.Capture;
+
+public partial class ToolbarWindow : Window
+{
+
+    public event EventHandler<TranslateRequest>? TranslateRequested;
+    public event EventHandler<CopyTextRequest>? CopyTextRequested;
+    public event EventHandler? CopyScreenshotRequested;
+    public event EventHandler? CloseAllRequested;
+    public event EventHandler<bool>? BubblesVisibilityChanged;
+
+    /// <summary>The speak button was pressed: start reading, or stop if already reading.</summary>
+
+
+    /// <summary>
+    /// Raised when the button that stops playback is about to stop being usable, so whoever owns the
+    /// voice can stop it. Without this, switching the source language to 自動 mid-sentence would
+    /// leave the text playing with no way to stop it — the stop button is the one being disabled.
+    /// </summary>
+
+    // Not readonly: the selection can still be moved and resized until translation starts, and this
+    // toolbar is anchored to it — see FollowSelection.
+    private double _selPhysLeft;
+    private double _selPhysTop;
+    private double _selPhysWidth;
+    private double _selPhysHeight;
+
+    private bool _isBusy        = false;
+    private bool _toggleEnabled = false;
+    private bool _bubblesVisible = true;
+    private bool _hasTranslated;
+    private bool _initializingDirection = true;
+    private bool _initializingLayoutMode = true;
+    private bool _syncingCapture;
+    private bool _syncingProvider;
+    private bool _ignoreMoreClick;
+
+    // Whether there is recognised text to read, and whether it is being read right now. The voice
+    // itself lives with the capture session, not here: this window only shows its state.
+
+    public string CurrentSourceLang => LanguageData.GetValidOcrSourceCode(SrcLangBox.SelectedValue as string);
+    public string CurrentTargetLang => LanguageData.GetValidTargetCode(TgtLangBox.SelectedValue as string);
+
+    /// <summary>
+    /// Whether the user has said the text in the selection is written downwards in columns rather
+    /// than across in lines.
+    /// </summary>
+    /// <remarks>
+    /// Restored from <see cref="AppSettings.Capture"/> when the toolbar opens and saved on each
+    /// explicit switch, so consecutive pages from the same manga or game keep the chosen direction.
+    /// </remarks>
+    public bool IsVerticalText => VerticalSeg.IsChecked == true;
+
+    /// <summary>
+    /// The effective capture mode. The single-mode release always uses General.
+    /// </summary>
+    /// <remarks>
+    /// Keep the selector and persisted preference for future use, but do not let either override
+    /// the application's current single-mode policy.
+    /// </remarks>
+    public CaptureLayoutMode CurrentLayoutMode => CaptureLayoutPolicy.ForApplication(InterfaceModeSeg.IsChecked == true
+        ? CaptureLayoutMode.Interface
+        : CaptureLayoutMode.General);
+
+    public ToolbarWindow(
+        double selPhysLeft, double selPhysTop,
+        double selPhysWidth, double selPhysHeight,
+        string sourceLang, string targetLang)
+    {
+        _selPhysLeft   = selPhysLeft;
+        _selPhysTop    = selPhysTop;
+        _selPhysWidth  = selPhysWidth;
+        _selPhysHeight = selPhysHeight;
+
+        InitializeComponent();
+        SyncCaptureSwitches(this, EventArgs.Empty);
+        SettingsService.Instance.CaptureOptionsChanged += SyncCaptureSwitches;
+        SettingsService.Instance.MangaModelOptionsChanged += SyncCaptureSwitches;
+        SettingsService.Instance.ProviderVisibilityChanged += RebuildProviderBox;
+        Closed += (_, _) =>
+        {
+            MorePopup.IsOpen = false;
+            StopNoticeTimers();
+            SettingsService.Instance.CaptureOptionsChanged -= SyncCaptureSwitches;
+            SettingsService.Instance.MangaModelOptionsChanged -= SyncCaptureSwitches;
+            SettingsService.Instance.ProviderVisibilityChanged -= RebuildProviderBox;
+        };
+        LocationChanged += (_, _) => MorePopup.IsOpen = false;
+        MoreBtn.MouseLeave += (_, _) => _ignoreMoreClick = false;
+
+        InitializeDirectionSwitch(SettingsService.Instance.Current.Capture.VerticalText);
+        _initializingDirection = false;
+
+        // A mode this build cannot read — a file from a later release, or one still naming a v1
+        // mode — has already become General by the time it gets here: the settings reader keeps the
+        // property's default when a value will not deserialize, and General is that default.
+        // Nothing to guard against a second time; see SettingsService.Apply.
+        LayoutModeSelector.Visibility = CaptureLayoutPolicy.IsModeSelectionAvailable
+            ? Visibility.Visible : Visibility.Collapsed;
+        bool interfaceMode = CaptureLayoutPolicy.ForApplication(
+            SettingsService.Instance.Current.Capture.LayoutMode) == CaptureLayoutMode.Interface;
+        InterfaceModeSeg.IsChecked = interfaceMode;
+        GeneralModeSeg.IsChecked = !interfaceMode;
+        _initializingLayoutMode = false;
+
+        InitializeSelectors(sourceLang, targetLang);
+        SizeSelectorsToClosedLabels();
+        RenderMangaHint();
+
+        // Attach after initial values are set so initialization doesn't trigger a save
+        _sourcePicker = new global::OverTranslate.Controls.OcrSourcePicker(SrcLangBox, () => LanguageData.DefaultOcrSourceLanguage);
+        Closed += (_, _) => _sourcePicker.Dispose();
+        SrcLangBox.SelectionChanged  += SrcLangBox_SelectionChanged;
+        TgtLangBox.SelectionChanged  += TgtLangBox_SelectionChanged;
+        ProviderBox.SelectionChanged += ProviderBox_SelectionChanged;
+
+        // The shared columns do not have a width until layout. A remembered vertical choice already
+        // checks the right half above; this places the thumb under it on the first rendered frame.
+        Loaded += (_, _) =>
+        {
+            RenderLayoutModeThumb(animate: false);
+        };
+
+        RenderToggleButton();
+        InitializeLabels();
+    }
+
+    protected override void OnSourceInitialized(EventArgs e)
+    {
+        base.OnSourceInitialized(e);
+        PositionNearSelection();
+
+        // Re-applied once the window has landed: crossing to a monitor at another scale makes WPF
+        // resize the window and Windows offer a replacement position, either of which moves the
+        // edge just aligned to the selection. Same inputs, so it is a no-op on a uniform desktop.
+        Dispatcher.BeginInvoke(new Action(PositionNearSelection), DispatcherPriority.Loaded);
+    }
+
+    /// <summary>
+    /// Re-anchors the toolbar to the selection after the user has moved or resized it.
+    /// </summary>
+    /// <remarks>
+    /// The same placement the toolbar opened with, run again: it stays under the box where there is
+    /// room and flips above it where there is not, so dragging a selection down to the bottom of the
+    /// screen moves the toolbar over the top of it rather than off the desktop.
+    /// </remarks>
+    public void FollowSelection(Rect physicalSelection)
+    {
+        _selPhysLeft   = physicalSelection.Left;
+        _selPhysTop    = physicalSelection.Top;
+        _selPhysWidth  = physicalSelection.Width;
+        _selPhysHeight = physicalSelection.Height;
+
+        // Whatever it said was about the box as it was.
+        HideNotice();
+
+        // Nothing to place onto until the window has a handle; OnSourceInitialized does it then.
+        if (IsLoaded) PositionNearSelection();
+    }
+
+    private void PositionNearSelection()
+    {
+        UpdateLayout();
+
+        // All physical pixels, scaled by the monitor the selection is on. Deriving the scale from
+        // this window instead reads whichever monitor WPF created it on: a toolbar measured at 96
+        // DPI and then placed onto a 144 DPI monitor lands a factor of 1.5 from the selection.
+        int centreX = (int)(_selPhysLeft + _selPhysWidth  / 2);
+        int centreY = (int)(_selPhysTop  + _selPhysHeight / 2);
+        double scale = ScreenGeometry.ScaleAt(centreX, centreY);
+
+        // WPF lays out in DIP regardless of DPI, so the DIP size scales straight to target pixels.
+        // The height is always the one with the manga model footer showing, whether it is or not:
+        // the window keeps its top and grows down when the footer appears, so placed for the
+        // shorter bar it would grow over the selection (placed above it) or off the screen (placed
+        // low), and moving it to avoid that would move the row the user is pressing.
+        double footer = MangaFooter.Visibility == Visibility.Visible
+            ? 0 : MangaFooter.Height + MangaFooter.Margin.Top;
+        double tbW = (ActualWidth  > 0 ? ActualWidth  : 1090) * scale;
+        double tbH = ((ActualHeight > 0 ? ActualHeight : 88) + footer) * scale;
+
+        var wa = System.Windows.Forms.Screen
+            .FromPoint(new System.Drawing.Point(centreX, centreY)).WorkingArea;
+        double margin = 4 * scale;
+        double gap    = 6 * scale;
+
+        // Math.Clamp throws when the toolbar is wider than the monitor it must fit on.
+        double minLeft = wa.Left + margin;
+        double maxLeft = Math.Max(minLeft, wa.Right - tbW - margin);
+        double left = Math.Clamp(_selPhysLeft + (_selPhysWidth - tbW) / 2, minLeft, maxLeft);
+
+        double yBelow = _selPhysTop + _selPhysHeight + gap;
+        double yAbove = _selPhysTop - tbH - gap;
+
+        double top;
+        if (yBelow + tbH <= wa.Bottom)
+            top = yBelow;
+        else if (yAbove >= wa.Top)
+            top = yAbove;
+        else
+            top = _selPhysTop + _selPhysHeight - tbH - 2 * scale;
+
+        // The labels grow away from the selection, so they never cover what is being read.
+        _labelsPreferAbove = top == yAbove;
+
+        ScreenGeometry.MoveToPhysical(this, (int)Math.Round(left), (int)Math.Round(top));
+    }
+
+    private readonly global::OverTranslate.Controls.OcrSourcePicker _sourcePicker;
+
+    private void SrcLangBox_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
+    {
+        if (_sourcePicker.Intercept(e)) return;
+
+        SaveCurrentLanguageSelection();
+
+        RenderMangaHint();
+    }
+
+    // Whether this page will go to the manga models; see MangaModelHintText.
+    private void RenderMangaHint() => MangaHint.Show(IsVerticalText, CurrentSourceLang);
+
+    private void TgtLangBox_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
+    {
+        SaveCurrentLanguageSelection();
+    }
+
+    private void ProviderBox_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
+    {
+        if (_syncingProvider || ProviderBox.SelectedValue is not TranslationProvider provider) return;
+        SaveProviderSelection(provider);
+
+        // The box was wide enough for a hidden service it can no longer show; it fits what is left.
+        if (e.RemovedItems.OfType<ProviderItem>().Any(item => item.IsHiddenSelection))
+            SizeSelectorsToClosedLabels();
+    }
+
+    private void SwapBtn_Click(object sender, RoutedEventArgs e)
+    {
+        var srcVal = SrcLangBox.SelectedValue as string;
+        var tgtVal = TgtLangBox.SelectedValue as string;
+
+        // Target → Source: use explicit language mapping (e.g. ZH-HANT stays traditional)
+        if (tgtVal != null)
+        {
+            // A language still to be downloaded falls through to 自動, as one the list does not have
+            // does: a swap should not stop to ask about a download.
+            var sourceCode = LanguageData.MapTargetToSourceCode(tgtVal);
+            SrcLangBox.SelectedValue = OcrLanguagePacks.IsUsable(sourceCode) ? sourceCode : null;
+            if (SrcLangBox.SelectedValue == null) SrcLangBox.SelectedIndex = 0;
+        }
+
+        // Source → Target: use explicit language mapping
+        if (srcVal != null)
+        {
+            var targetCode = LanguageData.MapSourceToTargetCode(srcVal);
+            TgtLangBox.SelectedValue = targetCode;
+        }
+        if (TgtLangBox.SelectedValue == null) TgtLangBox.SelectedIndex = 0;
+    }
+
+    /// <summary>
+    /// Commits the choice on the press rather than on the release, so the pill starts moving under
+    /// the finger instead of after it.
+    /// </summary>
+    /// <remarks>
+    /// A button that waits for mouse-up is correct for something that acts — you can still slide off
+    /// it and change your mind — but this one only moves a marker, and there is nothing to change
+    /// your mind about. The release still runs the ordinary click, which finds the option already
+    /// chosen and does nothing.
+    /// </remarks>
+    private void LayoutModeSegment_PreviewMouseLeftButtonDown(
+        object sender, System.Windows.Input.MouseButtonEventArgs e)
+    {
+        if (sender is System.Windows.Controls.RadioButton segment) segment.IsChecked = true;
+    }
+
+    /// <summary>
+    /// Slides the pill onto the half just chosen.
+    /// </summary>
+    /// <remarks>
+    /// <para>The animation carries only a target, no starting value, so it always sets off from
+    /// wherever the pill is at that instant. Somebody who changes their mind halfway across gets one
+    /// continuous movement back rather than a jump to the far side and a fresh start.</para>
+    ///
+    /// <para>Eased out and not bounced: nothing was thrown here, it was clicked, and an overshoot on
+    /// a marker that merely answers a click reads as the interface being pleased with itself.</para>
+    ///
+    /// <para>The travel is one column's width, which is the pill's own width because the two columns
+    /// share a size — see the tray's ColumnDefinitions.</para>
+    /// </remarks>
+    private void LayoutModeSegment_Checked(object sender, RoutedEventArgs e)
+    {
+        // InterfaceModeSeg, because that is the half CurrentLayoutMode reads. This fires once while
+        // the XAML is still being parsed, for whichever half opens checked, and at that moment the
+        // other half does not exist yet — so the guard has to name the element the property below
+        // will dereference, not merely some sibling. Naming the wrong one was a null reference in
+        // the constructor the moment 一般 moved to the left and became the half declared first.
+        if (LayoutModeThumb is null || LayoutModeThumbShift is null || InterfaceModeSeg is null) return;
+
+        if (!_initializingLayoutMode)
+            SaveLayoutModeSelection();
+
+        RenderLayoutModeThumb(animate: IsLoaded);
+    }
+
+    private void RenderLayoutModeThumb(bool animate)
+    {
+        double target = CurrentLayoutMode == CaptureLayoutMode.Interface
+            ? LayoutModeThumb.ActualWidth
+            : 0;
+
+        if (!animate || LayoutModeThumb.ActualWidth <= 0)
+        {
+            LayoutModeThumbShift.BeginAnimation(System.Windows.Media.TranslateTransform.XProperty, null);
+            LayoutModeThumbShift.X = target;
+            return;
+        }
+
+        LayoutModeThumbShift.BeginAnimation(
+            System.Windows.Media.TranslateTransform.XProperty,
+            new DoubleAnimation(target, TimeSpan.FromMilliseconds(220))
+            {
+                EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut },
+            });
+    }
+
+    private void TranslateBtn_Click(object sender, RoutedEventArgs e)
+        => RequestTranslate();
+
+    /// <summary>
+    /// Fires the same request the 翻譯 button does, so auto-translate goes through the identical
+    /// path (current selector values, busy state, re-translate labelling). Ignored while a batch
+    /// is already running.
+    /// </summary>
+    public void RequestTranslate()
+    {
+        if (_isBusy) return;
+        TranslateRequested?.Invoke(this, new TranslateRequest(
+            CurrentSourceLang, CurrentTargetLang, IsVerticalText, CurrentLayoutMode));
+    }
+
+    /// <summary>Holds the toggle down while the original is on screen.</summary>
+    /// <remarks>
+    /// Set from the state rather than left to the click, so the two cannot drift apart: the bubbles
+    /// are also put back from outside, by a new translation (SetToggleEnabled). The name a screen
+    /// reader announces is what pressing does, as the label under it used to say.
+    /// </remarks>
+    private void RenderToggleButton()
+    {
+        ToggleBtn.IsChecked = !_bubblesVisible;
+        System.Windows.Automation.AutomationProperties.SetName(ToggleBtn, LocalizationService.Get(
+            _bubblesVisible ? "S.Toolbar.ShowSource" : "S.Toolbar.ShowTranslation"));
+        RenderCopyTextButton();
+    }
+
+    private void CopyTextBtn_Click(object sender, RoutedEventArgs e)
+        => CopyTextRequested?.Invoke(this, new CopyTextRequest(
+            ResolveCopyTextKind(_hasTranslated, _bubblesVisible),
+            CurrentSourceLang,
+            IsVerticalText,
+            CurrentLayoutMode));
+
+    private void CopyShotBtn_Click(object sender, RoutedEventArgs e)
+        => CopyScreenshotRequested?.Invoke(this, EventArgs.Empty);
+
+
+    public (Rect Visible, double Scale) VisiblePhysicalBounds()
+    {
+        double scale = ScreenGeometry.ScaleAt(
+            (int)(_selPhysLeft + _selPhysWidth / 2), (int)(_selPhysTop + _selPhysHeight / 2));
+
+        var topLeft = BarSurface.TranslatePoint(new System.Windows.Point(0, 0), this);
+        var bounds  = ScreenGeometry.PhysicalBounds(this);
+
+        return (new Rect(
+                    bounds.Left + topLeft.X * scale,
+                    bounds.Top  + topLeft.Y * scale,
+                    BarSurface.ActualWidth  * scale,
+                    BarSurface.ActualHeight * scale),
+                scale);
+    }
+
+    private void CloseBtn_Click(object sender, RoutedEventArgs e)
+        => CloseAllRequested?.Invoke(this, EventArgs.Empty);
+
+    private void Window_MouseLeftButtonDown(object sender, System.Windows.Input.MouseButtonEventArgs e)
+    {
+        if (e.ButtonState != System.Windows.Input.MouseButtonState.Pressed) return;
+
+        // Returns once the bar is let go. A notice held because it was cut off may show whole now.
+        DragMove();
+        StartNoticeCountdown();
+    }
+
+    public void SetBusy(bool busy)
+        => SetBusy(busy, "S.Toolbar.Translating");
+
+    public void SetRecognitionBusy(bool busy)
+        => SetBusy(busy, "S.Toolbar.Recognising");
+
+    private void SetBusy(bool busy, string busyLabelKey)
+    {
+        _isBusy = busy;
+        if (busy) HideEngineBadge(); // stale badge shouldn't linger while the next batch runs
+        TranslateBtn.IsEnabled = !busy;
+        TranslateLabel.Text = LocalizationService.Get(
+            busy ? busyLabelKey
+                 : _hasTranslated ? "S.Toolbar.Retranslate" : "S.Toolbar.Translate");
+        ToggleBtn.IsEnabled = !_isBusy && _toggleEnabled;
+        CopyTextBtn.IsEnabled = !busy;
+    }
+
+    /// <summary>Whether there is text from a translated selection for the speak button to read.</summary>
+    /// <summary>Reflects whether the voice is currently reading, so the button offers to stop it.</summary>
+    /// <summary>
+    /// Settles the speak button against what there is to read and what there is to read it with.
+    /// </summary>
+    /// <remarks>
+    /// <para>Switched off while the source language is 自動, the same way the translation page's
+    /// 原文 speaker is: there is no such thing as an automatic voice. <see cref="TtsService"/> maps
+    /// 自動 onto Chinese, so English or Japanese text would be read aloud in a Chinese voice — which
+    /// used to happen silently, leaving the user to work out from the sound that a picker three
+    /// controls away was the cause. Recognition can run on 自動 because it is choosing between
+    /// three scripts it can see; a voice has nothing to look at.</para>
+    ///
+    /// <para>Also off until a translation is on screen. Recognition alone is not enough: 複製文字
+    /// recognises too and hands the box back afterwards, so the text it produced can already be
+    /// describing a region the user has since redrawn.</para>
+    ///
+    /// <para>Not switched off while a translation is in flight, unlike everything else on this bar:
+    /// the text being read is the one already recognised, the new batch does not touch it, and the
+    /// button is also the only way to stop playback that is already running.</para>
+    /// </remarks>
+    public void SetTranslationState(bool hasTranslated)
+    {
+        _hasTranslated = hasTranslated;
+        RenderCopyTextButton();
+        if (!_isBusy)
+            TranslateLabel.Text = LocalizationService.Get(
+                hasTranslated ? "S.Toolbar.Retranslate" : "S.Toolbar.Translate");
+    }
+
+    private void RenderCopyTextButton()
+    {
+        bool copiesTranslation =
+            ResolveCopyTextKind(_hasTranslated, _bubblesVisible) == CopyTextKind.Translation;
+
+        System.Windows.Automation.AutomationProperties.SetName(CopyTextBtn, LocalizationService.Get(
+            copiesTranslation
+                ? "S.Toolbar.CopyTranslation"
+                : "S.Toolbar.CopyText"));
+        CopySourceMark.Visibility = copiesTranslation ? Visibility.Collapsed : Visibility.Visible;
+        CopyTranslationMark.Visibility = copiesTranslation ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    internal static CopyTextKind ResolveCopyTextKind(bool hasTranslated, bool bubblesVisible) =>
+        !hasTranslated
+            ? CopyTextKind.RecognizeSource
+            : bubblesVisible ? CopyTextKind.Translation : CopyTextKind.Source;
+
+    /// <summary>
+    /// Shows a compact amber badge with engine details in its tooltip — but only when a
+    /// backup engine was used (the user's chosen primary couldn't serve everything). Stays hidden on
+    /// normal runs and for providers without fallback (e.g. DeepL), so it never nags during use.
+    /// </summary>
+    public void SetEngineBadge(EngineUsage? usage)
+    {
+        if (usage is null) { HideEngineBadge(); return; }
+        EngineBadgeText.Text = "服务：" + usage.Summary;
+        EngineBadge.ToolTip = usage.FallbackUsed ? "选定：" + usage.Primary + "；实际：" + usage.Summary : "实际使用：" + usage.Summary;
+        EngineBadge.Visibility = Visibility.Visible;
+    }
+
+    private void HideEngineBadge()
+    {
+        EngineBadge.Visibility = Visibility.Collapsed;
+        EngineBadge.ToolTip    = null;
+    }
+
+    public void SetToggleEnabled(bool enabled)
+    {
+        _toggleEnabled   = enabled;
+        _bubblesVisible  = true;
+        RenderToggleButton();
+        ToggleBtn.IsEnabled = !_isBusy && _toggleEnabled;
+        BubblesVisibilityChanged?.Invoke(this, _bubblesVisible);
+    }
+
+    private void ToggleBtn_Click(object sender, RoutedEventArgs e)
+    {
+        _bubblesVisible = !_bubblesVisible;
+        RenderToggleButton();
+        BubblesVisibilityChanged?.Invoke(this, _bubblesVisible);
+    }
+
+    private void InitializeSelectors(string sourceLang, string targetLang)
+    {
+        SrcLangBox.ItemsSource  = LanguageData.OcrSourceLanguages;
+        TgtLangBox.ItemsSource  = LanguageData.TargetLanguages;
+        var settings = SettingsService.Instance.Current;
+        OverTranslate.Controls.ProviderPicker.Bind(ProviderBox, ProviderVisibility.MenuItems(settings, settings.Provider));
+
+        SrcLangBox.SelectedValue  = LanguageData.GetValidOcrSourceCode(sourceLang);
+        TgtLangBox.SelectedValue  = LanguageData.GetValidTargetCode(targetLang);
+        ProviderBox.SelectedValue = settings.Provider;
+        if (ProviderBox.SelectedValue == null) ProviderBox.SelectedIndex = 0;
+    }
+
+    /// <summary>
+    /// Puts the services the settings page now offers into the provider box, keeping the one it
+    /// has selected — hidden or not, see <see cref="ProviderVisibility.MenuItems(AppSettings, TranslationProvider)"/>.
+    /// </summary>
+    /// <remarks>
+    /// Re-selecting after the rebind is not the user choosing anything, so it is kept from reaching
+    /// <see cref="ProviderBox_SelectionChanged"/> and being saved as a choice.
+    /// </remarks>
+    private void RebuildProviderBox(object? sender, EventArgs e)
+    {
+        var settings = SettingsService.Instance.Current;
+        var selected = ProviderBox.SelectedValue as TranslationProvider? ?? settings.Provider;
+
+        _syncingProvider = true;
+        try
+        {
+            OverTranslate.Controls.ProviderPicker.Bind(ProviderBox, ProviderVisibility.MenuItems(settings, selected));
+            ProviderBox.SelectedValue = selected;
+            if (ProviderBox.SelectedValue == null) ProviderBox.SelectedIndex = 0;
+        }
+        finally
+        {
+            _syncingProvider = false;
+        }
+        SizeSelectorsToClosedLabels();
+    }
+
+    /// <summary>
+    /// Gives each picker exactly the width its closed label needs, measured from the longest entry
+    /// it could be showing.
+    /// </summary>
+    /// <remarks>
+    /// <para>A ComboBox left to size itself measures every item in its list, which for the language
+    /// pickers means a box wide enough for 斯洛文尼亞文 spelled out both ways — so these carried a
+    /// number typed into the markup instead. A typed number is a guess about text nobody measured:
+    /// 132 was too narrow for the label it was given in Chinese and too wide for the one in English,
+    /// and it could only ever be wrong in one of them.</para>
+    ///
+    /// <para>Measuring the closed labels answers both at once, in whatever language the interface is
+    /// in, and it is the narrowest the box can be without clipping anything the user might pick. The
+    /// list is unaffected — it opens as wide as its own contents, as it always did.</para>
+    ///
+    /// <para>Run in the constructor, and again when the services on offer change: the toolbar lives
+    /// for one capture session and the interface language cannot change underneath it, but the
+    /// provider box measures only what it can show, and that can: the services on offer, plus a hidden
+    /// one only for as long as it is the selection (<see cref="OverTranslate.Controls.ProviderPicker.ShowableItems"/>).</para>
+    ///
+    /// <para>No wider than <see cref="MaxSelectorWidth"/>, whatever the longest entry: past that the
+    /// closed label ends in an ellipsis, and the list still opens to the full names. Without a ceiling
+    /// one long name — a language or service added later, or a longer translation of one — would
+    /// widen the bar for everyone using that interface language, whether or not they ever pick it.</para>
+    /// </remarks>
+    /// <summary>
+    /// The widest any of the three pickers is allowed to be, in DIP.
+    /// </summary>
+    /// <remarks>
+    /// Measured against every interface language: 150 still fits the longest names people actually
+    /// pick — Traditional Chinese, Китайский (упрощ.), 自動（中・英・日） — and today shortens only
+    /// two, the English automatic source and the Russian name of the standard Google service.
+    /// </remarks>
+    internal const double MaxSelectorWidth = 150;
+
+    private void SizeSelectorsToClosedLabels()
+    {
+        double dpi = VisualTreeHelper.GetDpi(this).PixelsPerDip;
+
+        SrcLangBox.Width  = ClosedWidth(SrcLangBox, LanguageData.OcrSourceLanguages.Select(l => l.ShortName));
+        TgtLangBox.Width  = ClosedWidth(TgtLangBox, LanguageData.TargetLanguages.Select(l => l.ShortName));
+        ProviderBox.Width = ClosedWidth(ProviderBox, OverTranslate.Controls.ProviderPicker.ShowableItems(ProviderBox).Select(p => p.ShortName));
+
+        double ClosedWidth(System.Windows.Controls.ComboBox box, IEnumerable<string> labels)
+        {
+            var typeface = new Typeface(box.FontFamily, box.FontStyle, box.FontWeight, box.FontStretch);
+            double widest = labels.Max(label => new FormattedText(
+                label,
+                CultureInfo.CurrentUICulture,
+                System.Windows.FlowDirection.LeftToRight,
+                typeface,
+                box.FontSize,
+                System.Windows.Media.Brushes.Black,
+                dpi).WidthIncludingTrailingWhitespace);
+
+            // The label sits in ModernComboBox's ContentSite, inset 9 on the left and 28 on the
+            // right to clear the arrow, inside a 1px border either side. The last pixel is for
+            // rounding: half a pixel short is a whole character replaced by an ellipsis.
+            return Math.Min(Math.Ceiling(widest) + 9 + 28 + 2 + 1, MaxSelectorWidth);
+        }
+    }
+
+    /// <summary>Unfolds or folds 偵錯輔助 and says, while it is folded, how many boxes are on.</summary>
+    private void SyncCaptureSwitches(object? sender, EventArgs e)
+    {
+        _syncingCapture = true;
+        AutoTranslateSwitch.IsChecked = SettingsService.Instance.Current.AutoTranslateAfterSelection;
+        CloseAfterCopySwitch.IsChecked = SettingsService.Instance.Current.Capture.CloseAfterCopy;
+        ModelHintSwitch.IsChecked = SettingsService.Instance.Current.Capture.ShowModelHint;
+        _syncingCapture = false;
+    }
+
+    // The footer follows through MangaModelOptions. This bar only: the realtime page ignores it.
+    private void ModelHintSwitch_Changed(object sender, RoutedEventArgs e)
+    {
+        if (!_syncingCapture) SettingsService.Instance.UpdateMangaModelOptions(showHint: ModelHintSwitch.IsChecked == true);
+    }
+
+    private void AutoTranslateSwitch_Changed(object sender, RoutedEventArgs e)
+    {
+        if (!_syncingCapture) SettingsService.Instance.UpdateCaptureOptions(autoTranslate: AutoTranslateSwitch.IsChecked == true);
+    }
+
+    private void CloseAfterCopySwitch_Changed(object sender, RoutedEventArgs e)
+    {
+        if (!_syncingCapture) SettingsService.Instance.UpdateCaptureOptions(closeAfterCopy: CloseAfterCopySwitch.IsChecked == true);
+    }
+
+    private void MoreBtn_Click(object sender, RoutedEventArgs e)
+    {
+        if (_ignoreMoreClick) { _ignoreMoreClick = false; return; }
+        // Right edge under the button's right edge, so the menu comes out of what opened it.
+        var buttonRight = MoreBtn.TranslatePoint(new System.Windows.Point(MoreBtn.ActualWidth, 0), BarSurface).X;
+        // Measured rather than read off the markup: the panel is as wide as its longest line,
+        // which depends on the language.
+        MorePanel.Measure(new System.Windows.Size(double.PositiveInfinity, double.PositiveInfinity));
+        MorePopup.HorizontalOffset = Math.Max(0, buttonRight - MorePanel.DesiredSize.Width);
+        MorePopup.IsOpen = !MorePopup.IsOpen;
+    }
+
+    private void MorePopup_Opened(object? sender, EventArgs e)
+    {
+        SyncCaptureSwitches(sender, e);
+
+        // Again now that the panel is laid out in its own window: before the first opening its
+        // strings may not have resolved, and the measure in MoreBtn_Click would be short of them.
+        MorePanel.UpdateLayout();
+        var buttonRight = MoreBtn.TranslatePoint(new System.Windows.Point(MoreBtn.ActualWidth, 0), BarSurface).X;
+        MorePopup.HorizontalOffset = Math.Max(0, buttonRight - MorePanel.ActualWidth);
+    }
+
+    private void MorePopup_Closed(object? sender, EventArgs e)
+    {
+        _ignoreMoreClick = MoreBtn.IsMouseOver &&
+            System.Windows.Input.Mouse.LeftButton == System.Windows.Input.MouseButtonState.Pressed;
+    }
+
+    private void MorePopup_KeyDown(object sender, System.Windows.Input.KeyEventArgs e)
+    {
+        if (e.Key != System.Windows.Input.Key.Escape) return;
+        MorePopup.IsOpen = false;
+        MoreBtn.Focus();
+        e.Handled = true;
+    }
+
+    private void SaveCurrentLanguageSelection()
+    {
+        var settings = SettingsService.Instance.Current;
+        settings.SourceLanguage = CurrentSourceLang;
+        settings.TargetLanguage = CurrentTargetLang;
+        SettingsService.Instance.Save();
+    }
+
+    private static void SaveProviderSelection(TranslationProvider provider)
+    {
+        var settings = SettingsService.Instance.Current;
+        settings.Provider = provider;
+        SettingsService.Instance.Save();
+    }
+
+    private void SaveTextDirectionSelection()
+    {
+        var settings = SettingsService.Instance.Current;
+        settings.Capture.VerticalText = IsVerticalText;
+        SettingsService.Instance.Save();
+    }
+
+    private void SaveLayoutModeSelection()
+    {
+        var settings = SettingsService.Instance.Current;
+        settings.Capture.LayoutMode = CurrentLayoutMode;
+        SettingsService.Instance.Save();
+    }
+}
+
+/// <param name="LayoutMode">
+/// What the user says the framed capture holds, read off the 標準 / 漫畫・文章 switch.
+/// </param>
+/// <remarks>
+/// No default. It carried one while the switch did not exist yet, so that the seam could be wired
+/// and measured a step before anything could choose; now that something can, a default would mean
+/// a call site added later quietly translating a comic as though it were a game menu — with no
+/// compiler complaint and nothing on screen to say which mode answered.
+/// </remarks>
+public record TranslateRequest(
+    string SourceLang,
+    string TargetLang,
+    bool IsVerticalText,
+    CaptureLayoutMode LayoutMode);
+
+/// <inheritdoc cref="TranslateRequest" path="/param[@name='LayoutMode']"/>
+/// <remarks>
+/// Copying reads the region through the same recogniser and fills the same _lastOcrBlocks the
+/// translation does, so it has to be grouped the same way. Left off, the text a user copies would
+/// come apart differently from the text they just had translated, out of the same capture.
+/// </remarks>
+public record CopyTextRequest(
+    CopyTextKind Kind,
+    string SourceLang,
+    bool IsVerticalText,
+    CaptureLayoutMode LayoutMode);
+
+public enum CopyTextKind
+{
+    RecognizeSource,
+    Source,
+    Translation,
+}
