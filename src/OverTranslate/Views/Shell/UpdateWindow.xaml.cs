@@ -15,6 +15,9 @@ public partial class UpdateWindow : Window
 
     // True while the notes are being waited for, so a second press cannot open a second window.
     private static bool _opening;
+    private static UpdateInfo? _openingInfo;
+    private static int _openRequest;
+    private bool _refreshing;
 
     /// <summary>
     /// How long the window will wait for its notes before opening without them. Opening first and
@@ -71,26 +74,42 @@ public partial class UpdateWindow : Window
 
     private bool IsHistory => _updateInfo is null;
 
+    private bool CanReplaceWith(UpdateInfo? info) => _phase == Phase.Offering && info is not null
+        && (IsHistory || info.VelopackInfo.TargetFullRelease.Version > _updateInfo!.VelopackInfo.TargetFullRelease.Version);
+
     private static async void Open(Task<ReleaseNotesFeed?> notes, UpdateInfo? info)
     {
-        if (_instance is { } open && !ShouldReplace(open.IsHistory, wantHistory: info is null))
+        if (_instance is { } open && !open.CanReplaceWith(info))
         {
+            if (open.WindowState == WindowState.Minimized) open.WindowState = WindowState.Normal;
             open.Activate();
             return;
         }
 
-        if (_opening) return;
+        if (_opening && (info is null || _openingInfo is not null
+            && info.VelopackInfo.TargetFullRelease.Version <= _openingInfo.VelopackInfo.TargetFullRelease.Version)) return;
         _opening = true;
+        _openingInfo = info;
+        var request = ++_openRequest;
 
         ReleaseNotesFeed? feed;
         try
         {
             feed = await ReleaseNotesService.WithinAsync(notes, NotesPatience);
         }
+        catch (Exception)
+        {
+            // 更新说明是附加内容，失败不能阻断打开更新窗口。
+            feed = null;
+        }
         finally
         {
-            _opening = false;
+            if (request == _openRequest) { _opening = false; _openingInfo = null; }
         }
+
+        // 较慢的旧说明请求不能覆盖新版本，也不能打断等待期间已开始的下载。
+        if (request != _openRequest) return;
+        if (_instance is { } current && !current.CanReplaceWith(info)) { current.Activate(); return; }
 
         var previous = _instance;
 
@@ -144,6 +163,28 @@ public partial class UpdateWindow : Window
     private void OnThemeChanged(object? sender, EventArgs e) => WindowFrame.ApplyAppearance(this);
 
     private void OnLanguageChanged(object? sender, EventArgs e) => ApplyLanguage();
+
+    private async void RefreshButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_phase != Phase.Offering || _refreshing) return;
+        _refreshing = true;
+        DownloadBtn.IsEnabled = false;
+        try
+        {
+            await UpdateUi.CheckAndShowAsync(RefreshButton, message =>
+            {
+                ErrorText.Text = message;
+                ErrorText.Visibility = Visibility.Visible;
+            });
+        }
+        finally
+        {
+            _refreshing = false;
+            RefreshButton.Content = "刷新版本";
+            RefreshButton.IsEnabled = _phase == Phase.Offering;
+            DownloadBtn.IsEnabled = _phase == Phase.Offering && !IsHistory;
+        }
+    }
 
     /// <summary>
     /// Sets up what depends on what the window was opened with, none of which changes afterwards.
@@ -240,6 +281,7 @@ public partial class UpdateWindow : Window
     /// </remarks>
     private async void DownloadBtn_Click(object sender, RoutedEventArgs e)
     {
+        if (_refreshing) return;
         if (_phase == Phase.Downloading)
         {
             // Velopack only notices at its next checkpoint, which can be a while off, so the button
@@ -429,9 +471,10 @@ public partial class UpdateWindow : Window
         DismissBtn.IsEnabled = phase == Phase.Offering;
         SkipVersionLink.IsEnabled = phase == Phase.Offering;
         CloseBtn.IsEnabled = phase == Phase.Offering;
+        RefreshButton.IsEnabled = phase == Phase.Offering && !_refreshing;
 
         var cancelRequested = _cancel?.IsCancellationRequested == true;
-        DownloadBtn.IsEnabled = phase == Phase.Offering || (phase == Phase.Downloading && !cancelRequested);
+        DownloadBtn.IsEnabled = !_refreshing && (phase == Phase.Offering || (phase == Phase.Downloading && !cancelRequested));
 
         var cancelling = phase is Phase.Downloading or Phase.Finishing;
         DownloadBtnText.Text = LocalizationService.Get(

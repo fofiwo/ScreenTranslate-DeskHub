@@ -199,12 +199,20 @@ public static class UpdateService
                 manager,
                 update);
         }
-        catch
+        catch (Exception ex)
         {
-            LastCheckError = "未能连接更新服务，请稍后重试或到发布页下载安装包。";
+            LastCheckError = DescribeCheckError(ex);
             return null;
         }
     }
+
+    internal static string DescribeCheckError(Exception error) => error switch
+    {
+        OperationCanceledException or TimeoutException => "检查更新超时，请检查网络或本机代理后重试。",
+        System.Net.Http.HttpRequestException { StatusCode: { } code } => $"更新服务返回 HTTP {(int)code}，请稍后刷新或到发布页下载安装包。",
+        System.Net.Http.HttpRequestException => "未能连接更新服务，请检查网络或本机代理后重试。",
+        _ => "读取更新信息失败，请稍后刷新或到发布页下载安装包。",
+    };
 
     /// <param name="onApplying">
     /// Raised once the download has genuinely finished, before the (blocking, progress-less) apply
@@ -351,7 +359,7 @@ public static class UpdateService
         // 稳定版读取公开资产，避免共享代理出口耗尽 GitHub 匿名 API 配额后无法更新。
         if (source.RepositoryUrl == GitHubRepoUrl && source.Channel == StableChannel && !source.SeesPrerelease)
             return new DeskHubReleaseSource();
-        return new GithubSource(source.RepositoryUrl, source.Token, prerelease: source.SeesPrerelease);
+        return new GithubSource(source.RepositoryUrl, source.Token, prerelease: source.SeesPrerelease, downloader: new UpdateDownloader());
     }
 
     /// <summary>

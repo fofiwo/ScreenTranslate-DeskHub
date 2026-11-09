@@ -50,6 +50,20 @@ public sealed class DeskHubUpdateTests
         public void Log(VelopackLogLevel level, string? message, Exception? exception) { }
     }
 
+    [Fact]
+    public async Task ConsecutiveChecksBypassCachedLatestRedirects()
+    {
+        var downloader = new RecordingDownloader();
+        var source = new DeskHubReleaseSource(downloader);
+        var first = await source.GetReleaseFeed(new SilentLogger(), "ScreenTranslate", "win");
+        var firstUrl = downloader.Requested;
+        var second = await source.GetReleaseFeed(new SilentLogger(), "ScreenTranslate", "win");
+        Assert.Equal("0.3.11", first.Assets.Single().Version.ToString());
+        Assert.Equal("0.3.11", second.Assets.Single().Version.ToString());
+        Assert.NotEqual(firstUrl, downloader.Requested);
+        Assert.Equal("/fofiwo/ScreenTranslate-DeskHub/releases/latest/download/releases.win.json", new Uri(downloader.Requested!).AbsolutePath);
+    }
+
     private sealed class RecordingDownloader : IFileDownloader
     {
         public string? Requested { get; private set; }
@@ -57,6 +71,10 @@ public sealed class DeskHubUpdateTests
             IDictionary<string, string>? headers, double timeout, CancellationToken cancelToken)
         { Requested = url; return Task.CompletedTask; }
         public Task<byte[]> DownloadBytes(string url, IDictionary<string, string>? headers, double timeout) => throw new NotSupportedException();
-        public Task<string> DownloadString(string url, IDictionary<string, string>? headers, double timeout) => throw new NotSupportedException();
+        public Task<string> DownloadString(string url, IDictionary<string, string>? headers, double timeout)
+        {
+            Requested = url;
+            return Task.FromResult("""{"Assets":[{"PackageId":"ScreenTranslate","Version":"0.3.11","Type":"Full","FileName":"ScreenTranslate-0.3.11-full.nupkg"}]}""");
+        }
     }
 }

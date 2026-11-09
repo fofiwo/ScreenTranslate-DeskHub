@@ -11,6 +11,7 @@ public enum TranslationProvider { Google, Google2, GoogleChrome, Bing, Microsoft
 
 public class AppSettings
 {
+    public NetworkProxySettings NetworkProxy { get; set; } = new();
     public uint ScreenshotHotkeyModifiers { get; set; } = 3;
     public uint ScreenshotHotkeyVirtualKey { get; set; } = 0x51;
     public string ScreenshotHotkeyDisplay { get; set; } = "Ctrl+Alt+Q";

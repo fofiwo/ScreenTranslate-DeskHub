@@ -94,7 +94,7 @@ public static class DiagnosticUploadService
     /// watching a button that says it is working. Short enough that a black-holed connection gives
     /// up while they are still in the room.
     /// </summary>
-    private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(60) };
+    private static readonly HttpClient Http = new(NetworkProxyService.CreateHandler(OverTranslate.Models.NetworkFeature.Diagnostics)) { Timeout = TimeSpan.FromSeconds(60) };
 
     /// <summary>What the worker returns, and the only shape this accepts back.</summary>
     private static readonly Regex CodePattern = new(

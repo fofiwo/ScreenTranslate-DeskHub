@@ -112,7 +112,7 @@ public static class ReleaseNotesService
             using var document = await JsonDocument.ParseAsync(stream);
             return ParseListing(document.RootElement);
         }
-        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException)
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException or InvalidOperationException)
         {
             Log.Warn(ex, "Fetching release notes failed");
             return null;
@@ -161,7 +161,7 @@ public static class ReleaseNotesService
 
     private static HttpClient CreateClient()
     {
-        var client = new HttpClient(new HttpClientHandler { AutomaticDecompression = DecompressionMethods.All })
+        var client = new HttpClient(UpdateHttp.CreateHandler())
         {
             Timeout = TimeSpan.FromSeconds(15),
         };

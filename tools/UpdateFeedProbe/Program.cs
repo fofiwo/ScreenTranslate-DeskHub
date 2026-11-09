@@ -2,6 +2,7 @@ using System.Text.Json;
 using System.IO.Compression;
 using System.Reflection;
 using OverTranslate.Services;
+using OverTranslate.Models;
 using Velopack;
 using Velopack.Locators;
 using Velopack.Sources;
@@ -10,6 +11,12 @@ using Velopack.Sources;
 var root = Directory.CreateTempSubdirectory("deskhub-feed-probe-").FullName;
 try
 {
+    var proxy = args.FirstOrDefault(a => a.StartsWith("--proxy="))?[8..];
+    if (proxy is not null)
+    {
+        if (!NetworkProxyService.TryParseAddress(proxy, out _)) throw new ArgumentException("Invalid proxy address");
+        NetworkProxyService.Apply(new NetworkProxySettings { Enabled = true, Address = proxy, Features = NetworkFeature.Updates });
+    }
     var from = args.FirstOrDefault(a => a.StartsWith("--from="))?[7..] ?? "0.2.3";
     var locator = new TestVelopackLocator("ScreenTranslate", from, root, null, root, null);
     var manager = new DeltaAwareUpdateManager(new DeskHubReleaseSource(),
@@ -56,6 +63,7 @@ try
         latest = update.TargetFullRelease.Version.ToString(),
         package = update.TargetFullRelease.FileName,
         packageId = update.TargetFullRelease.PackageId,
+        explicitUpdateProxy = proxy is not null,
         downloadAndHashVerification = download,
         packageEntries,
         assemblyVersion,

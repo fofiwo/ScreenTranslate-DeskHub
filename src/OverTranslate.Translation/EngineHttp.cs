@@ -33,11 +33,12 @@ public static class EngineHttp
     /// How long one request may take before it is abandoned. Engines never wait longer than this on
     /// their own; a caller that wants a shorter answer passes a cancellation token.
     /// </param>
-    public static HttpClient CreateClient(TimeSpan timeout)
+    public static HttpClient CreateClient(TimeSpan timeout, IWebProxy? proxy = null)
     {
         var sockets = new SocketsHttpHandler
         {
             AutomaticDecompression = DecompressionMethods.All,
+            Proxy = proxy,
 
             // Bing's credentials come with cookies the page expects back.
             UseCookies = true,

@@ -74,7 +74,8 @@ public class TranslationService
 
     // One client for every free engine, so a hung endpoint fails fast instead of stalling the batch.
     // Built by the engines library because how it speaks matters: see EngineHttp for why HTTP/2.
-    private static readonly HttpClient Http = EngineHttp.CreateClient(TranslationTiming.Request);
+    private static readonly HttpClient Http = EngineHttp.CreateClient(TranslationTiming.Request, NetworkProxyService.For(NetworkFeature.Translation));
+    private static readonly HttpClient DictionaryHttp = EngineHttp.CreateClient(TranslationTiming.Request, NetworkProxyService.For(NetworkFeature.Dictionary));
 
     private readonly GoogleWebTranslator    _google       = new(Http);
     private readonly GoogleRpcTranslator    _google2      = new(Http);
@@ -92,16 +93,16 @@ public class TranslationService
     private readonly YandexTranslator       _yandex       = new(Http);
     // DeepL's own, because it is an official API spoken to with the user's key and has no reason to
     // introduce itself as a browser. Its clock is everyone's: see TranslationTiming.
-    private static readonly HttpClient DeepLHttp = new() { Timeout = TranslationTiming.Request };
+    private static readonly HttpClient DeepLHttp = new(NetworkProxyService.CreateHandler(NetworkFeature.Translation)) { Timeout = TranslationTiming.Request };
 
     private readonly DeepLProvider      _deepL     = new(DeepLHttp);
     private readonly OpenAiCompatibleProvider _openAi = new();
 
     // Only when asked for, one word at a time; the names are what the dictionary card credits.
-    private readonly DictionaryLookupProvider _googleDictionary    = new(new GoogleDictionary(Http), "Google Web");
-    private readonly DictionaryLookupProvider _bingDictionary      = new(new BingDictionary(Http), "Bing");
-    private readonly DictionaryLookupProvider _microsoftDictionary = new(new MicrosoftDictionary(Http), "Microsoft");
-    private readonly DictionaryLookupProvider _youdaoDictionary    = new(new YoudaoDictionary(Http), "Youdao");
+    private readonly DictionaryLookupProvider _googleDictionary    = new(new GoogleDictionary(DictionaryHttp), "Google Web");
+    private readonly DictionaryLookupProvider _bingDictionary      = new(new BingDictionary(DictionaryHttp), "Bing");
+    private readonly DictionaryLookupProvider _microsoftDictionary = new(new MicrosoftDictionary(DictionaryHttp), "Microsoft");
+    private readonly DictionaryLookupProvider _youdaoDictionary    = new(new YoudaoDictionary(DictionaryHttp), "Youdao");
 
     // Per-option resilient wrappers: the user's engine is the primary and is asked twice before
     // anything else is (see ResilientProvider); the backups are there for when it cannot answer.

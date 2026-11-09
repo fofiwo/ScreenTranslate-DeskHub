@@ -19,7 +19,7 @@ internal sealed class HttpOcrProvider : IDisposable
     internal HttpOcrProvider(HttpMessageHandler? handler = null)
     {
         _client = handler is null
-            ? new HttpClient(new HttpClientHandler { AllowAutoRedirect = false })
+            ? new HttpClient(NetworkProxyService.CreateHandler(NetworkFeature.OnlineOcr, allowAutoRedirect: false))
             : new HttpClient(handler);
         _client.Timeout = Timeout.InfiniteTimeSpan;
     }

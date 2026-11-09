@@ -70,7 +70,7 @@ public sealed class OpenAiCompatibleProvider : ITranslationProvider
     // Its own client rather than EngineHttp's: a local model can take tens of seconds to load on the
     // first request, far past what the free engines are given. No timeout of the client's own — each
     // request carries the user's, see TimeoutSeconds.
-    private static readonly HttpClient DefaultHttp = new() { Timeout = Timeout.InfiniteTimeSpan };
+    private static readonly HttpClient DefaultHttp = new(NetworkProxyService.CreateHandler(NetworkFeature.Translation)) { Timeout = Timeout.InfiniteTimeSpan };
 
     /// <summary>How long one request may take when the timeout box is left empty.</summary>
     internal const int DefaultTimeoutSeconds = 60;

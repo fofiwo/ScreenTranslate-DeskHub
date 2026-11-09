@@ -16,7 +16,7 @@ public class TtsService : IDisposable
     // and the Microsoft token are fetched once rather than once per window. The request timeout is
     // translation's (TranslationTiming): one slow engine hands over to the next after ten seconds,
     // where GTranslate's own clients waited a hundred.
-    private static readonly HttpClient Http = EngineHttp.CreateClient(TranslationTiming.Request);
+    private static readonly HttpClient Http = EngineHttp.CreateClient(TranslationTiming.Request, NetworkProxyService.For(OverTranslate.Models.NetworkFeature.Speech));
 
     // Google first, as before; RPC ahead of the old translate_tts address, which is the order the old
     // service used. Microsoft and Bing are the same Azure voices by two routes, and between them

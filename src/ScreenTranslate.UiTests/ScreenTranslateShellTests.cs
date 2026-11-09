@@ -120,6 +120,7 @@ public sealed partial class ScreenTranslateShellTests
                     VerifySystemClipboardHistory();
                     return;
                 }
+                VerifyUpdateEntries();
                 VerifyLibraryQuickAccess();
                 VerifyShortcutHintsMatchBindings();
                 VerifyScreenshotToolActions();

@@ -82,6 +82,7 @@ public partial class App
         // Before the first line worth keeping is written, and early enough that a user who ticked
         // 記錄詳細資訊 gets the detail from startup onwards rather than from their next toggle.
         LogLevelService.Apply(SettingsService.Instance.Current.VerboseLogging);
+        NetworkProxyService.Apply(SettingsService.Instance.Current.NetworkProxy);
 
         // Straight after the log level and before anything else runs, so the identity is on the
         // first lines of every session's log rather than turning up partway down whichever of them

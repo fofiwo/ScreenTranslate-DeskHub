@@ -15,6 +15,7 @@ public sealed partial class ScreenTranslateShellTests
 {
     private static void VerifyUpdateEntries()
     {
+        VerifyUpdateRefresh();
         var state = typeof(UpdateNotifier).GetProperty(nameof(UpdateNotifier.Available))!;
         var previous = state.GetValue(null);
         var changed = typeof(UpdateNotifier).GetField("AvailabilityChanged", BindingFlags.Static | BindingFlags.NonPublic)!;
@@ -53,6 +54,15 @@ public sealed partial class ScreenTranslateShellTests
             state.SetValue(null, info);
             pending.SetResult(info);
             PumpUntil(() => manual.IsEnabled);
+            void CheckAgain(Button target)
+            {
+                pending = new TaskCompletionSource<OverTranslate.Services.UpdateInfo?>();
+                pendingField.SetValue(null, pending.Task);
+                target.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                target.Dispatcher.Invoke(() => { }, System.Windows.Threading.DispatcherPriority.ApplicationIdle);
+                pending.SetResult(info);
+                PumpUntil(() => !(bool)typeof(UpdateUi).GetField("_checking", BindingFlags.Static | BindingFlags.NonPublic)!.GetValue(null)!);
+            }
             ((EventHandler?)changed.GetValue(null))?.Invoke(null, EventArgs.Empty);
             Assert.Equal(Visibility.Visible, button.Visibility);
             Render(shell, "multitool-update-available", 1100, 680);
@@ -62,17 +72,17 @@ public sealed partial class ScreenTranslateShellTests
             Assert.Equal("安装新版", button.Content);
             Assert.Contains("9.9.9-test", Assert.IsType<string>(button.ToolTip));
             Assert.Equal(FontWeights.SemiBold, button.FontWeight);
-            button.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            CheckAgain(button);
             PumpUntil(() => Application.Current.Windows.OfType<UpdateWindow>().Any(w => w.IsVisible));
             var update = Application.Current.Windows.OfType<UpdateWindow>().Single();
             Assert.Contains("9.9.9-test", ((TextBlock)update.FindName("LatestVersionText")).Text);
-            button.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            CheckAgain(button);
             Assert.Single(Application.Current.Windows.OfType<UpdateWindow>());
 
             tray = new TrayMenuWindow();
             var trayButton = (Button)tray.FindName("UpdateTrayButton");
             Assert.Equal("发现新版 v9.9.9-test", trayButton.Content);
-            trayButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            CheckAgain(trayButton);
             Assert.Single(Application.Current.Windows.OfType<UpdateWindow>());
 
             var about = new ProductAboutPage();
@@ -80,7 +90,7 @@ public sealed partial class ScreenTranslateShellTests
             about.Arrange(new Rect(0, 0, 760, 680));
             about.UpdateLayout();
             var aboutButton = Visuals<Button>(about).Single(b => Equals(b.Content, "检查更新"));
-            aboutButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            CheckAgain(aboutButton);
             Assert.Single(Application.Current.Windows.OfType<UpdateWindow>());
             update.Close();
 
@@ -112,6 +122,98 @@ public sealed partial class ScreenTranslateShellTests
             state.SetValue(null, previous);
             pendingField.SetValue(null, previousPending);
             System.IO.Directory.Delete(packageRoot, true);
+        }
+    }
+
+    private static void VerifyUpdateRefresh()
+    {
+        VerifyNetworkProxySettings();
+        var state = typeof(UpdateNotifier).GetProperty(nameof(UpdateNotifier.Available))!;
+        var pendingField = typeof(UpdateNotifier).GetField("_pendingCheck", BindingFlags.Static | BindingFlags.NonPublic)!;
+        var previous = state.GetValue(null);
+        var previousPending = pendingField.GetValue(null);
+        var folder = System.IO.Directory.CreateTempSubdirectory("update-refresh-").FullName;
+        OverTranslate.Services.UpdateInfo Offer(string version) => new(version,
+            new DeltaAwareUpdateManager(new DeskHubReleaseSource(), new UpdateOptions(),
+                new TestVelopackLocator("ScreenTranslate", "0.3.5", folder, null, folder, null)),
+            new Velopack.UpdateInfo(new VelopackAsset { PackageId = "ScreenTranslate", Version = SemanticVersion.Parse(version),
+                Type = VelopackAssetType.Full, FileName = $"ScreenTranslate-{version}-full.nupkg" }, false, null!, []));
+        var older = Offer("9.9.10-test");
+        var newer = Offer("9.9.11-test");
+        try
+        {
+            state.SetValue(null, older);
+            UpdateWindow.ShowOrActivate(older);
+            PumpUntil(() => Application.Current.Windows.OfType<UpdateWindow>().Any());
+            var original = Application.Current.Windows.OfType<UpdateWindow>().Single();
+            var pending = new TaskCompletionSource<OverTranslate.Services.UpdateInfo?>();
+            pendingField.SetValue(null, pending.Task);
+            var button = new Button { Content = "检查更新" };
+            var check = UpdateUi.CheckAndShowAsync(button, _ => { });
+            Assert.False(check.IsCompleted, "Manual checks must query again even when an older update is cached.");
+            Assert.False(button.IsEnabled);
+            button.Dispatcher.Invoke(() => { }, System.Windows.Threading.DispatcherPriority.ApplicationIdle);
+            state.SetValue(null, newer); pending.SetResult(newer);
+            PumpUntil(() => check.IsCompleted); check.GetAwaiter().GetResult();
+            var current = Application.Current.Windows.OfType<UpdateWindow>().Single();
+            Assert.NotSame(original, current);
+            Assert.Equal("v9.9.11-test", ((TextBlock)current.FindName("LatestVersionText")).Text);
+
+            var refresh = Assert.IsType<Button>(current.FindName("RefreshButton"));
+            // Same-version checks keep the window, but a successful refresh can jump forward again.
+            pending = new TaskCompletionSource<OverTranslate.Services.UpdateInfo?>();
+            pendingField.SetValue(null, pending.Task);
+            refresh.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            current.Dispatcher.Invoke(() => { }, System.Windows.Threading.DispatcherPriority.ApplicationIdle);
+            pending.SetResult(newer);
+            PumpUntil(() => refresh.IsEnabled);
+            Assert.Same(current, Application.Current.Windows.OfType<UpdateWindow>().Single());
+            pending = new TaskCompletionSource<OverTranslate.Services.UpdateInfo?>();
+            pendingField.SetValue(null, pending.Task);
+            refresh.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            current.Dispatcher.Invoke(() => { }, System.Windows.Threading.DispatcherPriority.ApplicationIdle);
+            pending.SetResult(Offer("9.9.12-test"));
+            PumpUntil(() => !current.IsVisible);
+            current = Application.Current.Windows.OfType<UpdateWindow>().Single();
+            Assert.Equal("v9.9.12-test", ((TextBlock)current.FindName("LatestVersionText")).Text);
+            refresh = Assert.IsType<Button>(current.FindName("RefreshButton"));
+            Assert.False(original.IsVisible);
+
+            Assert.Equal("刷新版本", refresh.Content);
+            pending = new TaskCompletionSource<OverTranslate.Services.UpdateInfo?>();
+            pendingField.SetValue(null, pending.Task);
+            refresh.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Assert.False(refresh.IsEnabled);
+            Assert.False(((Button)current.FindName("DownloadBtn")).IsEnabled);
+            current.Dispatcher.Invoke(() => { }, System.Windows.Threading.DispatcherPriority.ApplicationIdle);
+            pending.SetException(new System.Net.Http.HttpRequestException("fixture error with sensitive URL withheld"));
+            PumpUntil(() => refresh.IsEnabled);
+            Assert.True(current.IsVisible);
+            Assert.Equal("刷新版本", refresh.Content);
+            Assert.True(((Button)current.FindName("DownloadBtn")).IsEnabled);
+            Assert.Contains("检查更新失败", ((TextBlock)current.FindName("ErrorText")).Text);
+            Assert.Equal("v9.9.12-test", ((TextBlock)current.FindName("LatestVersionText")).Text);
+
+            // A newer offer must never replace a download which is already in progress.
+            var phase = typeof(UpdateWindow).GetNestedType("Phase", BindingFlags.NonPublic)!;
+            var setPhase = typeof(UpdateWindow).GetMethod("SetPhase", BindingFlags.Instance | BindingFlags.NonPublic)!;
+            setPhase.Invoke(current, [Enum.Parse(phase, "Downloading")]);
+            Assert.False(refresh.IsEnabled);
+            UpdateWindow.ShowOrActivate(Offer("9.9.13-test"));
+            Assert.Same(current, Application.Current.Windows.OfType<UpdateWindow>().Single());
+            setPhase.Invoke(current, [Enum.Parse(phase, "Offering")]);
+        }
+        finally
+        {
+            foreach (var window in Application.Current.Windows.OfType<UpdateWindow>().ToArray())
+            {
+                var phase = typeof(UpdateWindow).GetNestedType("Phase", BindingFlags.NonPublic)!;
+                typeof(UpdateWindow).GetMethod("SetPhase", BindingFlags.Instance | BindingFlags.NonPublic)!
+                    .Invoke(window, [Enum.Parse(phase, "Offering")]);
+                window.Close();
+            }
+            state.SetValue(null, previous); pendingField.SetValue(null, previousPending);
+            System.IO.Directory.Delete(folder, true);
         }
     }
 }

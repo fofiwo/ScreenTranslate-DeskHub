@@ -24,8 +24,7 @@ internal sealed class LibraryHttp : IDisposable
     public LibraryHttp(HttpMessageHandler? testHandler = null)
     {
         if (testHandler is not null) { _remote = _local = new(testHandler) { Timeout = TimeSpan.FromSeconds(30) }; return; }
-        _remote = new(new HttpClientHandler { AllowAutoRedirect = false, UseProxy = true,
-            Proxy = new WebProxy("http://127.0.0.1:10808") }) { Timeout = TimeSpan.FromSeconds(30) };
+        _remote = new(NetworkProxyService.CreateHandler(OverTranslate.Models.NetworkFeature.Library, allowAutoRedirect: false)) { Timeout = TimeSpan.FromSeconds(30) };
         _local = new(new HttpClientHandler { AllowAutoRedirect = false, UseProxy = false }) { Timeout = TimeSpan.FromSeconds(30) };
     }
 
@@ -67,7 +66,7 @@ internal sealed class LibraryHttp : IDisposable
             return JsonDocument.Parse(buffer.ToArray());
         }
         catch (JsonException) { throw new InvalidOperationException("接口未返回有效 JSON，本次结果未保存。"); }
-        catch (HttpRequestException) { throw new InvalidOperationException("无法连接接口，请检查地址、网络和本机 10808 代理。"); }
+        catch (HttpRequestException) { throw new InvalidOperationException("无法连接接口，请检查地址、网络和应用代理设置。"); }
         catch (TaskCanceledException) when (!token.IsCancellationRequested) { throw new InvalidOperationException("接口请求超时，本次结果未保存。"); }
     }
 

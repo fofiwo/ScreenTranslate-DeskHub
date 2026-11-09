@@ -35,6 +35,7 @@
    <TextBlock Text="默认关闭，只请求选定服务。开启后允许现有内置服务备用链；OpenAI 和 DeepL 不跨服务回退。截图和持续翻译会标明实际服务。" TextWrapping="Wrap" Style="{StaticResource ProductHint}" Margin="24,0,0,18"/>
    </StackPanel>
    <StackPanel x:Name="AdvancedOptions">
+   <ctl:NetworkProxyCard Margin="0,0,0,18"/>
    <CheckBox x:Name="StartupCheckBox" Content="开机启动（可选，默认关闭）" Checked="Startup_Changed" Unchecked="Startup_Changed" Margin="0,0,0,14"/>
    <Expander Header="高级：手动诊断" Margin="0,0,0,18">
     <StackPanel Margin="0,16,0,0">

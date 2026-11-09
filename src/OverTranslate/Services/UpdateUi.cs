@@ -13,12 +13,6 @@ internal static class UpdateUi
     internal static async Task CheckAndShowAsync(System.Windows.Controls.Button? button = null, Action<string>? reportStatus = null)
     {
         if (_checking) { reportStatus?.Invoke("正在检查更新，请稍候…"); return; }
-        if (UpdateNotifier.Available is { } available)
-        {
-            reportStatus?.Invoke($"发现新版 v{available.LatestVersion}");
-            UpdateWindow.ShowOrActivate(available);
-            return;
-        }
         _checking = true;
         var owner = button is null ? null : Window.GetWindow(button);
         var wasEnabled = button?.IsEnabled ?? true;
@@ -28,7 +22,7 @@ internal static class UpdateUi
             reportStatus?.Invoke("正在检查更新，请稍候…");
             // 先让界面绘制反馈，再开始可能同步完成或阻塞的更新器初始化。
             await System.Windows.Threading.Dispatcher.Yield(System.Windows.Threading.DispatcherPriority.Background);
-            var info = UpdateNotifier.Available ?? await UpdateNotifier.CheckAsync().WaitAsync(TimeSpan.FromSeconds(30));
+            var info = await UpdateNotifier.CheckAsync().WaitAsync(TimeSpan.FromSeconds(30));
             if (info is not null)
             {
                 reportStatus?.Invoke($"发现新版 v{info.LatestVersion}");

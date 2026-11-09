@@ -107,7 +107,7 @@ internal sealed class MangaModelStore
         Manifest = manifest;
         Root = root;
         RuntimeRoot = runtimeRoot;
-        _http = handler is null ? new HttpClient() : new HttpClient(handler);
+        _http = handler is null ? new HttpClient(NetworkProxyService.CreateHandler(OverTranslate.Models.NetworkFeature.ModelDownloads)) : new HttpClient(handler);
         // Per request, not overall: a 170MB file on a slow line is not a hung request.
         _http.Timeout = Timeout.InfiniteTimeSpan;
         _http.DefaultRequestHeaders.UserAgent.ParseAdd("OverTranslate");
