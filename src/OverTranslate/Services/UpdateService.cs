@@ -163,6 +163,7 @@ public static class UpdateService
 {
     public const string GitHubRepoUrl = "https://github.com/fofiwo/ScreenTranslate-DeskHub";
     public static string ReleasesUrl => GitHubRepoUrl + "/releases/latest";
+    public static string UpdateFeedUrl => ReleasesUrl + "/download/";
     public static string? LastCheckError { get; private set; }
     public static bool IsInstalledBuild { get; private set; }
     private const string StableChannel = "win";
@@ -342,8 +343,15 @@ public static class UpdateService
         var source = ResolveFeedSource();
         var options = new UpdateOptions { ExplicitChannel = source.Channel };
 
-        return new DeltaAwareUpdateManager(
-            new GithubSource(source.RepositoryUrl, source.Token, prerelease: source.SeesPrerelease), options);
+        return new DeltaAwareUpdateManager(CreateUpdateSource(source), options);
+    }
+
+    internal static IUpdateSource CreateUpdateSource(UpdateFeedSource source)
+    {
+        // 稳定版读取公开资产，避免共享代理出口耗尽 GitHub 匿名 API 配额后无法更新。
+        if (source.RepositoryUrl == GitHubRepoUrl && source.Channel == StableChannel && !source.SeesPrerelease)
+            return new DeskHubReleaseSource();
+        return new GithubSource(source.RepositoryUrl, source.Token, prerelease: source.SeesPrerelease);
     }
 
     /// <summary>
