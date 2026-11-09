@@ -21,7 +21,7 @@ public sealed partial class ScreenTranslateShellTests
         }
         Check("更改高级选项不能覆盖另一个页面或工具栏更新的值", VerifySettingsChangeIsolation);
         Check("从设置返回已打开的资料库时快捷键提示须刷新", VerifyLibraryShortcutRefresh);
-        Check("AI 配置读取失败须保留界面并报告错误", VerifyAiSettingsReadFailure);
+        Check("AI 配置集中到设置并保留保存与恢复能力", VerifyAiSettingsPage);
         Check("统一同步通知须刷新资料并保留未保存输入", VerifyUnifiedSyncNotification);
         Check("迁移后的 AI 配置仍可校验并保存", () =>
         {
@@ -72,22 +72,6 @@ public sealed partial class ScreenTranslateShellTests
         });
     }
 
-    private static void VerifyAiSettingsReadFailure()
-    {
-        WithReviewLibrary((window, _, path) =>
-        {
-            using (var locked = new System.IO.FileStream(path, System.IO.FileMode.Open,
-                System.IO.FileAccess.ReadWrite, System.IO.FileShare.None))
-            {
-                Assert.Null(Record.Exception(window.ShowAiSettings));
-                Assert.Equal(Visibility.Collapsed, ((FrameworkElement)window.FindName("EditorLayer")).Visibility);
-                Assert.Contains("操作失败", ((TextBlock)window.FindName("Status")).Text);
-            }
-            window.ShowAiSettings();
-            Assert.Equal(Visibility.Visible, ((FrameworkElement)window.FindName("AiEditor")).Visibility);
-        });
-    }
-
     private static void VerifyUnifiedSyncNotification()
     {
         WithReviewLibrary((window, store, _) =>
@@ -103,9 +87,6 @@ public sealed partial class ScreenTranslateShellTests
             PumpUntil(() => ((TextBlock)window.FindName("EditorStatus")).Text.Contains("当前输入保留"));
             Assert.Equal("unsaved fixture", ((TextBox)window.FindName("PromptBody")).Text);
             Assert.Equal(Visibility.Visible, ((FrameworkElement)window.FindName("EditorLayer")).Visibility);
-            window.ShowAiSettings();
-            Assert.Equal("unsaved fixture", ((TextBox)window.FindName("PromptBody")).Text);
-            Assert.Equal(Visibility.Visible, ((FrameworkElement)window.FindName("PromptEditor")).Visibility);
             typeof(LibraryWindow).GetMethod("CancelEditor_Click", BindingFlags.Instance | BindingFlags.NonPublic)!
                 .Invoke(window, [window, new RoutedEventArgs()]);
             Assert.Equal(3, ((ListBox)window.FindName("PromptList")).Items.Count);

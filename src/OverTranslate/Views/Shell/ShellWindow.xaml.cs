@@ -87,7 +87,8 @@ public partial class ShellWindow : Window
         () => ScreenshotBtn_Click(this, new RoutedEventArgs()),
         () => PinImageBtn_Click(this, new RoutedEventArgs()), ShowQuickToolSettings);
     private RealtimePage RealtimePage => _realtimePage ??= new();
-    private ScreenTranslatePreferencesPage PreferencesPage => _preferencesPage ??= new(() => _settingsPage ??= new());
+    private readonly Func<LibraryStore> _aiLibraryFactory;
+    private ScreenTranslatePreferencesPage PreferencesPage => _preferencesPage ??= new(() => _settingsPage ??= new(), _aiLibraryFactory);
 
     private ShellPage? _current;
     private static ShellPage _translationMode = ShellPage.Home;
@@ -152,10 +153,11 @@ public partial class ShellWindow : Window
 
     public ShellWindow() : this(() => new LibraryStore(LibraryStore.DefaultPath).Read(), Library.LibraryWindow.Open) { }
 
-    internal ShellWindow(Func<LibraryState> readLibrary, Action openLibrary)
+    internal ShellWindow(Func<LibraryState> readLibrary, Action openLibrary, Func<LibraryStore>? aiLibraryFactory = null)
     {
         _readLibrary = readLibrary;
         _openLibrary = openLibrary;
+        _aiLibraryFactory = aiLibraryFactory ?? (() => new LibraryStore(LibraryStore.DefaultPath));
         InitializeComponent();
         RefreshUpdateButton();
         UpdateNotifier.AvailabilityChanged += OnUpdateAvailabilityChanged;
@@ -581,6 +583,14 @@ public partial class ShellWindow : Window
     {
         Navigate(ShellPage.Settings);
         PreferencesPage.ShowQuickTools();
+    }
+
+    private void SettingsButton_Click(object sender, RoutedEventArgs e) => ShowAiSettings();
+
+    public void ShowAiSettings()
+    {
+        Navigate(ShellPage.Settings);
+        PreferencesPage.ShowAiSettings();
     }
 
     public void ShowOcrSettings()

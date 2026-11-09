@@ -1,4 +1,4 @@
-﻿using System.Reflection;
+using System.Reflection;
 using System.Windows;
 using System.Windows.Controls;
 using OverTranslate.Services.Library;
@@ -92,7 +92,7 @@ public sealed partial class ScreenTranslateShellTests
             Assert.Equal("", Control<TextBox>("PromptSearch").Text);
             Assert.Empty(Control<ListBox>("TagFilters").SelectedItems);
 
-            // 模型与 AI 设置复用相同提交入口，不能漏掉其成功/失败状态。
+            // 模型资料不能漏掉成功/失败状态；AI 配置由独立设置页验收。
             Control<TabControl>("Tabs").SelectedIndex = 1;
             Invoke("NewModel_Click");
             Control<TextBox>("EndpointBox").Text = "http://localhost:1234/v1";
@@ -102,18 +102,7 @@ public sealed partial class ScreenTranslateShellTests
             PumpUntil(() => Control<FrameworkElement>("EditorLayer").Visibility == Visibility.Collapsed);
             Assert.Single(store.Read().Connections);
             Assert.Contains("连接资料", Control<TextBlock>("SaveNoticeText").Text);
-            window.ShowAiSettings();
-            Control<TextBox>("AiEndpoint").Text = "";
-            Save();
-            PumpUntil(() => Control<Button>("SaveButton").IsEnabled);
-            Assert.Equal(Visibility.Visible, Control<FrameworkElement>("EditorLayer").Visibility);
-            Assert.Contains("保存失败", Control<TextBlock>("EditorStatus").Text);
-            Control<TextBox>("AiEndpoint").Text = "http://localhost:1234/v1";
-            Control<TextBox>("AiModel").Text = "test-model";
-            Save();
-            PumpUntil(() => Control<FrameworkElement>("EditorLayer").Visibility == Visibility.Collapsed);
-            Assert.Equal("test-model", store.Read().Ai.Model);
-            Assert.Contains("AI 整理配置", Control<TextBlock>("SaveNoticeText").Text);
+
         }
         finally { window.CloseForTests(); }
     }

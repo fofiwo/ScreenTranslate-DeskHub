@@ -449,7 +449,6 @@ public partial class LibraryWindow : Window
         EditorScroll.ScrollToTop();
         PromptEditor.Visibility = kind == "prompt" ? Visibility.Visible : Visibility.Collapsed;
         ModelEditor.Visibility = kind == "model" ? Visibility.Visible : Visibility.Collapsed;
-        AiEditor.Visibility = kind == "ai" ? Visibility.Visible : Visibility.Collapsed;
         EditorLayer.Visibility = Visibility.Visible;
     }
 
@@ -457,7 +456,7 @@ public partial class LibraryWindow : Window
     {
         _editorVersion++; _editorRequest?.Cancel(); _editorIds = null;
         _editorKind = ""; _editingPrompt = null; _editingConnection = null;
-        ModelKey.Clear(); AiKey.Clear(); EditorLayer.Visibility = Visibility.Collapsed;
+        ModelKey.Clear(); EditorLayer.Visibility = Visibility.Collapsed;
     }
     private void CancelEditor_Click(object sender, RoutedEventArgs e)
     {
@@ -510,27 +509,7 @@ public partial class LibraryWindow : Window
     }
 
     public static void OpenAiSettings()
-    {
-        Open();
-        _current?.ShowAiSettings();
-    }
-
-    internal void ShowAiSettings()
-    {
-        if (EditorLayer.Visibility == Visibility.Visible)
-        {
-            Notice("请先保存或取消当前编辑，再配置 AI 整理。");
-            return;
-        }
-        Run(() =>
-        {
-            var ai = _store.Read().Ai;
-            BeginEditor("ai", "AI 整理设置");
-            AiEndpoint.Text = ai.Endpoint; AiModel.Text = ai.Model; AiKey.Clear();
-            AiAutomatic.IsChecked = ai.AutoSummarize; AiInsecure.IsChecked = ai.AllowInsecureEndpoint;
-            AiEndpoint.Focus();
-        });
-    }
+        => OverTranslate.Views.Shell.ShellWindow.ShowOrActivate(OverTranslate.Views.Shell.ShellPage.Settings).ShowAiSettings();
 
     private void NewModel_Click(object sender, RoutedEventArgs e) => BeginModelEditor(new(), false);
     private void EditModel_Click(object sender, RoutedEventArgs e) { if (((Button)sender).Tag is LibraryConnection c) EditModel(c); }
@@ -787,22 +766,6 @@ public partial class LibraryWindow : Window
                 var modelLabel = saved.Model.Length > 0 ? $" · {FeedbackLabel(saved.Model)}" : "";
                 ShowSaveSuccess($"连接资料已保存：{FeedbackLabel(saved.Platform)}{modelLabel}。");
             }
-            else if (_editorKind == "ai")
-            {
-                var key = AiKey.Password;
-                LibraryHttp.ValidateKey(key);
-                var insecure = AiInsecure.IsChecked == true;
-                var endpoint = LibraryHttp.ValidateEndpoint(AiEndpoint.Text, insecure).AbsoluteUri.TrimEnd('/');
-                var model = AiModel.Text.Trim(); var automatic = AiAutomatic.IsChecked == true;
-                var save = Task.Run(() => _store.Update(s => s.Ai = new() { Endpoint = endpoint, Model = model,
-                    ApiKeyProtected = key.Length > 0 ? LocalSecretStore.Protect(key) : ModelPlatforms.SameOrigin(s.Ai.Endpoint, endpoint) ? s.Ai.ApiKeyProtected : "",
-                    AutoSummarize = automatic, AllowInsecureEndpoint = insecure }));
-                _editorSaveTask = save;
-                await save;
-                persisted = true;
-                if (_shutdown) return;
-                CloseEditor(); ShowSaveSuccess("AI 整理配置已保存。");
-            }
         }
         catch (Exception ex)
         {
@@ -814,7 +777,7 @@ public partial class LibraryWindow : Window
         if (summarize is not null && !_shutdown) await Summarize(summarize);
     }
 
-    private void AiSettings_Click(object sender, RoutedEventArgs e) => ShowAiSettings();
+    private void AiSettings_Click(object sender, RoutedEventArgs e) => OpenAiSettings();
 
     private void Shortcut_Click(object sender, RoutedEventArgs e)
         => OverTranslate.Views.Shell.ShellWindow.ShowOrActivate(OverTranslate.Views.Shell.ShellPage.Settings).ShowQuickToolSettings();

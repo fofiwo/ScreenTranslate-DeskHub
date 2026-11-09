@@ -1,0 +1,25 @@
+<UserControl x:Class="OverTranslate.Views.Settings.AiOrganizingSettingsPage"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             Foreground="{DynamicResource AppTextPrimary}" FontSize="13" FontWeight="Normal">
+    <StackPanel>
+        <TextBlock Text="提示词 AI 整理" Style="{StaticResource ProductSectionTitle}"/>
+        <TextBlock Text="整理资料库中提示词的标题、描述和标签，保留完整正文。可使用与翻译不同的模型。" Style="{StaticResource ProductHint}" Margin="0,0,0,20"/>
+        <StackPanel x:Name="FormPanel" IsEnabled="False">
+            <TextBlock Text="OpenAI 兼容 API 基础地址"/>
+            <TextBox x:Name="AiEndpoint" Style="{StaticResource ModernTextBox}" Height="40" Margin="0,8,0,16" TextChanged="Endpoint_Changed" AutomationProperties.Name="AI 整理 API 地址"/>
+            <TextBlock Text="模型 ID"/>
+            <TextBox x:Name="AiModel" Style="{StaticResource ModernTextBox}" Height="40" Margin="0,8,0,16" TextChanged="Input_Changed" AutomationProperties.Name="AI 整理模型 ID"/>
+            <TextBlock x:Name="KeyHint" Text="API Key（本地接口可留空）"/>
+            <PasswordBox x:Name="AiKey" Height="40" Padding="8" Margin="0,8,0,16" PasswordChanged="Input_Changed" Background="{DynamicResource AppInputBg}" Foreground="{DynamicResource AppTextPrimary}" BorderBrush="{DynamicResource AppInputBorder}" AutomationProperties.Name="AI 整理 API Key"/>
+            <CheckBox x:Name="AiAutomatic" Content="新建提示词后自动整理" Style="{StaticResource ModernCheckBox}" Checked="Input_Changed" Unchecked="Input_Changed"/>
+            <TextBlock Text="开启后会将提示词前 12000 字符发送给以上服务，可能消耗服务额度。" Style="{StaticResource ProductHint}" Margin="0,8,0,16"/>
+            <CheckBox x:Name="AiInsecure" Content="允许远程 HTTP 接口（API Key 未加密传输）" Style="{StaticResource ModernCheckBox}" Checked="Input_Changed" Unchecked="Input_Changed"/>
+        </StackPanel>
+        <WrapPanel Margin="0,20,0,0">
+            <Button x:Name="SaveButton" Content="保存 AI 整理设置" Style="{StaticResource ProductButton}" Click="Save_Click" IsEnabled="False" Margin="0,0,12,8"/>
+            <Button x:Name="ReloadButton" Content="重新加载" Style="{StaticResource ProductSecondaryButton}" Click="Reload_Click" Margin="0,0,0,8" ToolTip="放弃当前更改，重新读取已保存的 AI 整理设置"/>
+        </WrapPanel>
+        <TextBlock x:Name="StatusText" Style="{StaticResource ProductHint}" Margin="0,6,0,0" AutomationProperties.LiveSetting="Polite"/>
+    </StackPanel>
+</UserControl>

@@ -815,15 +815,6 @@ public sealed partial class ScreenTranslateShellTests
             Assert.Equal(Visibility.Visible, ((TextBlock)window.FindName("ModelEmpty")).Visibility);
             tabs.SelectedIndex = 0;
             root.UpdateLayout();
-            window.ShowAiSettings();
-            Render(window, "library-ai-settings", 1120, 740);
-            ((TextBox)window.FindName("AiEndpoint")).Text = "invalid-address";
-            ((System.Windows.Controls.Button)window.FindName("SaveButton")).RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Button.ClickEvent));
-            Assert.Contains("API", ((TextBlock)window.FindName("EditorStatus")).Text);
-            Assert.Equal(((SolidColorBrush)window.FindResource("AppError")).Color, ((SolidColorBrush)((TextBlock)window.FindName("EditorStatus")).Foreground).Color);
-            Render(window, "library-ai-error-minimum", 880, 580);
-            AssertInside(root, (FrameworkElement)window.FindName("SaveButton"));
-            Click("取消");
 
             var longDescription = string.Concat(Enumerable.Repeat("原有描述完整保留，不得被输入框截断。", 12));
             var longNote = string.Concat(Enumerable.Repeat("这是已经迁入的长备注，需要无损保存。", 36));

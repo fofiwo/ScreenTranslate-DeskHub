@@ -111,7 +111,7 @@
                 <TextBlock Text="ScreenTranslate" FontSize="12" Margin="12,0" Foreground="{DynamicResource AppTextSecondary}" VerticalAlignment="Center"/>
             </StackPanel>
             <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" WindowChrome.IsHitTestVisibleInChrome="True">
-
+                <Button x:Name="SettingsButton" Content="设置" Style="{StaticResource ProductSecondaryButton}" Height="30" MinWidth="64" Margin="0,0,12,0" Padding="12,0" Click="SettingsButton_Click" ToolTip="配置 AI、翻译与应用选项" AutomationProperties.Name="打开设置"/>
                 <Button x:Name="MinimizeBtn" Style="{StaticResource WindowCaptionButton}" Content="&#xE921;" Click="MinimizeBtn_Click"/>
                 <Button x:Name="MaximizeBtn" Style="{StaticResource WindowCaptionButton}" Content="&#xE922;" Click="MaximizeBtn_Click"/>
                 <Button x:Name="CloseBtn" Style="{StaticResource WindowCloseButton}" Content="&#xE8BB;" Click="CloseBtn_Click"/>
@@ -208,10 +208,11 @@
             <settings:DiagnosticNoteOverlay Grid.ColumnSpan="2" x:Name="DiagnosticNote"/>
         </Grid>
         <Grid x:Name="QuickWindowControls" Grid.Row="1" Grid.Column="1" Visibility="Collapsed" Margin="0,8,6,8">
-            <Grid.RowDefinitions><RowDefinition Height="32"/><RowDefinition Height="32"/><RowDefinition/></Grid.RowDefinitions>
+            <Grid.RowDefinitions><RowDefinition Height="32"/><RowDefinition Height="32"/><RowDefinition Height="32"/><RowDefinition/></Grid.RowDefinitions>
             <Button x:Name="QuickShellClose" Style="{StaticResource WindowCloseButton}" Width="32" Height="32" Content="&#xE8BB;" Click="CloseBtn_Click" ToolTip="关闭" AutomationProperties.Name="关闭窗口"/>
             <Button x:Name="QuickSidebarToggle" Grid.Row="1" Style="{StaticResource WindowSidebarToggle}" Width="32" Height="32" Content="&#xE700;" Click="SidebarToggleBtn_Click"/>
-            <Border x:Name="QuickDragArea" Grid.Row="2" Background="Transparent" MouseLeftButtonDown="QuickDrag_MouseLeftButtonDown" ToolTip="拖动窗口；双击最大化或还原">
+            <Button x:Name="QuickSettingsButton" Grid.Row="2" Style="{StaticResource WindowSidebarToggle}" Width="32" Height="32" Content="&#xE713;" Click="SettingsButton_Click" ToolTip="设置：AI、翻译与应用选项" AutomationProperties.Name="打开设置"/>
+            <Border x:Name="QuickDragArea" Grid.Row="3" Background="Transparent" MouseLeftButtonDown="QuickDrag_MouseLeftButtonDown" ToolTip="拖动窗口；双击最大化或还原">
                 <TextBlock Text="&#xE784;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" Foreground="{DynamicResource AppTextSecondary}" HorizontalAlignment="Center" VerticalAlignment="Top" Margin="0,12,0,0" IsHitTestVisible="False"/>
             </Border>
         </Grid>

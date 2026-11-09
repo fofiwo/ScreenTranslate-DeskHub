@@ -23,16 +23,18 @@
         <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition/></Grid.RowDefinitions>
         <StackPanel Margin="0,0,0,20">
             <TextBlock Text="设置" Style="{StaticResource PageTitle}"/>
-            <TextBlock Text="管理识别、翻译、快捷键和应用选项。" Style="{StaticResource PageSubtitle}"/>
+            <TextBlock Text="AI 接口、模型和提示词整理在“AI 与翻译”中配置。" Style="{StaticResource PageSubtitle}"/>
         </StackPanel>
         <TabControl x:Name="Tabs" Grid.Row="1" Background="{DynamicResource AppSurfaceBg}" BorderBrush="{DynamicResource AppBorder}" SelectionChanged="Tab_Changed">
             <TabItem Header="文字识别" Padding="20,12"><ContentControl x:Name="OcrHost"/></TabItem>
-            <TabItem Header="翻译服务" Padding="20,12">
-                <ScrollViewer VerticalScrollBarVisibility="Auto">
+            <TabItem Header="AI 与翻译" Padding="20,12">
+                <ScrollViewer x:Name="AiScroll" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                     <StackPanel Margin="0,24,12,24" MaxWidth="760" HorizontalAlignment="Stretch">
                         <TextBlock Text="AI 翻译服务" FontSize="20" FontWeight="SemiBold"/>
                         <TextBlock Text="连接 OpenAI 兼容接口，配置实际用于截图和持续翻译的地址、模型与翻译提示词。此配置与模型资料库独立；面板支持获取模型列表和连接测试。" TextWrapping="Wrap" Foreground="{DynamicResource AppTextSecondary}" Margin="0,12,0,20"/>
                         <Button Content="配置 AI 翻译服务" Style="{StaticResource ProductButton}" HorizontalAlignment="Left" Click="OpenAi_Click" Padding="20,10" Height="44"/>
+                        <Border Height="1" Background="{DynamicResource AppBorder}" Margin="0,28,0,24"/>
+                        <ContentControl x:Name="AiOrganizingHost"/>
                         <Border Height="1" Background="{DynamicResource AppBorder}" Margin="0,28,0,24"/>
                         <TextBlock Text="DeepL" FontSize="18" FontWeight="SemiBold"/>
                         <TextBlock Text="使用自己的 DeepL API 配置。" Foreground="{DynamicResource AppTextSecondary}" Margin="0,8,0,12"/>

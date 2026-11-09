@@ -276,15 +276,6 @@
       <TextBlock Text="手记余额" Style="{StaticResource LibraryLabel}"/><TextBox x:Name="BalanceBox" Style="{StaticResource Field}" AutomationProperties.Name="手记余额"/>
       <TextBlock Text="备注" Style="{StaticResource LibraryLabel}"/><TextBox x:Name="NoteBox" Style="{StaticResource MultilineField}" MinHeight="80" AutomationProperties.Name="连接备注"/>
      </StackPanel>
-     <StackPanel x:Name="AiEditor" Visibility="Collapsed">
-      <TextBlock Text="AI 仅整理标题、描述和标签，保留完整正文。" Style="{StaticResource ProductHint}" Margin="0,10,0,4"/>
-      <TextBlock Text="OpenAI 兼容 API 基础地址" Style="{StaticResource LibraryLabel}"/><TextBox x:Name="AiEndpoint" Style="{StaticResource Field}" AutomationProperties.Name="AI 整理 API 地址"/>
-      <TextBlock Text="模型 ID" Style="{StaticResource LibraryLabel}"/><TextBox x:Name="AiModel" Style="{StaticResource Field}" AutomationProperties.Name="AI 整理模型 ID"/>
-      <TextBlock Text="API Key · 留空保留同源地址已有 Key" Style="{StaticResource LibraryLabel}"/><PasswordBox x:Name="AiKey" AutomationProperties.Name="AI 整理 API Key"/>
-      <CheckBox x:Name="AiAutomatic" Content="新建提示词后自动整理" Margin="0,24,0,8"/>
-      <TextBlock Text="开启后会将提示词前 12000 字符发送给以上服务，可能消耗服务额度。" Style="{StaticResource ProductHint}" Margin="0,0,0,18"/>
-      <CheckBox x:Name="AiInsecure" Content="允许远程 HTTP 接口（未加密传输）" Margin="0,0,0,10"/>
-     </StackPanel>
     </StackPanel></ScrollViewer>
     <Grid Grid.Row="2" Margin="0,14,0,0"><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
      <StackPanel>

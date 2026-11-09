@@ -56,7 +56,8 @@ public sealed partial class ScreenTranslateShellTests
             Control<ComboBox>("PlatformBox").Text = "自定义测试";
             Control<TextBox>("EndpointBox").Text = "http://gateway.invalid/v1";
             Control<PasswordBox>("ModelKey").Password = "fixture-only";
-            Control<CheckBox>("AiInsecure").IsChecked = true;
+            var ai = new OverTranslate.Views.Settings.AiOrganizingSettingsPage(() => store);
+            ((CheckBox)ai.FindName("AiInsecure")).IsChecked = true;
             Fetch();
             Assert.Equal(0, handler.Sent);
             Assert.Contains("远程 HTTP", Control<TextBlock>("EditorStatus").Text);

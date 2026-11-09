@@ -86,16 +86,14 @@ public sealed partial class ScreenTranslateShellTests
             Assert.Equal(WindowState.Normal, window.WindowState);
             Assert.Equal(Visibility.Collapsed, header.Visibility);
 
-            // AI 整理从管理入口打开时仍能恢复完整头部，不丢失未保存编辑。
-            LibraryWindow.OpenAiSettings();
-            Assert.Equal(Visibility.Visible, header.Visibility);
-            Assert.Equal(Visibility.Visible, ((FrameworkElement)window.FindName("AiEditor")).Visibility);
-            Assert.False(((FrameworkElement)window.FindName("QuickWindowControls")).IsVisible);
-            ((TextBox)window.FindName("AiModel")).Text = "unsaved-fixture";
+            // 切换设置与快捷唤出时，资料库中未保存的正文仍须保留。
+            typeof(LibraryWindow).GetMethod("NewPrompt_Click", BindingFlags.Instance | BindingFlags.NonPublic)!
+                .Invoke(window, [window, new RoutedEventArgs()]);
+            ((TextBox)window.FindName("PromptBody")).Text = "unsaved-fixture";
             window.Hide();
             LibraryWindow.Toggle();
-            Assert.Equal("unsaved-fixture", ((TextBox)window.FindName("AiModel")).Text);
-            Assert.Equal(Visibility.Visible, ((FrameworkElement)window.FindName("AiEditor")).Visibility);
+            Assert.Equal("unsaved-fixture", ((TextBox)window.FindName("PromptBody")).Text);
+            Assert.Equal(Visibility.Visible, ((FrameworkElement)window.FindName("PromptEditor")).Visibility);
             Render(window, "library-shortcut-editor", 880, 580);
             AssertNoNativeCaption(window);
             var close = (System.Windows.Controls.Button)window.FindName("QuickCloseButton");
