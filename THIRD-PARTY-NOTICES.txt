@@ -1935,3 +1935,13 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 
+
+-------------------------------------------------------------------------------
+Lucide screenshot toolbar icons
+-------------------------------------------------------------------------------
+Project: https://github.com/lucide-icons/lucide
+Source: https://raw.githubusercontent.com/lucide-icons/lucide/main/LICENSE
+Snapshot date: 2026-11-09
+License: ISC; some icons derived from Feather under MIT.
+The complete upstream license and notices are distributed in licenses/Lucide.txt
+(source checkout: docs/licenses/Lucide.txt).

@@ -24,6 +24,8 @@ public class GlobalHotkey : IDisposable
     public const int OcrExtractId = 9007;
     public const int LibraryWindowId = 9008;
     public const int ClipboardHistoryId = 9009;
+    public const int ScreenshotId = 9010;
+    public const int PinImageId = 9011;
 
     /// <summary>The shortcut that opens the main window.</summary>
     public const int TranslationWindowId = 9002;

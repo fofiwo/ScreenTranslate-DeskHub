@@ -237,6 +237,10 @@ public partial class ShellWindow : Window
         var clipboardFailed = System.Windows.Application.Current?.MainWindow is MainWindow current
             && current.HotkeyRegistrationFailures.Contains(HotkeyAction.ClipboardHistory);
         ClipboardHotkeyText.Text = clipboard.IsActive && !clipboardFailed ? settings.ClipboardHotkeyDisplay : "";
+        string SnipHint(HotkeyAction action, string display) => HotkeyBindings.Resolve(settings).Any(b => b.Action == action && b.IsActive)
+            && !(System.Windows.Application.Current?.MainWindow is MainWindow owner && owner.HotkeyRegistrationFailures.Contains(action)) ? display : "";
+        ScreenshotHotkeyText.Text = SnipHint(HotkeyAction.Screenshot, settings.ScreenshotHotkeyDisplay);
+        PinImageHotkeyText.Text = SnipHint(HotkeyAction.PinImage, settings.PinImageHotkeyDisplay);
     }
 
     internal void RefreshLibrarySummary()
@@ -258,6 +262,16 @@ public partial class ShellWindow : Window
 
     private void ClipboardHistoryBtn_Click(object sender, RoutedEventArgs e) => ClipboardHistory.ClipboardHistoryWindow.Open();
 
+    private void ScreenshotBtn_Click(object sender, RoutedEventArgs e)
+    {
+        if (System.Windows.Application.Current?.MainWindow is MainWindow main) main.StartScreenshotFromShell(this);
+    }
+
+    private void PinImageBtn_Click(object sender, RoutedEventArgs e)
+    {
+        if (System.Windows.Application.Current?.MainWindow is MainWindow main) main.PinClipboardImage();
+    }
+
     private void OnRealtimeStateChanged(object? sender, EventArgs e) =>
         Dispatcher.BeginInvoke(RefreshQuickToolAvailability);
 
@@ -269,6 +283,8 @@ public partial class ShellWindow : Window
 
         _homePage?.RefreshAvailability();
         CaptureBtn.IsEnabled = !framing;
+        ScreenshotBtn.IsEnabled = !framing;
+        ScreenshotBtn.ToolTip = framing ? "请先完成持续翻译区域框选。" : "框选、标注、取色与贴图";
         CaptureBtn.ToolTip = framing
             ? LocalizationService.Get("S.Shell.CaptureBlockedByRealtimeFraming")
             : null;

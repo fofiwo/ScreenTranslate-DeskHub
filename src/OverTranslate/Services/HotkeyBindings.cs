@@ -11,6 +11,8 @@ public enum HotkeyAction
     OcrExtract,
     LibraryWindow,
     ClipboardHistory,
+    Screenshot,
+    PinImage,
 }
 
 /// <summary>
@@ -104,6 +106,8 @@ public static class HotkeyBindings
         HotkeyAction.OcrExtract => ShortcutTrigger.Keyboard(settings.OcrHotkeyModifiers, settings.OcrHotkeyVirtualKey),
         HotkeyAction.LibraryWindow => ShortcutTrigger.Keyboard(settings.LibraryHotkeyModifiers, settings.LibraryHotkeyVirtualKey),
         HotkeyAction.ClipboardHistory => ShortcutTrigger.Keyboard(settings.ClipboardHotkeyModifiers, settings.ClipboardHotkeyVirtualKey),
+        HotkeyAction.Screenshot => ShortcutTrigger.Keyboard(settings.ScreenshotHotkeyModifiers, settings.ScreenshotHotkeyVirtualKey),
+        HotkeyAction.PinImage => ShortcutTrigger.Keyboard(settings.PinImageHotkeyModifiers, settings.PinImageHotkeyVirtualKey),
         _ => throw new ArgumentOutOfRangeException(nameof(action), action, null),
     };
 
@@ -176,6 +180,8 @@ public static class HotkeyBindings
             (HotkeyAction.OcrExtract, TriggerFor(settings, HotkeyAction.OcrExtract), settings.OcrHotkeyEnabled),
             (HotkeyAction.LibraryWindow, TriggerFor(settings, HotkeyAction.LibraryWindow), settings.LibraryHotkeyEnabled),
             (HotkeyAction.ClipboardHistory, TriggerFor(settings, HotkeyAction.ClipboardHistory), settings.ClipboardHotkeyEnabled),
+            (HotkeyAction.Screenshot, TriggerFor(settings, HotkeyAction.Screenshot), settings.ScreenshotHotkeyEnabled),
+            (HotkeyAction.PinImage, TriggerFor(settings, HotkeyAction.PinImage), settings.PinImageHotkeyEnabled),
         };
 
         var claimed = new Dictionary<ShortcutTrigger, HotkeyAction>();

@@ -81,6 +81,8 @@
                 </Button>
 
                 <!-- 設定 -->
+                <Button x:Name="ScreenshotBtn" Style="{StaticResource TrayMenuItem}" Click="ScreenshotBtn_Click" Content="截图与标注"/>
+                <Button x:Name="PinImageBtn" Style="{StaticResource TrayMenuItem}" Click="PinImageBtn_Click" Content="贴图（剪贴板图片）"/>
                 <Button x:Name="LibraryBtn" Style="{StaticResource TrayMenuItem}" Click="LibraryBtn_Click">
                     <StackPanel Orientation="Horizontal">
                         <TextBlock Text="&#xE8A5;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" Width="22" FontSize="14" Foreground="{DynamicResource AppTextSecondary}"/>

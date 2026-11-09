@@ -17,7 +17,7 @@ previous = json.loads(manifest_file.read_text(encoding="utf-8")) if manifest_fil
 roots = {"src"}
 files = {"LICENSE", "THIRD-PARTY-NOTICES.txt", "FORK-NOTICES.md", "PRIVACY.md", ".gitattributes", ".gitignore",
          "build-screen-translate-installer.ps1", "README.DeskHub.md", "publish-deskhub.ps1",
-         "docs/ScreenTranslate-Install.md", ".github/workflows/deskhub-release.yml",
+         "docs/ScreenTranslate-Install.md", "docs/Screenshot.md", ".github/workflows/deskhub-release.yml",
          "tools/prepare-public-source.py",
          ".codex/skills/git-release-overtranslate/template.md",
          ".claude/skills/git-release-overtranslate/template.md"}

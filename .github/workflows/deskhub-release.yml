@@ -31,7 +31,7 @@ jobs:
       - name: Validate update and sync behavior
         shell: pwsh
         run: |
-          dotnet test src/OverTranslate.Tests -c Release --filter 'FullyQualifiedName~DeskHubUpdateTests|FullyQualifiedName~DeltaAwareUpdateManagerTests|FullyQualifiedName~ReleaseNotesTests|FullyQualifiedName~UnifiedLanSyncTests|FullyQualifiedName~LibrarySyncTests|FullyQualifiedName~InstallationDataTests' --logger 'console;verbosity=minimal'
+          dotnet test src/OverTranslate.Tests -c Release --filter 'FullyQualifiedName~DeskHubUpdateTests|FullyQualifiedName~DeltaAwareUpdateManagerTests|FullyQualifiedName~ReleaseNotesTests|FullyQualifiedName~UnifiedLanSyncTests|FullyQualifiedName~LibrarySyncTests|FullyQualifiedName~InstallationDataTests|FullyQualifiedName~SnipDocumentTests|FullyQualifiedName~HotkeyBindingsTests' --logger 'console;verbosity=minimal'
           if ($LASTEXITCODE -ne 0) { throw 'Required tests failed' }
       - name: Install pinned packaging tool
         shell: pwsh
@@ -60,10 +60,10 @@ jobs:
           $notes = @'
           ScreenTranslate DeskHub 安装版，适用于 Windows x64。
 
-          - 手动检查更新立即显示检查中状态，并提示结果、失败或超时。
-          - 整理设置页与快捷工具入口，改善保存反馈和快捷键录入。
-          - 设备与同步统一管理剪贴板及资料库连接，支持复制配对信息。
-          - 移除旧资料库独立同步入口，原资料保留；原独立同步用户需重新配对。
+          - 新增独立截图与标注，支持矩形框选、移动缩放、矩形、箭头、画笔、文字和马赛克。
+          - 新增截图贴图和剪贴板图片贴图，支持多张置顶、拖动、缩放和复制。
+          - 新增原始屏幕取色，显示 HEX／RGB 并复制色值。
+          - 重做截图浮层，采用 Lucide 图标、中文提示和按需展开的颜色／粗细选项；截图和贴图快捷键可在设置中修改。
           - 安装包不包含开发者的用户数据；升级保留独立数据目录。
 
           首次使用请下载 ScreenTranslate-win-Setup.exe。已有早期本地版需手动安装一次，之后可在应用内更新。

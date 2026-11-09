@@ -44,6 +44,8 @@ public sealed partial class ScreenTranslateShellTests
                     Source = new Uri("pack://application:,,,/ScreenTranslate;component/Resources/Strings.zh-Hans.xaml", UriKind.Absolute)
                 };
                 ApplyTheme(app, "Light");
+                VerifySnippingTools();
+                if (Environment.GetEnvironmentVariable("SCREEN_TRANSLATE_SNIP_ONLY") == "1") return;
                 if (Environment.GetEnvironmentVariable("SCREEN_TRANSLATE_LAYOUT_ONLY") == "1")
                 {
                     shell = new ShellWindow(() => new LibraryState(), () => { });
@@ -174,7 +176,7 @@ public sealed partial class ScreenTranslateShellTests
                 Assert.True(fallback.IsChecked);
                 formatting.IsChecked = true;
                 fallback.IsChecked = false;
-                Assert.Equal(6, ((StackPanel)advanced.FindName("HotkeyRows")).Children.Count);
+                Assert.Equal(8, ((StackPanel)advanced.FindName("HotkeyRows")).Children.Count);
                 Render(shell, "advanced");
                 VerifyQuickToolSettings(shell);
                 VerifySettingsMigrationReview();
@@ -348,7 +350,7 @@ public sealed partial class ScreenTranslateShellTests
         Assert.Equal(Visibility.Visible, ((FrameworkElement)quick.FindName("HotkeySection")).Visibility);
         Assert.Equal(Visibility.Collapsed, ((FrameworkElement)quick.FindName("AdvancedOptions")).Visibility);
         var quickRows = ((StackPanel)quick.FindName("HotkeyRows")).Children.Cast<Grid>().ToArray();
-        Assert.Equal(6, quickRows.Length);
+        Assert.Equal(8, quickRows.Length);
         Assert.All(quickRows, row => Assert.Equal(Visibility.Visible, row.Visibility));
         Assert.Contains(quickRows, row => row.Children.OfType<TextBox>().Any(box => Equals(box.Tag, HotkeyAction.ClipboardHistory)));
         Render(shell, "shortcuts", 1100, 680);

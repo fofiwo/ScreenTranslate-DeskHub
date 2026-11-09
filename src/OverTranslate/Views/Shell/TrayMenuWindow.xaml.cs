@@ -19,6 +19,8 @@ public partial class TrayMenuWindow : Window
     public event EventHandler? OpenSettingsRequested;
     public event EventHandler? OpenLibraryRequested;
     public event EventHandler? ExitRequested;
+    public event EventHandler? ScreenshotRequested;
+    public event EventHandler? PinImageRequested;
 
     private readonly System.Drawing.Point _cursorPhys;
     private bool _dismissed;
@@ -156,5 +158,18 @@ public partial class TrayMenuWindow : Window
     {
         ExitRequested?.Invoke(this, EventArgs.Empty);
         Dismiss();
+    }
+
+    private void ScreenshotBtn_Click(object sender, RoutedEventArgs e)
+    {
+        WindowScreenPresence.HideAndWaitForScreen(this);
+        Dismiss();
+        ScreenshotRequested?.Invoke(this, EventArgs.Empty);
+    }
+
+    private void PinImageBtn_Click(object sender, RoutedEventArgs e)
+    {
+        Dismiss();
+        PinImageRequested?.Invoke(this, EventArgs.Empty);
     }
 }

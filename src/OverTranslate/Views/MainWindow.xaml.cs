@@ -163,6 +163,11 @@ public partial class MainWindow : Window
         _clipboardHotkey = new GlobalHotkey(GlobalHotkey.ClipboardHistoryId);
         _clipboardHotkey.HotkeyPressed += (_, _) => Dispatcher.Invoke(Views.ClipboardHistory.ClipboardHistoryWindow.Toggle);
 
+        _snipHotkey = new GlobalHotkey(GlobalHotkey.ScreenshotId);
+        _snipHotkey.HotkeyPressed += (_, _) => Dispatcher.Invoke(() => StartScreenshotFromShell());
+        _pinImageHotkey = new GlobalHotkey(GlobalHotkey.PinImageId);
+        _pinImageHotkey.HotkeyPressed += (_, _) => Dispatcher.Invoke(PinClipboardImage);
+
         var hooks = new Dictionary<HotkeyAction, GlobalHotkey>
         {
             [HotkeyAction.Capture] = _hotkey,
@@ -171,6 +176,8 @@ public partial class MainWindow : Window
             [HotkeyAction.OcrExtract] = _ocrHotkey,
             [HotkeyAction.LibraryWindow] = _libraryHotkey,
             [HotkeyAction.ClipboardHistory] = _clipboardHotkey,
+            [HotkeyAction.Screenshot] = _snipHotkey,
+            [HotkeyAction.PinImage] = _pinImageHotkey,
         };
 
         var failed = new List<HotkeyAction>();
@@ -257,6 +264,8 @@ public partial class MainWindow : Window
     /// </remarks>
     public void ReRegisterHotkey()
     {
+        _snipHotkey?.Unregister();
+        _pinImageHotkey?.Unregister();
         _clipboardHotkey?.Unregister();
         _libraryHotkey?.Unregister();
         _hotkey?.Unregister();
@@ -315,6 +324,7 @@ public partial class MainWindow : Window
     /// </remarks>
     private async Task RunCaptureYieldingRealtimeAsync(string origin)
     {
+        _snipCapture?.Close();
         if (!RealtimeSessionController.Instance.TryYieldToCapture()) return;
 
         try
@@ -414,6 +424,7 @@ public partial class MainWindow : Window
     /// </summary>
     public void StartCaptureFromShell(Window shell)
     {
+        _snipCapture?.Close();
         // Stands a running session down exactly as the shortcut does, and refuses in the one state
         // that shortcut refuses in. The rail's button is disabled while blocks are being framed, so
         // this is the guard rather than the notice — but it is the one that actually enforces the
@@ -492,6 +503,7 @@ public partial class MainWindow : Window
 
     private async Task RunCaptureSessionAsync(string origin = "hotkey", bool ocrOnly = false)
     {
+        _snipCapture?.Close();
         if (HasActiveSession)
         {
             CloseAll($"{origin} toggle");
@@ -630,6 +642,7 @@ public partial class MainWindow : Window
     private void OnOcrHotkeyPressed(object? sender, EventArgs e) =>
         Dispatcher.Invoke(async () =>
         {
+            _snipCapture?.Close();
             if (!RealtimeSessionController.Instance.TryYieldToCapture()) return;
             var shell = ShellWindow.Current;
             try
@@ -1427,8 +1440,9 @@ public partial class MainWindow : Window
     // was actually torn down, which is what tells the caller the app is back in a clean state.
     internal bool ForceCloseOverlays()
     {
-        if (!HasActiveSession) return false;
+        if (!IsCapturing) return false;
 
+        CloseWindow(_snipCapture, w => w.Close(), nameof(ScreenCaptureWindow));
         CloseAll("unhandled exception");
         return true;
     }
@@ -1442,7 +1456,7 @@ public partial class MainWindow : Window
     /// Whether a screenshot capture — selection, overlay or toolbar — is on screen right now, so
     /// the other feature can decline to start on top of it.
     /// </summary>
-    public bool IsCapturing => HasActiveSession;
+    public bool IsCapturing => HasActiveSession || _snipCapture is not null;
 
     private bool IsCurrentSelectionSession(int sessionId, ToolbarWindow? toolbar, ScreenCaptureWindow? captureWindow) =>
         sessionId == _selectionSessionId &&
@@ -1459,6 +1473,8 @@ public partial class MainWindow : Window
         _trayMenu.SetRealtimeRunning(Views.Realtime.RealtimeSessionController.Instance.IsActive);
         _trayMenu.OpenSettingsRequested    += (_, _) => OpenSettings();
         _trayMenu.OpenLibraryRequested     += (_, _) => Views.Library.LibraryWindow.Open();
+        _trayMenu.ScreenshotRequested      += (_, _) => StartScreenshotFromShell();
+        _trayMenu.PinImageRequested        += (_, _) => PinClipboardImage();
         _trayMenu.ExitRequested            += (_, _) => ExitApp();
         _trayMenu.Closed                   += (_, _) => _trayMenu = null;
         _trayMenu.Show();
@@ -1496,6 +1512,10 @@ public partial class MainWindow : Window
     {
         if (_exitingApplication) return;
         _exitingApplication = true;
+        _snipCapture?.Close();
+        Views.Capture.PinnedImageWindow.Shutdown();
+        _snipHotkey?.Dispose();
+        _pinImageHotkey?.Dispose();
         Views.Library.LibraryWindow.Shutdown();
         Views.ClipboardHistory.ClipboardHistoryWindow.Shutdown();
         _clipboardHotkey?.Dispose();

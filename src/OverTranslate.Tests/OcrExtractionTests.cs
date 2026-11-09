@@ -148,7 +148,8 @@ public class OcrExtractionTests
         Assert.True(restored.AllowFallbackServices);
         Assert.Equal(HotkeyAction.Capture, HotkeyBindings.Resolve(restored).Single(b => b.Action == HotkeyAction.OcrExtract).ShadowedBy);
         Assert.Equal(new[] { HotkeyAction.Capture, HotkeyAction.TranslationWindow, HotkeyAction.RealtimePause,
-            HotkeyAction.OcrExtract, HotkeyAction.LibraryWindow, HotkeyAction.ClipboardHistory },
+            HotkeyAction.OcrExtract, HotkeyAction.LibraryWindow, HotkeyAction.ClipboardHistory,
+            HotkeyAction.Screenshot, HotkeyAction.PinImage },
             HotkeyBindings.Resolve(restored).Select(binding => binding.Action));
     }
 }

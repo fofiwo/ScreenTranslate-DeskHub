@@ -62,11 +62,12 @@ public partial class ScreenCaptureWindow : Window
     private double _dpiX = 1.0;
     private double _dpiY = 1.0;
 
-    public ScreenCaptureWindow(Bitmap screenshot, System.Drawing.Rectangle physBounds)
+    public ScreenCaptureWindow(Bitmap screenshot, System.Drawing.Rectangle physBounds, bool snippingTools = false)
     {
         _screenshot = screenshot;
         _physBounds = physBounds;
         InitializeComponent();
+        if (snippingTools) InitializeSnippingTools();
 
         // Provisional: OnSourceInitialized replaces this with the pixel rect the screenshot was
         // captured from. Needed only so the window has a size before its handle exists.
@@ -109,7 +110,7 @@ public partial class ScreenCaptureWindow : Window
 
         // Claimed only once the first frame is on screen. Activating before that forces a
         // foreground switch while the window is still empty, which flashes its black background.
-        Activate();
+        if (!_snipRecoveryYielded) Activate();
     }
 
     // The dim layer's outer edge is the window's, so it is laid down with the first layout rather
@@ -196,9 +197,16 @@ public partial class ScreenCaptureWindow : Window
         return IntPtr.Zero;
     }
 
+    protected override void OnPreviewKeyDown(KeyEventArgs e)
+    {
+        base.OnPreviewKeyDown(e);
+        HandleSnipKey(e);
+    }
+
     protected override void OnKeyDown(KeyEventArgs e)
     {
         base.OnKeyDown(e);
+        if (HandleSnipKey(e)) return;
         // Esc must cancel at any stage, including after processing started. This is the fallback
         // path for when OverlayWindow's low-level keyboard hook is not in play (not yet installed,
         // already torn down, or dropped by Windows) — without it, a session that fails mid-flight
@@ -220,7 +228,8 @@ public partial class ScreenCaptureWindow : Window
 
     protected override void OnMouseLeftButtonDown(MouseButtonEventArgs e)
     {
-        if (_processingStarted || _hasSelection) return;
+        if (_snipCanvas is not null && IsSnipToolbarTarget(e.OriginalSource as DependencyObject)) return;
+        if (_processingStarted || _hasSelection || _snipWriting) return;
         base.OnMouseLeftButtonDown(e);
         _startPoint  = e.GetPosition(this);
         _isDragging  = true;
@@ -259,7 +268,8 @@ public partial class ScreenCaptureWindow : Window
             SetFrameVisibility(false);
             SetHandlesVisibility(false);
             UpdateDimLayer();
-            HintHost.Visibility = Visibility.Visible;
+            HintHost.Visibility = _snipCanvas is null ? Visibility.Visible : Visibility.Collapsed;
+            RefreshSnipSelection();
             return;
         }
 
@@ -492,6 +502,7 @@ public partial class ScreenCaptureWindow : Window
 
         SetHandlesVisibility(_hasSelection && !_processingStarted);
         UpdateDimLayer();
+        RefreshSnipSelection();
     }
 
     private void SetHandlesVisibility(bool visible)
@@ -520,7 +531,7 @@ public partial class ScreenCaptureWindow : Window
     /// </summary>
     private void SelectionBody_DragDelta(object sender, DragDeltaEventArgs e)
     {
-        if (_processingStarted || !_hasSelection) return;
+        if (_processingStarted || !_hasSelection || _snipWriting) return;
 
         double x = Math.Clamp(
             _selectionWpfRect.X + e.HorizontalChange, 0, Math.Max(0, ActualWidth - _selectionWpfRect.Width));
@@ -555,7 +566,7 @@ public partial class ScreenCaptureWindow : Window
 
     private void ResizeSelectionCorner(WPoint fixedPoint, WPoint movingPoint)
     {
-        if (_processingStarted || !_hasSelection) return;
+        if (_processingStarted || !_hasSelection || _snipWriting) return;
 
         movingPoint.X = Math.Clamp(movingPoint.X, 0, ActualWidth);
         movingPoint.Y = Math.Clamp(movingPoint.Y, 0, ActualHeight);

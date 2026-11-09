@@ -35,7 +35,8 @@ public partial class SettingsPage : UserControl
         foreach (var (action, title) in new[] {
             (HotkeyAction.Capture, "截图翻译"), (HotkeyAction.RealtimePause, "持续翻译 / 暂停 / 恢复"),
             (HotkeyAction.TranslationWindow, "打开主窗口"), (HotkeyAction.OcrExtract, "OCR 提取文字并复制"),
-            (HotkeyAction.LibraryWindow, "提示词与模型资料"), (HotkeyAction.ClipboardHistory, "剪贴板历史") })
+            (HotkeyAction.LibraryWindow, "提示词与模型资料"), (HotkeyAction.ClipboardHistory, "剪贴板历史"),
+            (HotkeyAction.Screenshot, "截图与标注"), (HotkeyAction.PinImage, "剪贴板图片贴图") })
         {
             var row = new Grid { Margin = new Thickness(0, 0, 0, 10) };
             row.ColumnDefinitions.Add(new ColumnDefinition());
@@ -97,7 +98,9 @@ public partial class SettingsPage : UserControl
                     HotkeyAction.Capture => s.HotkeyDisplay, HotkeyAction.RealtimePause => s.RealtimePauseHotkeyDisplay,
                     HotkeyAction.TranslationWindow => s.TranslationWindowHotkeyDisplay,
                     HotkeyAction.LibraryWindow => s.LibraryHotkeyDisplay,
-                    HotkeyAction.ClipboardHistory => s.ClipboardHotkeyDisplay, _ => s.OcrHotkeyDisplay };
+                    HotkeyAction.ClipboardHistory => s.ClipboardHotkeyDisplay,
+                    HotkeyAction.Screenshot => s.ScreenshotHotkeyDisplay, HotkeyAction.PinImage => s.PinImageHotkeyDisplay,
+                    _ => s.OcrHotkeyDisplay };
                 box.Text = display; box.IsEnabled = binding.Enabled;
                 _enabled[binding.Action].IsChecked = binding.Enabled;
             }
@@ -158,6 +161,8 @@ public partial class SettingsPage : UserControl
             case HotkeyAction.OcrExtract: s.OcrHotkeyEnabled = on; break;
             case HotkeyAction.LibraryWindow: s.LibraryHotkeyEnabled = on; break;
             case HotkeyAction.ClipboardHistory: s.ClipboardHotkeyEnabled = on; break;
+            case HotkeyAction.Screenshot: s.ScreenshotHotkeyEnabled = on; break;
+            case HotkeyAction.PinImage: s.PinImageHotkeyEnabled = on; break;
         }
         SaveShortcut();
     }
@@ -198,6 +203,8 @@ public partial class SettingsPage : UserControl
             case HotkeyAction.OcrExtract: s.OcrHotkeyModifiers = mods; s.OcrHotkeyVirtualKey = vk; s.OcrHotkeyDisplay = display; break;
             case HotkeyAction.LibraryWindow: s.LibraryHotkeyModifiers = mods; s.LibraryHotkeyVirtualKey = vk; s.LibraryHotkeyDisplay = display; break;
             case HotkeyAction.ClipboardHistory: s.ClipboardHotkeyModifiers = mods; s.ClipboardHotkeyVirtualKey = vk; s.ClipboardHotkeyDisplay = display; break;
+            case HotkeyAction.Screenshot: s.ScreenshotHotkeyModifiers = mods; s.ScreenshotHotkeyVirtualKey = vk; s.ScreenshotHotkeyDisplay = display; break;
+            case HotkeyAction.PinImage: s.PinImageHotkeyModifiers = mods; s.PinImageHotkeyVirtualKey = vk; s.PinImageHotkeyDisplay = display; break;
         }
         SaveShortcut();
     }

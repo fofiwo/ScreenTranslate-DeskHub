@@ -19,6 +19,24 @@ public class HotkeyBindingsTests
     private const uint CtrlAlt = 3;
 
     [Fact]
+    public void ScreenshotAndPinDefaultsRoundTripAndNeverStealExistingShortcuts()
+    {
+        var settings = SettingsService.Parse("{}");
+        Assert.Equal(ShortcutTrigger.Keyboard(3, 0x51), HotkeyBindings.TriggerFor(settings, HotkeyAction.Screenshot));
+        Assert.Equal(ShortcutTrigger.Keyboard(3, 0x49), HotkeyBindings.TriggerFor(settings, HotkeyAction.PinImage));
+        settings.ScreenshotHotkeyVirtualKey = settings.HotkeyVirtualKey;
+        Assert.Equal(HotkeyAction.Capture, HotkeyBindings.Resolve(settings).Single(b => b.Action == HotkeyAction.Screenshot).ShadowedBy);
+        settings.ScreenshotHotkeyEnabled = false;
+        settings.PinImageHotkeyModifiers = 6; settings.PinImageHotkeyVirtualKey = 0x78;
+        settings.PinImageHotkeyDisplay = "Ctrl+Shift+F9";
+        var restored = SettingsService.Parse(SettingsService.Serialize(settings));
+        Assert.False(restored.ScreenshotHotkeyEnabled);
+        Assert.Equal(ShortcutTrigger.Keyboard(6, 0x78), HotkeyBindings.TriggerFor(restored, HotkeyAction.PinImage));
+        Assert.Equal("Ctrl+Shift+F9", restored.PinImageHotkeyDisplay);
+        Assert.Equal(settings.HotkeyDisplay, restored.HotkeyDisplay);
+    }
+
+    [Fact]
     public void EveryDefaultCombinationIsDistinctSoAllOfThemStayOn()
     {
         var active = HotkeyBindings.Active(new AppSettings()).ToList();
@@ -31,6 +49,8 @@ public class HotkeyBindingsTests
                 HotkeyAction.OcrExtract,
                 HotkeyAction.LibraryWindow,
                 HotkeyAction.ClipboardHistory,
+                HotkeyAction.Screenshot,
+                HotkeyAction.PinImage,
             ],
             active.Select(binding => binding.Action));
     }
@@ -184,7 +204,7 @@ public class HotkeyBindingsTests
         var settings = new AppSettings { HotkeyInputKind = kind, HotkeyGamepadButton = GamepadShortcutButton.X,
             QuickLookupHotkeyEnabled = true, QuickTranslateHotkeyEnabled = true };
         Assert.All(HotkeyBindings.Active(settings), b => Assert.Equal(ShortcutInputKind.Keyboard, b.InputKind));
-        Assert.Equal(6, HotkeyBindings.Resolve(settings).Count);
+        Assert.Equal(8, HotkeyBindings.Resolve(settings).Count);
     }
 
     [Fact]

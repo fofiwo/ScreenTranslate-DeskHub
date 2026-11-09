@@ -11,6 +11,14 @@ public enum TranslationProvider { Google, Google2, GoogleChrome, Bing, Microsoft
 
 public class AppSettings
 {
+    public uint ScreenshotHotkeyModifiers { get; set; } = 3;
+    public uint ScreenshotHotkeyVirtualKey { get; set; } = 0x51;
+    public string ScreenshotHotkeyDisplay { get; set; } = "Ctrl+Alt+Q";
+    public bool ScreenshotHotkeyEnabled { get; set; } = true;
+    public uint PinImageHotkeyModifiers { get; set; } = 3;
+    public uint PinImageHotkeyVirtualKey { get; set; } = 0x49;
+    public string PinImageHotkeyDisplay { get; set; } = "Ctrl+Alt+I";
+    public bool PinImageHotkeyEnabled { get; set; } = true;
     public uint ClipboardHotkeyModifiers { get; set; } = 3;
     public uint ClipboardHotkeyVirtualKey { get; set; } = 0x56;
     public string ClipboardHotkeyDisplay { get; set; } = "Ctrl+Alt+V";

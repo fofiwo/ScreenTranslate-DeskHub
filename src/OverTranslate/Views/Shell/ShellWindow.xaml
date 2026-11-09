@@ -69,6 +69,21 @@
                     </Grid>
                     <Border Height="1" Background="{DynamicResource AppBorder}" Margin="16,18,16,14"/>
                     <TextBlock Text="{DynamicResource S.Shell.QuickTools}" Margin="16,0,0,10" FontSize="11" Foreground="{DynamicResource AppTextSecondary}"/>
+                    <Grid>
+                    <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition/></Grid.ColumnDefinitions>
+                    <Button x:Name="ScreenshotBtn" ToolTipService.ShowOnDisabled="True" Style="{StaticResource RailQuickTool}" Click="ScreenshotBtn_Click" AutomationProperties.Name="截图与标注">
+                        <StackPanel HorizontalAlignment="Center">
+                            <TextBlock Text="截图标注" TextAlignment="Center" TextTrimming="CharacterEllipsis"/>
+                            <Viewbox Stretch="Uniform" StretchDirection="DownOnly"><TextBlock x:Name="ScreenshotHotkeyText" Style="{StaticResource QuickToolHotkeyText}"/></Viewbox>
+                        </StackPanel>
+                    </Button>
+                    <Button x:Name="PinImageBtn" Grid.Column="1" Style="{StaticResource RailQuickTool}" Click="PinImageBtn_Click" AutomationProperties.Name="贴图（剪贴板图片）" ToolTip="将剪贴板图片贴到桌面">
+                        <StackPanel HorizontalAlignment="Center">
+                            <TextBlock Text="贴图" TextAlignment="Center"/>
+                            <Viewbox Stretch="Uniform" StretchDirection="DownOnly"><TextBlock x:Name="PinImageHotkeyText" Style="{StaticResource QuickToolHotkeyText}"/></Viewbox>
+                        </StackPanel>
+                    </Button>
+                    </Grid>
                     <Button x:Name="CaptureBtn" ToolTipService.ShowOnDisabled="True" Style="{StaticResource RailQuickTool}" Click="CaptureBtn_Click">
                         <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
                             <TextBlock Text="框选屏幕" TextAlignment="Center" TextTrimming="CharacterEllipsis"/>
