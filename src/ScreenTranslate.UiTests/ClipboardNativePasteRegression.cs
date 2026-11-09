@@ -62,6 +62,9 @@ public sealed partial class ScreenTranslateShellTests
             using var handles = JsonDocument.Parse(File.ReadAllText(ready));
             var target = new IntPtr(handles.RootElement.GetProperty("Window").GetInt64());
             var focus = new IntPtr(handles.RootElement.GetProperty("Focus").GetInt64());
+            // 隐藏 PowerShell 控制台的启动标志也会隐藏第一个 WinForms 窗口；只显示本测试创建的编辑器。
+            NativePasteShowWindow(target, 5);
+            Assert.True(NativePasteIsWindowVisible(target), "The synthetic editor must be visible before testing foreground paste.");
             NativePasteSetForeground(target);
             PumpUntil(() => NativePasteGetForeground() == target);
             var destination = OriginalApplicationPaste.CaptureTarget();
@@ -100,4 +103,8 @@ public sealed partial class ScreenTranslateShellTests
     private static extern bool NativePasteSetForeground(IntPtr window);
     [DllImport("user32.dll", EntryPoint = "GetForegroundWindow")]
     private static extern IntPtr NativePasteGetForeground();
+    [DllImport("user32.dll", EntryPoint = "IsWindowVisible")]
+    private static extern bool NativePasteIsWindowVisible(IntPtr window);
+    [DllImport("user32.dll", EntryPoint = "ShowWindow")]
+    private static extern bool NativePasteShowWindow(IntPtr window, int command);
 }

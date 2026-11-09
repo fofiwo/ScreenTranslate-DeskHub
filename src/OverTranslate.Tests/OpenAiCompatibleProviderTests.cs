@@ -786,10 +786,12 @@ public class OpenAiCompatibleProviderTests
     /// assertions are that the surrounding text survives and that nothing malformed gets through.
     /// </remarks>
     [Theory]
-    [InlineData("壞掉的字元 \ud800 尾巴")]
-    [InlineData("壞掉的字元 \udc00 尾巴")]
-    public void Settings_ReplaceMalformedUtf16RatherThanFailingToSave(string prompt)
+    [InlineData(0xD800)]
+    [InlineData(0xDC00)]
+    public void Settings_ReplaceMalformedUtf16RatherThanFailingToSave(int codeUnit)
     {
+        // 畸形字符串放进 InlineData 会在发现阶段被替换，导致两个用例得到相同 ID。
+        var prompt = $"壞掉的字元 {(char)codeUnit} 尾巴";
         var written = new AppSettings();
         written.OpenAi.Profiles.Add(new OpenAiModelProfile
         {
