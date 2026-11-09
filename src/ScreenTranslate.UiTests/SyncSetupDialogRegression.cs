@@ -1,5 +1,6 @@
 using System.Windows;
 using System.Windows.Controls;
+using OverTranslate.Services.Lan;
 using OverTranslate.Views.ClipboardHistory;
 using Xunit;
 using Button = System.Windows.Controls.Button;
@@ -52,5 +53,57 @@ public sealed partial class ScreenTranslateShellTests
             Assert.Equal(MessageBoxResult.Yes, window.Choice); Assert.False(window.IsVisible);
         }
         finally { window.Close(); }
+
+        VerifySyncSetupPreferenceFailure();
+    }
+
+    private static void VerifySyncSetupPreferenceFailure()
+    {
+        var directory = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "sync-setup-save-" + Guid.NewGuid());
+        System.IO.Directory.CreateDirectory(directory);
+        var preferencesPath = System.IO.Path.Combine(directory, "lan-preferences.json");
+        var choicePath = System.IO.Path.Combine(directory, "sync-onboarding.json");
+        new LanPreferences(directory, AutoSync: false, AutoSyncLibrary: false).Save(preferencesPath);
+        var transfer = new LanTransferWindow(preferencesPath, readAddresses: () => [])
+        { Left = -10000, Top = -10000, WindowStartupLocation = WindowStartupLocation.Manual, ShowActivated = false };
+        var dialog = new SyncSetupWindow(enabled =>
+        {
+            if (enabled) transfer.EnableUnifiedSync();
+            SyncSetupPrompt.SaveChoice(choicePath, enabled);
+        })
+        { Left = -10000, Top = -10000, WindowStartupLocation = WindowStartupLocation.Manual, ShowActivated = false };
+        try
+        {
+            dialog.Show(); dialog.UpdateLayout();
+            var start = (Button)dialog.FindName("StartPairingButton");
+            using (var locked = new System.IO.FileStream(preferencesPath, System.IO.FileMode.Open,
+                System.IO.FileAccess.Read, System.IO.FileShare.None))
+            {
+                start.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                Assert.True(dialog.IsVisible, "A real preference-save failure must keep setup open for retry.");
+                Assert.Equal(MessageBoxResult.Cancel, dialog.Choice);
+                Assert.Equal(Visibility.Visible, ((TextBlock)dialog.FindName("ErrorText")).Visibility);
+                Assert.False(System.IO.File.Exists(choicePath));
+                Assert.False(((CheckBox)transfer.FindName("AutoSyncBox")).IsChecked);
+                Assert.False(((CheckBox)transfer.FindName("LibrarySyncBox")).IsChecked);
+            }
+            start.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Assert.Equal(MessageBoxResult.Yes, dialog.Choice);
+            Assert.False(dialog.IsVisible);
+            Assert.False(SyncSetupPrompt.NeedsPrompt(choicePath));
+            var saved = LanPreferences.Load(preferencesPath);
+            Assert.True(saved.AutoSync);
+            Assert.True(saved.AutoSyncLibrary);
+            Assert.True(((CheckBox)transfer.FindName("AutoSyncBox")).IsChecked);
+            Assert.True(((CheckBox)transfer.FindName("LibrarySyncBox")).IsChecked);
+            Assert.Empty(System.IO.Directory.GetFiles(directory, "*.tmp"));
+        }
+        finally
+        {
+            dialog.Close();
+            var shutdown = transfer.ShutdownAsync();
+            PumpUntil(() => shutdown.IsCompleted); shutdown.GetAwaiter().GetResult();
+            System.IO.Directory.Delete(directory, true);
+        }
     }
 }

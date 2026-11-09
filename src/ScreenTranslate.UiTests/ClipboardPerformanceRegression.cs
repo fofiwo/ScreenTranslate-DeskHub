@@ -11,6 +11,7 @@ public sealed partial class ScreenTranslateShellTests
 {
     private static void VerifyClipboardPerformance()
     {
+        VerifyClipboardStoreOpenRecovery();
         VerifyBackgroundClipboardImageCapture();
         VerifySlowCaptureCoalescesAndDrainsLatest();
         var store = new ClipboardHistoryStore(System.IO.Path.Combine(System.IO.Path.GetTempPath(), Guid.NewGuid().ToString("N")));
@@ -63,6 +64,34 @@ public sealed partial class ScreenTranslateShellTests
             Assert.Equal("9876", Assert.IsType<ClipboardRecordView>(Assert.Single(list.Items.Cast<object>())).Record.Id);
         }
         finally { window.Close(); }
+    }
+
+    private static void VerifyClipboardStoreOpenRecovery()
+    {
+        var root = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "clipboard-open-recovery-" + Guid.NewGuid());
+        var attempts = 0;
+        var loader = new ClipboardHistoryStoreLoader(() =>
+        {
+            if (Interlocked.Increment(ref attempts) == 1) throw new System.IO.IOException("fixture temporary folder failure");
+            return new ClipboardHistoryStore(root);
+        });
+        var ready = loader.OpenAsync();
+        PumpUntil(() => ready.IsCompleted);
+        Assert.Throws<System.IO.IOException>(() => ready.GetAwaiter().GetResult());
+        using var runtime = new ClipboardHistoryRuntime(System.Windows.Threading.Dispatcher.CurrentDispatcher,
+            ready, capture: () => new(new() { Text = "fixture after folder recovery" }, null),
+            sequence: () => 1, listen: false, openStoreAsync: loader.OpenAsync);
+        try
+        {
+            runtime.TrackCapture();
+            var drain = runtime.StopAndDrainAsync();
+            PumpUntil(() => drain.IsCompleted);
+            drain.GetAwaiter().GetResult();
+            var reopened = loader.OpenAsync().GetAwaiter().GetResult();
+            Assert.Equal("fixture after folder recovery", Assert.Single(reopened.Read()).Text);
+            Assert.Equal(2, attempts);
+        }
+        finally { if (System.IO.Directory.Exists(root)) System.IO.Directory.Delete(root, true); }
     }
 
     private static void VerifyBackgroundClipboardImageCapture()

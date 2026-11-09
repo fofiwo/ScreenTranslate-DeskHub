@@ -115,12 +115,22 @@ public partial class LanTransferWindow : Window
 
     internal void EnableUnifiedSync()
     {
-        AutoSyncBox.IsChecked = true;
-        LibrarySyncBox.IsChecked = true;
-        _preferences = _preferences with { AutoSync = true, AutoSyncLibrary = true };
+        // 首次引导只有在偏好真正落盘后才能记为完成，失败时保留原开关并由引导提供重试。
+        var preferences = _preferences with { AutoSync = true, AutoSyncLibrary = true };
+        preferences.Save(_preferencesPath);
+        _preferences = preferences;
+        _ready = false;
+        try
+        {
+            AutoSyncBox.IsChecked = true;
+            LibrarySyncBox.IsChecked = true;
+        }
+        finally { _ready = true; }
         _node.ClipboardEnabled = _node.LibraryEnabled = true;
-        SavePreferences();
         EnsureClipboard();
+        UpdatePairingInfo(); UpdateClipboardAvailability();
+        LibraryStatus.Text = "已开启资料库同步，配对后自动合并并持续同步。";
+        TransferStatus.Text = "设置已保存。";
     }
 
     public static void OpenForSyncSetup()

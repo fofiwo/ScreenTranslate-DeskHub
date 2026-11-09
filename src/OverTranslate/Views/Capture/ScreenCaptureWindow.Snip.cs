@@ -91,7 +91,7 @@ public partial class ScreenCaptureWindow
         RefreshSnipSelection();
         SetSnipStatus(tool switch {
             SnipTool.Select => "拖动移动选区，四角调整大小 · 双击 / Enter 复制 · C 复制色值",
-            SnipTool.Picker => "移动鼠标实时取色 · C / 单击复制 HEX · 双击选区复制截图",
+            SnipTool.Picker => "移动鼠标实时取色 · C / 单击复制色值 · Shift 切换 HEX/RGB · 双击选区复制截图",
             SnipTool.Text => "在选区单击输入文字 · Enter 确认 · Shift+Enter 换行",
             _ => "在选区拖动标注 · Ctrl+Z 撤销 · Ctrl+Y 重做" });
         Focus();

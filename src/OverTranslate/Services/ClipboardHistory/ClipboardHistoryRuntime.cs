@@ -154,7 +154,7 @@ internal static class ClipboardContent
 internal sealed class ClipboardHistoryRuntime : IDisposable
 {
     private static ClipboardHistoryRuntime? _current;
-    private static Task<ClipboardHistoryStore>? _store;
+    private static readonly ClipboardHistoryStoreLoader StoreLoader = new(() => new ClipboardHistoryStore(ClipboardHistoryStore.DefaultFolder));
     private readonly HwndSource _source;
     private readonly DispatcherTimer _timer;
     private readonly ClipboardHistoryWriteQueue _writes;
@@ -166,18 +166,20 @@ internal sealed class ClipboardHistoryRuntime : IDisposable
     private bool _stopping;
     private bool _disposed;
     public static string? LastError { get; private set; }
-    public static Task<ClipboardHistoryStore> StoreAsync => _store ??= Task.Run(() => new ClipboardHistoryStore(ClipboardHistoryStore.DefaultFolder));
+    public static Task<ClipboardHistoryStore> StoreAsync => StoreLoader.OpenAsync();
 
     public static void Start(Dispatcher dispatcher)
     {
         if (_current is not null) return;
-        try { _current = new(dispatcher, StoreAsync, recordingEnabled: () => SettingsService.Instance.Current.ClipboardHistoryEnabled); }
+        try { _current = new(dispatcher, StoreAsync, recordingEnabled: () => SettingsService.Instance.Current.ClipboardHistoryEnabled,
+            openStoreAsync: () => StoreAsync); }
         catch (Exception) { LastError = "剪贴板后台监听未启动，请重启应用后重试。已有历史仍可使用。"; }
     }
 
     internal ClipboardHistoryRuntime(Dispatcher dispatcher, Task<ClipboardHistoryStore> ready,
         Func<CapturedClipboard?>? capture = null, Func<uint>? sequence = null, bool listen = true,
-        Func<Task<CapturedClipboard?>>? captureAsync = null, Func<bool>? recordingEnabled = null)
+        Func<Task<CapturedClipboard?>>? captureAsync = null, Func<bool>? recordingEnabled = null,
+        Func<Task<ClipboardHistoryStore>>? openStoreAsync = null)
     {
         _capture = captureAsync ?? (capture is not null ? () => Task.FromResult(capture())
             : () => Clipboard.GetDataObject() is { } data ? ClipboardContent.CaptureAsync(data, ReadSource()) : Task.FromResult<CapturedClipboard?>(null));
@@ -185,7 +187,7 @@ internal sealed class ClipboardHistoryRuntime : IDisposable
         _recordingEnabled = recordingEnabled ?? (() => true);
         _writes = new(async captured =>
         {
-            var store = await ready.ConfigureAwait(false);
+            var store = await (openStoreAsync?.Invoke() ?? ready).ConfigureAwait(false);
             await Task.Run(() => store.Add(captured.Record, captured.Png)).ConfigureAwait(false);
         }, error => LastError = error is null ? null : "有一条剪贴板内容未能保存，请检查数据目录可写及磁盘空间；已有记录不会自动清理。");
         _timer = new DispatcherTimer(TimeSpan.FromMilliseconds(80), DispatcherPriority.Background, OnTick, dispatcher);

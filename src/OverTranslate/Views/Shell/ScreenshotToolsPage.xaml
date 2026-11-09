@@ -26,7 +26,7 @@
                 </StackPanel>
                 <StackPanel Grid.Column="2">
                     <TextBlock Text="屏幕取色" Style="{StaticResource ProductSectionTitle}"/>
-                    <TextBlock Text="进入截图后移动鼠标，查看当前位置的 HEX 与 RGB。按 C 复制 HEX 并保留截图界面；文字编辑时 C 正常输入。" Style="{StaticResource ProductHint}"/>
+                    <TextBlock Text="进入截图后移动鼠标，查看当前位置的 HEX 与 RGB。按 C 复制色值并保留截图界面，默认 #RRGGBB，轻按 Shift 切换 HEX／RGB；文字编辑时 C 正常输入。" Style="{StaticResource ProductHint}"/>
                     <Button x:Name="PickColorButton" Content="进入截图取色" Style="{StaticResource ProductSecondaryButton}" Click="Screenshot_Click" HorizontalAlignment="Left" Margin="0,14,0,0" ToolTipService.ShowOnDisabled="True"/>
                 </StackPanel>
             </Grid>
