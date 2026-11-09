@@ -18,7 +18,9 @@ roots = {"src"}
 files = {"LICENSE", "THIRD-PARTY-NOTICES.txt", "FORK-NOTICES.md", "PRIVACY.md", ".gitattributes", ".gitignore",
          "build-screen-translate-installer.ps1", "README.DeskHub.md", "publish-deskhub.ps1",
          "docs/ScreenTranslate-Install.md", ".github/workflows/deskhub-release.yml",
-         "tools/prepare-public-source.py"}
+         "tools/prepare-public-source.py",
+         ".codex/skills/git-release-overtranslate/template.md",
+         ".claude/skills/git-release-overtranslate/template.md"}
 forbidden_dirs = {".git", "bin", "obj", "data", "logs", ".vs", "TestResults", "clipboard-history"}
 forbidden_names = {"library.json", "sync.json", "lan-preferences.json", "sync-onboarding.json", "settings.json"}
 forbidden_suffixes = {".clip", ".log", ".pfx", ".pem", ".key", ".db", ".sqlite", ".sqlite3", ".user", ".suo"}
