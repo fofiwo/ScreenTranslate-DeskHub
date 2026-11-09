@@ -15,9 +15,10 @@ try {
     git add --all
     git diff --cached --quiet
     if ($LASTEXITCODE -eq 1) {
-        git -c user.name=fofiwo -c user.email=239156749+fofiwo@users.noreply.github.com commit -m $Message
+        git -c user.name=fofiwo -c user.email=239156749+fofiwo@users.noreply.github.com commit --quiet -m $Message
         if ($LASTEXITCODE -ne 0) { throw 'Commit failed' }
     }
-    git -c 'credential.helper=!gh auth git-credential' -c http.version=HTTP/1.1 push -u origin main
+    $env:GIT_TERMINAL_PROMPT = '0'
+    git -c credential.helper= -c 'credential.helper=!gh auth git-credential' -c credential.interactive=false -c http.proxy=http://127.0.0.1:10808 -c http.version=HTTP/1.1 -c http.lowSpeedLimit=1000 -c http.lowSpeedTime=30 push -u origin main
     if ($LASTEXITCODE -ne 0) { throw 'Push failed; local snapshot retained' }
 } finally { Pop-Location }

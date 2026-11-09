@@ -7,7 +7,7 @@ namespace OverTranslate.Services;
 internal static class UpdateUi
 {
     internal static string ButtonLabel => UpdateNotifier.Available is { } info
-        ? $"发现新版 v{info.LatestVersion} · 点击安装" : "检查更新";
+        ? $"发现新版 v{info.LatestVersion}" : "检查更新";
 
     internal static async Task CheckAndShowAsync()
     {

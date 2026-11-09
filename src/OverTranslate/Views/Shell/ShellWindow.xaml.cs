@@ -137,7 +137,7 @@ public partial class ShellWindow : Window
 
         var compactIcon = AppIconService.CreateCompactIcon();
         Icon = compactIcon;
-        VersionText.Text = $"v{Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "0.0.0"}";
+        VersionText.Text = $"v{UpdateService.InstalledVersion()}";
 
         _instance = this;
         RefreshHotkeyHints();
