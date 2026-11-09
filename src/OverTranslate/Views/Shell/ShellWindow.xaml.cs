@@ -1,4 +1,4 @@
-﻿using System.Reflection;
+using System.Reflection;
 using System.Windows;
 using System.Windows.Automation;
 using System.Windows.Controls;
@@ -20,7 +20,8 @@ public enum ShellPage
     Realtime,
     Settings,
     Home,
-    About
+    About,
+    Screenshot
 }
 
 /// <summary>
@@ -71,7 +72,6 @@ public partial class ShellWindow : Window
     /// <inheritdoc cref="_lastSize"/>
     private static ShellPage _lastPage = ShellPage.Home;
 
-    private static readonly Duration IndicatorDuration = new(TimeSpan.FromMilliseconds(180));
     private static readonly Duration ContentDuration   = new(TimeSpan.FromMilliseconds(120));
 
     // Token for the in-flight content transition; see AnimateContentIn.
@@ -82,10 +82,16 @@ public partial class ShellWindow : Window
     private HomePage? _homePage;
     private ScreenTranslatePreferencesPage? _preferencesPage;
     private ProductAboutPage? _aboutPage;
+    private ScreenshotToolsPage? _screenshotPage;
+    private ScreenshotToolsPage ScreenshotPage => _screenshotPage ??= new(
+        () => ScreenshotBtn_Click(this, new RoutedEventArgs()),
+        () => PinImageBtn_Click(this, new RoutedEventArgs()), ShowQuickToolSettings);
     private RealtimePage RealtimePage => _realtimePage ??= new();
     private ScreenTranslatePreferencesPage PreferencesPage => _preferencesPage ??= new(() => _settingsPage ??= new());
 
     private ShellPage? _current;
+    private static ShellPage _translationMode = ShellPage.Home;
+    private bool _syncingNavigation;
 
 
     /// <summary>
@@ -169,8 +175,7 @@ public partial class ShellWindow : Window
 
         RestoreSessionLayout();
 
-        // Nav_Checked drives navigation, so this also renders the initial page
-        HomeNav.IsChecked = true;
+        Navigate(_translationMode);
     }
 
     /// <inheritdoc cref="_lastSize"/>
@@ -218,29 +223,15 @@ public partial class ShellWindow : Window
         // Blank rather than a "未設定" placeholder: the label already says what the button does,
         // and a slot that only ever holds a shortcut should be empty when there is none.
         _homePage?.Reload();
-        CaptureHotkeyText.Text = string.IsNullOrWhiteSpace(settings.HotkeyDisplay)
-            ? ""
-            : settings.HotkeyDisplay;
-
-        // Also blank when the shortcut is switched off in 設定: this row is not registered then, so
-        // printing the combination would advertise a key press that does nothing. The button
-        // itself stays — it is a way in of its own, not a reminder of the shortcut.
-        OcrHotkeyText.Text =
-            settings.OcrHotkeyEnabled && !string.IsNullOrWhiteSpace(settings.OcrHotkeyDisplay)
-                ? settings.OcrHotkeyDisplay
-                : "";
-        var library = HotkeyBindings.Resolve(settings).Single(b => b.Action == HotkeyAction.LibraryWindow);
-        var failed = System.Windows.Application.Current?.MainWindow is MainWindow main
-            && main.HotkeyRegistrationFailures.Contains(HotkeyAction.LibraryWindow);
-        LibraryHotkeyText.Text = library.IsActive && !failed ? settings.LibraryHotkeyDisplay : "";
-        var clipboard = HotkeyBindings.Resolve(settings).Single(b => b.Action == HotkeyAction.ClipboardHistory);
-        var clipboardFailed = System.Windows.Application.Current?.MainWindow is MainWindow current
-            && current.HotkeyRegistrationFailures.Contains(HotkeyAction.ClipboardHistory);
-        ClipboardHotkeyText.Text = clipboard.IsActive && !clipboardFailed ? settings.ClipboardHotkeyDisplay : "";
-        string SnipHint(HotkeyAction action, string display) => HotkeyBindings.Resolve(settings).Any(b => b.Action == action && b.IsActive)
+        var bindings = HotkeyBindings.Resolve(settings);
+        string Hint(HotkeyAction action, string display) => bindings.Any(b => b.Action == action && b.IsActive)
             && !(System.Windows.Application.Current?.MainWindow is MainWindow owner && owner.HotkeyRegistrationFailures.Contains(action)) ? display : "";
-        ScreenshotHotkeyText.Text = SnipHint(HotkeyAction.Screenshot, settings.ScreenshotHotkeyDisplay);
-        PinImageHotkeyText.Text = SnipHint(HotkeyAction.PinImage, settings.PinImageHotkeyDisplay);
+        OcrHotkeyText.Text = Hint(HotkeyAction.OcrExtract, settings.OcrHotkeyDisplay);
+        LibraryHotkeyText.Text = Hint(HotkeyAction.LibraryWindow, settings.LibraryHotkeyDisplay);
+        ClipboardHotkeyText.Text = Hint(HotkeyAction.ClipboardHistory, settings.ClipboardHotkeyDisplay);
+        ScreenshotHotkeyText.Text = Hint(HotkeyAction.Screenshot, settings.ScreenshotHotkeyDisplay);
+        PinImageHotkeyText.Text = Hint(HotkeyAction.PinImage, settings.PinImageHotkeyDisplay);
+        RefreshQuickToolAvailability();
     }
 
     internal void RefreshLibrarySummary()
@@ -282,15 +273,16 @@ public partial class ShellWindow : Window
         var framing = running && !controller.IsTranslating;
 
         _homePage?.RefreshAvailability();
-        CaptureBtn.IsEnabled = !framing;
         ScreenshotBtn.IsEnabled = !framing;
-        ScreenshotBtn.ToolTip = framing ? "请先完成持续翻译区域框选。" : "框选、标注、取色与贴图";
-        CaptureBtn.ToolTip = framing
-            ? LocalizationService.Get("S.Shell.CaptureBlockedByRealtimeFraming")
-            : null;
-
+        var blocked = LocalizationService.Get("S.Shell.CaptureBlockedByRealtimeFraming");
+        ScreenshotBtn.ToolTip = framing ? blocked : WithShortcut("框选、标注、取色与贴图", ScreenshotHotkeyText.Text);
         OcrExtractBtn.IsEnabled = !framing;
-        OcrExtractBtn.ToolTip = framing ? "请先完成持续翻译区域框选。" : null;
+        OcrExtractBtn.ToolTip = framing ? blocked : WithShortcut("框选后提取文字并复制", OcrHotkeyText.Text);
+        PinImageBtn.ToolTip = WithShortcut("将剪贴板图片贴到桌面", PinImageHotkeyText.Text);
+        _screenshotPage?.Reload(ScreenshotHotkeyText.Text, PinImageHotkeyText.Text, framing);
+
+        static string WithShortcut(string description, string shortcut) =>
+            string.IsNullOrWhiteSpace(shortcut) ? description : $"{description}\n{shortcut}";
     }
 
     private void MinimizeBtn_Click(object sender, RoutedEventArgs e) =>
@@ -428,14 +420,6 @@ public partial class ShellWindow : Window
     }
 
 
-    private void CaptureBtn_Click(object sender, RoutedEventArgs e)
-    {
-        // MainWindow owns the whole capture session (hotkey, screenshot, overlay, teardown), so
-        // the shell only asks for one and hands itself over to be hidden and brought back.
-        if (System.Windows.Application.Current.MainWindow is MainWindow main)
-            main.StartCaptureFromShell(this);
-    }
-
     private void OcrExtractBtn_Click(object sender, RoutedEventArgs e)
     {
         if (System.Windows.Application.Current.MainWindow is MainWindow main)
@@ -444,32 +428,43 @@ public partial class ShellWindow : Window
 
     public void Navigate(ShellPage page)
     {
-        if (page == ShellPage.About) { ShowPage(page); return; }
-        var target = NavItemFor(page);
-        if (target.IsChecked == true)
-        {
-            // Already here — still make sure the content is mounted (first call from the ctor)
-            if (_current != page) ShowPage(page);
-            return;
-        }
-        target.IsChecked = true;   // raises Nav_Checked
+        if (_current != page) ShowPage(page);
+    }
+
+    private void TranslationNav_Checked(object sender, RoutedEventArgs e)
+    {
+        if (!_syncingNavigation) Navigate(_translationMode);
     }
 
     private void Nav_Checked(object sender, RoutedEventArgs e)
     {
-        var page =
-            ReferenceEquals(sender, SettingsNav) ? ShellPage.Settings :
-            ReferenceEquals(sender, RealtimeNav) ? ShellPage.Realtime :
-            ReferenceEquals(sender, HomeNav) ? ShellPage.Home :
-            ShellPage.Home;
-        if (_current == page) return;
-        ShowPage(page);
+        if (_syncingNavigation) return;
+        var page = ReferenceEquals(sender, SettingsNav) ? ShellPage.Settings :
+            ReferenceEquals(sender, AboutNav) ? ShellPage.About :
+            ReferenceEquals(sender, ScreenshotNav) ? ShellPage.Screenshot :
+            ReferenceEquals(sender, RealtimeNav) ? ShellPage.Realtime : ShellPage.Home;
+        Navigate(page);
     }
 
     private void ShowPage(ShellPage page)
     {
         _current = page;
         _lastPage = page;
+        var translating = page is ShellPage.Home or ShellPage.Realtime;
+        if (translating) _translationMode = page;
+        // 侧栏与页内模式属于两个选择组；同步状态时不再次触发导航或重载表单。
+        _syncingNavigation = true;
+        try
+        {
+            TranslationNav.IsChecked = translating;
+            SettingsNav.IsChecked = page == ShellPage.Settings;
+            AboutNav.IsChecked = page == ShellPage.About;
+            ScreenshotNav.IsChecked = page == ShellPage.Screenshot;
+            HomeNav.IsChecked = _translationMode == ShellPage.Home;
+            RealtimeNav.IsChecked = _translationMode == ShellPage.Realtime;
+            TranslationHeader.Visibility = translating ? Visibility.Visible : Visibility.Collapsed;
+        }
+        finally { _syncingNavigation = false; }
 
         UIElement content;
         switch (page)
@@ -478,54 +473,17 @@ public partial class ShellWindow : Window
                 RealtimePage.Reload(); content = RealtimePage; break;
             case ShellPage.Settings:
                 PreferencesPage.Reload(); content = PreferencesPage; break;
+            case ShellPage.Screenshot:
+                ScreenshotPage.Reload(ScreenshotHotkeyText.Text, PinImageHotkeyText.Text,
+                    RealtimeSessionController.Instance.IsActive && !RealtimeSessionController.Instance.IsTranslating);
+                content = ScreenshotPage; break;
             case ShellPage.About:
                 content = _aboutPage ??= new(); break;
             default:
                 _homePage ??= new(); _homePage.Reload(); content = _homePage; break;
         }
         ContentHost.Child = content;
-
-        MoveIndicatorTo(NavItemFor(page));
         AnimateContentIn();
-    }
-
-    private System.Windows.Controls.RadioButton NavItemFor(ShellPage page) => page switch
-    {
-        ShellPage.Settings => SettingsNav,
-        ShellPage.Realtime => RealtimeNav,
-        ShellPage.Home => HomeNav,
-        ShellPage.About => HomeNav,
-        _                  => HomeNav
-    };
-
-    /// <summary>
-    /// Slides the accent bar to the selected item. The offset is measured from the live layout
-    /// rather than assumed from an item height, so it stays correct if the nav gains items.
-    /// </summary>
-    private void MoveIndicatorTo(FrameworkElement item)
-    {
-        if (!item.IsLoaded)
-        {
-            // First navigation happens before layout — retry once the nav has been measured
-            item.Loaded += OnceLoaded;
-            return;
-        }
-
-        var top = item.TransformToAncestor(NavPanel).Transform(new Point(0, 0)).Y;
-        var to  = top + (item.ActualHeight - NavIndicator.Height) / 2;
-
-        NavIndicatorTransform.BeginAnimation(TranslateTransform.YProperty, new DoubleAnimation
-        {
-            To = to,
-            Duration = IndicatorDuration,
-            EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
-        });
-
-        void OnceLoaded(object? s, RoutedEventArgs e)
-        {
-            item.Loaded -= OnceLoaded;
-            MoveIndicatorTo(item);
-        }
     }
 
     private void AnimateContentIn()
@@ -581,15 +539,21 @@ public partial class ShellWindow : Window
         ContentHost.CacheMode = null;
     }
 
-    private void AboutBtn_Click(object sender, RoutedEventArgs e) => Navigate(ShellPage.About);
     private void OnUpdateAvailabilityChanged(object? sender, EventArgs e) => RefreshUpdateButton();
     private void RefreshUpdateButton()
     {
-        UpdateButton.Content = UpdateUi.ButtonLabel;
-        UpdateButton.ToolTip = UpdateNotifier.Available is null ? "启动及每 30 分钟自动检查，也可点击手动检查" : "下载并安装新版，个人数据保留";
+        UpdateButton.Visibility = UpdateNotifier.Available is null ? Visibility.Collapsed : Visibility.Visible;
+        UpdateButton.Content = "安装新版";
+        UpdateButton.ToolTip = UpdateNotifier.Available is { } available
+            ? $"发现新版 v{available.LatestVersion}，下载并安装，个人数据保留" : "在关于页面检查更新";
         UpdateButton.FontWeight = UpdateNotifier.Available is null ? FontWeights.Normal : FontWeights.SemiBold;
     }
-    private async void UpdateButton_Click(object sender, RoutedEventArgs e) => await UpdateUi.CheckAndShowAsync(UpdateButton);
+    private async void UpdateButton_Click(object sender, RoutedEventArgs e)
+    {
+        UpdateButton.IsEnabled = false;
+        try { await UpdateUi.CheckAndShowAsync(); }
+        finally { UpdateButton.IsEnabled = true; RefreshUpdateButton(); }
+    }
 
     public void ShowQuickToolSettings()
     {

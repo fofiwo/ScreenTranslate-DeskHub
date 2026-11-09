@@ -12,7 +12,7 @@
             <Setter Property="Margin" Value="0,0,0,22"/>
         </Style>
     </UserControl.Resources>
-    <Grid Margin="36,30,36,24">
+    <Grid Margin="36,16,36,24">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
@@ -21,7 +21,6 @@
 
         <!-- ── Page header ── -->
         <StackPanel Grid.Row="0" Margin="0,0,0,18">
-            <TextBlock Text="{DynamicResource S.Realtime.Title}" Style="{StaticResource PageTitle}"/>
             <TextBlock Text="{DynamicResource S.Realtime.Subtitle}"
                        Style="{StaticResource PageSubtitle}"/>
         </StackPanel>

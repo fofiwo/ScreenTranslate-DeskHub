@@ -161,6 +161,7 @@ internal sealed class ClipboardHistoryRuntime : IDisposable
     private readonly HashSet<Task> _captures = [];
     private readonly Func<Task<CapturedClipboard?>> _capture;
     private readonly Func<uint> _sequence;
+    private readonly Func<bool> _recordingEnabled;
     private bool _capturePending;
     private bool _stopping;
     private bool _disposed;
@@ -170,17 +171,18 @@ internal sealed class ClipboardHistoryRuntime : IDisposable
     public static void Start(Dispatcher dispatcher)
     {
         if (_current is not null) return;
-        try { _current = new(dispatcher, StoreAsync); }
+        try { _current = new(dispatcher, StoreAsync, recordingEnabled: () => SettingsService.Instance.Current.ClipboardHistoryEnabled); }
         catch (Exception) { LastError = "剪贴板后台监听未启动，请重启应用后重试。已有历史仍可使用。"; }
     }
 
     internal ClipboardHistoryRuntime(Dispatcher dispatcher, Task<ClipboardHistoryStore> ready,
         Func<CapturedClipboard?>? capture = null, Func<uint>? sequence = null, bool listen = true,
-        Func<Task<CapturedClipboard?>>? captureAsync = null)
+        Func<Task<CapturedClipboard?>>? captureAsync = null, Func<bool>? recordingEnabled = null)
     {
         _capture = captureAsync ?? (capture is not null ? () => Task.FromResult(capture())
             : () => Clipboard.GetDataObject() is { } data ? ClipboardContent.CaptureAsync(data, ReadSource()) : Task.FromResult<CapturedClipboard?>(null));
         _sequence = sequence ?? GetClipboardSequenceNumber;
+        _recordingEnabled = recordingEnabled ?? (() => true);
         _writes = new(async captured =>
         {
             var store = await ready.ConfigureAwait(false);
@@ -201,7 +203,7 @@ internal sealed class ClipboardHistoryRuntime : IDisposable
     }
 
     internal void NotifyClipboardChanged()
-    { if (!_disposed && !_stopping) { _timer.Stop(); _timer.Start(); } }
+    { if (!_disposed && !_stopping && _recordingEnabled()) { _timer.Stop(); _timer.Start(); } }
 
     private void OnTick(object? sender, EventArgs e)
     {
@@ -227,7 +229,7 @@ internal sealed class ClipboardHistoryRuntime : IDisposable
     {
         try
         {
-            if (_disposed) return;
+            if (_disposed || !_recordingEnabled()) return;
             CapturedClipboard? captured = null;
             var sequence = _sequence();
             for (var attempt = 0; ; attempt++)
@@ -238,9 +240,9 @@ internal sealed class ClipboardHistoryRuntime : IDisposable
                     break;
                 }
                 catch (ExternalException) when (attempt < 4) { await Task.Delay(40); }
-                if (_disposed || sequence != _sequence()) return;
+                if (_disposed || !_recordingEnabled() || sequence != _sequence()) return;
             }
-            if (_disposed || sequence != _sequence() || captured is null) return;
+            if (_disposed || !_recordingEnabled() || sequence != _sequence() || captured is null) return;
             _writes.Enqueue(captured);
         }
         catch (Exception) { LastError = "有一条剪贴板内容未能保存，请检查数据目录可写及磁盘空间；已有记录不会自动清理。"; }

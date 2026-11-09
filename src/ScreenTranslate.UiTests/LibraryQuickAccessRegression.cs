@@ -1,0 +1,103 @@
+using System.Reflection;
+using System.Windows;
+using System.Windows.Controls;
+using OverTranslate.Services.Library;
+using OverTranslate.Views.Library;
+using Xunit;
+
+namespace OverTranslate.Tests;
+
+public sealed partial class ScreenTranslateShellTests
+{
+    private static void VerifyLibraryQuickAccess()
+    {
+        var directory = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "library-quick-access-" + Guid.NewGuid());
+        var store = new LibraryStore(System.IO.Path.Combine(directory, "library.json"));
+        store.SavePrompt(new() { Title = "快捷唤出测试", Content = "仅用于测试的完整正文" });
+        store.Update(state => state.Connections = [new() { Platform = "本地测试", Model = "fixture-model" }]);
+        var copied = new List<string>();
+        var window = new LibraryWindow(store, copy: copied.Add)
+        {
+            Left = -10000, Top = -10000, ShowActivated = false,
+            WindowStartupLocation = WindowStartupLocation.Manual
+        };
+        var current = typeof(LibraryWindow).GetField("_current", BindingFlags.Static | BindingFlags.NonPublic)!;
+        var previous = current.GetValue(null);
+        current.SetValue(null, window);
+        try
+        {
+            var header = (Grid)window.FindName("ManagementHeader");
+            var tabs = (TabControl)window.FindName("Tabs");
+            var search = (TextBox)window.FindName("PromptSearch");
+            Assert.Equal(Visibility.Visible, header.Visibility);
+            LibraryWindow.Toggle();
+            Assert.True(window.IsVisible);
+            Assert.Equal(Visibility.Collapsed, header.Visibility);
+            Assert.Equal(WindowStyle.SingleBorderWindow, window.WindowStyle);
+            Assert.Equal(ResizeMode.CanResize, window.ResizeMode);
+            Assert.False(((TextBlock)window.FindName("ShortcutHint")).IsVisible);
+
+            foreach (var scale in new[] { 1.0, 1.25, 1.5, 2.0 })
+            {
+                tabs.SelectedIndex = 0;
+                Render(window, $"library-quick-prompts-{scale * 100:0}", 880, 580, scale);
+                Assert.Equal(0, header.ActualHeight);
+                Assert.True(tabs.TranslatePoint(new Point(), (UIElement)window.Content).Y <= 17,
+                    "The collapsed management header must leave no empty band above the tabs.");
+                foreach (var name in new[] { "PromptSearch", "PromptList", "PromptPreview", "PromptCopyButton" })
+                    AssertInside((FrameworkElement)window.Content, (FrameworkElement)window.FindName(name));
+                tabs.SelectedIndex = 1;
+                Render(window, $"library-quick-models-{scale * 100:0}", 880, 580, scale);
+                AssertInside((FrameworkElement)window.Content, (FrameworkElement)window.FindName("ModelSearch"));
+                AssertInside((FrameworkElement)window.Content, (FrameworkElement)window.FindName("ModelCatalog"));
+            }
+            ApplyTheme(System.Windows.Application.Current, "Dark");
+            Render(window, "library-quick-dark", 880, 580);
+            ApplyTheme(System.Windows.Application.Current, "Light");
+
+            tabs.SelectedIndex = 0;
+            search.Text = "快捷";
+            var selected = ((ListBox)window.FindName("PromptList")).SelectedItem;
+            LibraryWindow.Open();
+            Render(window, "library-management-header", 880, 580);
+            Assert.True(header.IsVisible);
+            Assert.Equal("快捷", search.Text);
+            Assert.Same(selected, ((ListBox)window.FindName("PromptList")).SelectedItem);
+
+            window.Hide();
+            LibraryWindow.Toggle();
+            Assert.Equal(Visibility.Collapsed, header.Visibility);
+            Assert.Equal("快捷", search.Text);
+            ((System.Windows.Controls.Button)window.FindName("PromptCopyButton"))
+                .RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Button.ClickEvent));
+            PumpUntil(() => !window.IsCopyPending);
+            Assert.Equal("仅用于测试的完整正文", Assert.Single(copied));
+            tabs.SelectedIndex = 1;
+            window.Hide();
+            window.ToggleVisibility();
+            Assert.Equal(1, tabs.SelectedIndex);
+            Assert.Equal(Visibility.Collapsed, header.Visibility);
+            window.WindowState = WindowState.Minimized;
+            LibraryWindow.Toggle();
+            Assert.Equal(WindowState.Normal, window.WindowState);
+            Assert.Equal(Visibility.Collapsed, header.Visibility);
+
+            // AI 整理从管理入口打开时仍能恢复完整头部，不丢失未保存编辑。
+            LibraryWindow.OpenAiSettings();
+            Assert.Equal(Visibility.Visible, header.Visibility);
+            Assert.Equal(Visibility.Visible, ((FrameworkElement)window.FindName("AiEditor")).Visibility);
+            ((TextBox)window.FindName("AiModel")).Text = "unsaved-fixture";
+            window.Hide();
+            LibraryWindow.Toggle();
+            Assert.Equal("unsaved-fixture", ((TextBox)window.FindName("AiModel")).Text);
+            Assert.Equal(Visibility.Visible, ((FrameworkElement)window.FindName("AiEditor")).Visibility);
+        }
+        finally
+        {
+            ApplyTheme(System.Windows.Application.Current, "Light");
+            current.SetValue(null, previous);
+            window.CloseForTests();
+            System.IO.Directory.Delete(directory, true);
+        }
+    }
+}

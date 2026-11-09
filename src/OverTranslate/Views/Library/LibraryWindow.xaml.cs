@@ -88,11 +88,14 @@ public partial class LibraryWindow : Window
         RefreshShortcut();
     }
 
-    public static void Open()
+    public static void Open() => Open(quickAccess: false);
+
+    private static void Open(bool quickAccess)
     {
         try
         {
             _current ??= new LibraryWindow();
+            _current.ManagementHeader.Visibility = quickAccess ? Visibility.Collapsed : Visibility.Visible;
             _current.RefreshShortcut();
             if (!_current.IsVisible) _current.Show();
             if (_current.WindowState == WindowState.Minimized) _current.WindowState = WindowState.Normal;
@@ -104,7 +107,7 @@ public partial class LibraryWindow : Window
     public static void Toggle()
     {
         if (_current is { IsVisible: true, WindowState: not WindowState.Minimized }) _current.ToggleVisibility();
-        else Open();
+        else Open(quickAccess: true);
     }
 
     internal void ToggleVisibility()
@@ -113,6 +116,7 @@ public partial class LibraryWindow : Window
         if (IsVisible && WindowState != WindowState.Minimized && IsActive) { Hide(); }
         else
         {
+            ManagementHeader.Visibility = Visibility.Collapsed;
             if (!IsVisible) Show();
             if (WindowState == WindowState.Minimized) WindowState = WindowState.Normal;
             Activate();

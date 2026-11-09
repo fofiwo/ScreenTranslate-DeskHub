@@ -111,6 +111,8 @@ public sealed partial class ScreenTranslateShellTests
 
     private static void VerifySystemClipboardHistory()
     {
+        VerifyClipboardClickPaste();
+        VerifySyncSetupDialog();
         VerifyClipboardPerformance();
         VerifyClipboardRecopyPosition();
         var folder = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "clipboard-popup-" + Guid.NewGuid().ToString("N"));

@@ -23,6 +23,8 @@ public class AppSettings
     public uint ClipboardHotkeyVirtualKey { get; set; } = 0x56;
     public string ClipboardHotkeyDisplay { get; set; } = "Ctrl+Alt+V";
     public bool ClipboardHotkeyEnabled { get; set; } = true;
+    public bool ClipboardAutoPaste { get; set; } = true;
+    public bool ClipboardHistoryEnabled { get; set; } = true;
     public uint LibraryHotkeyModifiers { get; set; } = 3;
     public uint LibraryHotkeyVirtualKey { get; set; } = 0x50;
     public string LibraryHotkeyDisplay { get; set; } = "Ctrl+Alt+P";

@@ -21,14 +21,14 @@
     <sys:String x:Key="S.Common.SearchNoMatch">找不到匹配的语言</sys:String>
 
     <!-- ── Shell window ── -->
-    <sys:String x:Key="S.Shell.About">关于此软件</sys:String>
-    <sys:String x:Key="S.Shell.QuickTools">随时调用</sys:String>
+    <sys:String x:Key="S.Shell.About">关于与更新</sys:String>
+    <sys:String x:Key="S.Shell.QuickTools">快捷操作</sys:String>
     <sys:String x:Key="S.Shell.CaptureTranslate">截图翻译</sys:String>
     <sys:String x:Key="S.Shell.RealtimeTranslate">持续翻译</sys:String>
     <sys:String x:Key="S.Shell.Settings">设置</sys:String>
     <sys:String x:Key="S.Shell.HideSidebar">收起侧边栏</sys:String>
     <sys:String x:Key="S.Shell.ShowSidebar">展开侧边栏</sys:String>
-    <sys:String x:Key="S.Shell.CaptureBlockedByRealtimeFraming">正在框选实时翻译区块，请先点击「开始翻译」再使用截图翻译</sys:String>
+    <sys:String x:Key="S.Shell.CaptureBlockedByRealtimeFraming">请先完成持续翻译区域框选。</sys:String>
 
     <!-- ── Tray menu ── -->
     <sys:String x:Key="S.Tray.OpenWindow">打开翻译窗口</sys:String>

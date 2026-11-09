@@ -1,4 +1,4 @@
-﻿using System.Reflection;
+using System.Reflection;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
@@ -44,6 +44,33 @@ public sealed partial class ScreenTranslateShellTests
                     Source = new Uri("pack://application:,,,/ScreenTranslate;component/Resources/Strings.zh-Hans.xaml", UriKind.Absolute)
                 };
                 ApplyTheme(app, "Light");
+                if (Environment.GetEnvironmentVariable("SCREEN_TRANSLATE_LIBRARY_QUICK_ACCESS_ONLY") == "1")
+                {
+                    VerifyLibraryQuickAccess();
+                    return;
+                }
+                if (Environment.GetEnvironmentVariable("SCREEN_TRANSLATE_SYNC_SETUP_ONLY") == "1")
+                {
+                    VerifySyncSetupDialog();
+                    return;
+                }
+                if (Environment.GetEnvironmentVariable("SCREEN_TRANSLATE_MULTITOOL_ONLY") == "1")
+                {
+                    VerifyShortcutHintsMatchBindings();
+                    VerifyScreenshotToolActions();
+                    VerifyMultitoolNavigation();
+                    shell = new ShellWindow(() => new LibraryState(), () => { });
+                    VerifyQuickToolSettings(shell);
+                    VerifyDpiLayout(shell);
+                    VerifyUpdateEntries();
+                    return;
+                }
+                if (Environment.GetEnvironmentVariable("SCREEN_TRANSLATE_CLIPBOARD_INTERACTION_ONLY") == "1")
+                {
+                    VerifyClipboardClickPaste();
+                    if (Environment.GetEnvironmentVariable("SCREEN_TRANSLATE_CLIPBOARD_NATIVE") == "1") VerifyNativeClipboardPaste();
+                    return;
+                }
                 VerifySnippingTools();
                 if (Environment.GetEnvironmentVariable("SCREEN_TRANSLATE_SNIP_ONLY") == "1") return;
                 if (Environment.GetEnvironmentVariable("SCREEN_TRANSLATE_LAYOUT_ONLY") == "1")
@@ -93,6 +120,10 @@ public sealed partial class ScreenTranslateShellTests
                     VerifySystemClipboardHistory();
                     return;
                 }
+                VerifyLibraryQuickAccess();
+                VerifyShortcutHintsMatchBindings();
+                VerifyScreenshotToolActions();
+                VerifyMultitoolNavigation();
                 LocalizationService.Apply("en");
                 ThemeService.Apply("Dark");
                 Assert.Equal("zh-Hans", LocalizationService.Current);
@@ -111,7 +142,8 @@ public sealed partial class ScreenTranslateShellTests
                 }
                 var host = (Border)shell.FindName("ContentHost");
                 Assert.IsType<HomePage>(host.Child);
-                Assert.Null(shell.FindName("TranslationNav"));
+                Assert.True(Assert.IsType<RadioButton>(shell.FindName("TranslationNav")).IsChecked);
+                Assert.IsType<RadioButton>(shell.FindName("ScreenshotNav"));
                 Assert.Null(shell.FindName("ProfilesNav"));
                 Assert.Null(shell.FindName("PinBtn"));
                 Assert.NotNull(shell.FindName("OcrExtractBtn"));
@@ -273,10 +305,8 @@ public sealed partial class ScreenTranslateShellTests
             settings.LibraryHotkeyDisplay = "Ctrl+Alt+Shift+OemOpenBrackets";
             shell.RefreshHotkeyHints();
             Render(shell, "shell-library-long-shortcut-minimum", 1100, 680);
-            var frame = (Border)entry.Template.FindName("Root", entry);
-            AssertInside(frame, hotkey);
-            var keyBounds = hotkey.TransformToAncestor(frame).TransformBounds(new Rect(hotkey.RenderSize));
-            Assert.True(keyBounds.Height / hotkey.ActualHeight * hotkey.FontSize >= 9);
+            Assert.Equal("Ctrl+Alt+Shift+OemOpenBrackets", hotkey.Text);
+            Assert.NotNull(entry.ToolTip);
             settings.LibraryHotkeyEnabled = false;
             shell.RefreshHotkeyHints();
             Assert.Equal("", hotkey.Text);
@@ -962,7 +992,10 @@ public sealed partial class ScreenTranslateShellTests
             Render(window, "compact-prompts-minimum", 880, 580);
             AssertInside((FrameworkElement)window.Content, preview);
             AssertInside((FrameworkElement)window.Content, button);
-            var visibleRow = (ListBoxItem)list.ItemContainerGenerator.ContainerFromIndex(31);
+            // 加载更多及最小窗口重排可能回收容器，先让待核验的行进入视口。
+            list.ScrollIntoView(list.Items[31]);
+            window.UpdateLayout();
+            var visibleRow = Assert.IsType<ListBoxItem>(list.ItemContainerGenerator.ContainerFromIndex(31));
             AssertInside(visibleRow, Visuals<System.Windows.Controls.Button>(visibleRow).Single());
             AssertInside(visibleRow, Visuals<TextBlock>(visibleRow).Single(t => t.Text.StartsWith("已复制 ")));
 
@@ -970,7 +1003,8 @@ public sealed partial class ScreenTranslateShellTests
             Render(window, "compact-models", 1120, 760);
             var models = (ListBox)window.FindName("ModelList");
             Assert.Equal(12, models.Items.Count);
-            Assert.True(models.ActualHeight / 59 >= 8);
+            Assert.True(models.ActualHeight / 59 >= 8,
+                $"The default viewport must show at least eight model rows: list {models.RenderSize}, content {((FrameworkElement)window.Content).RenderSize}, window {window.ActualWidth} x {window.ActualHeight}.");
             models.SelectedIndex = 5;
             window.UpdateLayout();
             Assert.Equal("本地服务 06", ((FrameworkElement)window.FindName("ModelDetail")).DataContext is LibraryConnection c ? c.Platform : null);
@@ -1009,7 +1043,7 @@ public sealed partial class ScreenTranslateShellTests
     {
         var bounds = element.TransformToAncestor(root).TransformBounds(new Rect(element.RenderSize));
         Assert.True(bounds.Left >= 0 && bounds.Top >= 0 && bounds.Right <= root.ActualWidth + 1 && bounds.Bottom <= root.ActualHeight + 1,
-            $"{element.Name} must remain visible inside the minimum-size window.");
+            $"{element.Name} must remain visible inside the minimum-size window: bounds {bounds}, viewport {root.ActualWidth} x {root.ActualHeight}, desired {element.DesiredSize}, parent {(element.Parent as FrameworkElement)?.RenderSize}, DPI {VisualTreeHelper.GetDpi(element)}.");
     }
 
     private static void PumpUntil(Func<bool> condition)

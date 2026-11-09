@@ -42,6 +42,7 @@ public partial class ScreenCaptureWindow
     private bool _snipClosed;
     private bool _snipRecoveryYielded;
     private (SnipMark Mark, SnipMark[] Redo)? _snipDoubleClickStroke;
+    private bool _snipCopyRgb;
 
     internal void ApplySnipRecovery(bool yielded, IntPtr recoveryWindow)
     {
@@ -57,6 +58,11 @@ public partial class ScreenCaptureWindow
 
     private void InitializeSnippingTools()
     {
+        // 快捷键使用物理按键；仅文字标注框允许输入法，避免 C 被中文组合输入吞掉。
+        InputMethod.SetIsInputMethodEnabled(this, false);
+        PreviewGotKeyboardFocus += (_, e) => {
+            if (e.NewFocus is DependencyObject target) InputMethod.SetIsInputMethodEnabled(target, target is TextBox);
+        };
         _snipCanvas = new Canvas();
         ((Grid)Content).Children.Add(_snipCanvas);
         _snipSurface = new SnipSurface(_snipDocument) { ClipToBounds = true, Visibility = Visibility.Collapsed };
@@ -216,6 +222,7 @@ public partial class ScreenCaptureWindow
             Width = Math.Max(30, Math.Min(280, _selectionWpfRect.Width - point.X / _dpiX)), MinHeight = 30,
             MaxLength = 4000, Tag = new SnipMark(SnipTool.Text, _snipColor, _snipThickness, [point]) };
         System.Windows.Automation.AutomationProperties.SetName(box, "截图标注文字");
+        InputMethod.SetIsInputMethodEnabled(box, true);
         Canvas.SetLeft(box, _selectionWpfRect.Left + point.X / _snipSource.PixelWidth * _selectionWpfRect.Width);
         Canvas.SetTop(box, _selectionWpfRect.Top + point.Y / _snipSource.PixelHeight * _selectionWpfRect.Height);
         box.PreviewKeyDown += (_, e) => { if (e.Key == Key.Enter && !Keyboard.Modifiers.HasFlag(ModifierKeys.Shift)) { CommitSnipText(); Focus(); e.Handled = true; } };
@@ -274,9 +281,14 @@ public partial class ScreenCaptureWindow
             return color;
         }
         var inset = Math.Min(8, Math.Min(region.Width, region.Height) / 4);
-        _snipColorLabel!.Text = region.Width >= 300
-            ? $"{SnipDocument.Hex(color)}   RGB({color.R}, {color.G}, {color.B})   · C 复制"
-            : $"{SnipDocument.Hex(color)} · C";
+        var hex = SnipDocument.Hex(color);
+        var rgb = $"RGB({color.R}, {color.G}, {color.B})";
+        var primary = _snipCopyRgb ? rgb : hex;
+        var secondary = _snipCopyRgb ? hex : rgb;
+        _snipColorLabel!.Text = $"{primary}   {secondary}   · C 复制{(_snipCopyRgb ? "RGB" : "HEX")} · Shift切换";
+        _snipColorLabel.Measure(new System.Windows.Size(double.PositiveInfinity, double.PositiveInfinity));
+        if (_snipColorLabel.DesiredSize.Width + _snipColorPreview.Width + _snipColorPreview.Margin.Left + _snipColorPreview.Margin.Right > region.Width - inset * 2)
+            _snipColorLabel.Text = $"{primary} · C";
         _snipColorHud!.MaxWidth = Math.Max(1, region.Width - inset * 2);
         _snipColorHud.MaxHeight = Math.Max(1, region.Height - inset * 2);
         _snipColorHud!.Visibility = Visibility.Visible;
@@ -304,11 +316,11 @@ public partial class ScreenCaptureWindow
         var color = UpdateSnipColor(position); SetSnipWriting(true);
         try
         {
-            var hex = SnipDocument.Hex(color);
+            var value = _snipCopyRgb ? $"RGB({color.R}, {color.G}, {color.B})" : SnipDocument.Hex(color);
             await SnipClipboard.WriteAsync(() => {
-                if (write is not null) write(hex); else System.Windows.Clipboard.SetDataObject(hex, true);
+                if (write is not null) write(value); else System.Windows.Clipboard.SetDataObject(value, true);
             }, _snipCancellation.Token);
-            if (!_snipClosed) { ApplySnipColor(color); SetSnipStatus($"已复制 {hex} · RGB({color.R}, {color.G}, {color.B})"); }
+            if (!_snipClosed) { ApplySnipColor(color); SetSnipStatus($"已复制 {value} · Shift 切换 HEX/RGB"); }
         }
         catch (OperationCanceledException) { }
         catch (Exception) { if (!_snipClosed) SetSnipStatus("颜色复制失败，请重试；可按 Esc 取消。"); }
@@ -388,17 +400,27 @@ public partial class ScreenCaptureWindow
     private bool HandleSnipKey(KeyEventArgs e)
     {
         if (_snipCanvas is null || e.Handled || Keyboard.FocusedElement is TextBox) return false;
+        var key = e.Key == Key.ImeProcessed ? e.ImeProcessedKey : e.Key;
         if (_snipWriting)
         {
-            if (e.Key is Key.Enter or Key.C or Key.P or Key.Z or Key.Y) { e.Handled = true; return true; }
+            if (key is Key.Enter or Key.C or Key.P or Key.Z or Key.Y) { e.Handled = true; return true; }
             return false;
         }
         var control = Keyboard.Modifiers.HasFlag(ModifierKeys.Control);
-        if (control && e.Key == Key.Z) { FinishSnipStroke(); _snipDocument.Undo(); RefreshSnipDrawing(); }
-        else if (control && e.Key == Key.Y) { _snipDocument.Redo(); RefreshSnipDrawing(); }
-        else if (control && e.Key == Key.P) PinSnip();
-        else if ((control && e.Key == Key.C) || e.Key == Key.Enter) _ = CopySnipAsync();
-        else if (Keyboard.Modifiers == ModifierKeys.None && e.Key == Key.C) _ = CopySnipColorAsync();
+        if (key is Key.LeftShift or Key.RightShift && (Keyboard.Modifiers & ~ModifierKeys.Shift) == ModifierKeys.None)
+        {
+            if (!e.IsRepeat)
+            {
+                _snipCopyRgb = !_snipCopyRgb;
+                UpdateSnipColor(Mouse.GetPosition(this));
+                SetSnipStatus($"当前复制格式：{(_snipCopyRgb ? "RGB" : "HEX (#RRGGBB)")} · C 复制 · Shift 切换");
+            }
+        }
+        else if (control && key == Key.Z) { FinishSnipStroke(); _snipDocument.Undo(); RefreshSnipDrawing(); }
+        else if (control && key == Key.Y) { _snipDocument.Redo(); RefreshSnipDrawing(); }
+        else if (control && key == Key.P) PinSnip();
+        else if ((control && key == Key.C) || key == Key.Enter) _ = CopySnipAsync();
+        else if (Keyboard.Modifiers == ModifierKeys.None && key == Key.C) _ = CopySnipColorAsync();
         else return false;
         e.Handled = true; return true;
     }

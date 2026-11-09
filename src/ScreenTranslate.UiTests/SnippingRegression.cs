@@ -15,6 +15,7 @@ public sealed partial class ScreenTranslateShellTests
 {
     private static void VerifySnippingTools()
     {
+        VerifySnipImeAndReadableHud();
         VerifySnipReviewCases();
         VerifySnipAdversarialInput();
         VerifySnipQuickInteractions();
@@ -236,6 +237,19 @@ public sealed partial class ScreenTranslateShellTests
             string? hex = null;
             Complete(capture.CopySnipColorAsync(outside, value => hex = value));
             Assert.Equal("#0C2238", hex);
+            capture.Focus();
+            void ShiftFormat() {
+                var shift = new KeyEventArgs(Keyboard.PrimaryDevice, PresentationSource.FromVisual(capture), Environment.TickCount, Key.LeftShift) { RoutedEvent = Keyboard.PreviewKeyDownEvent };
+                Invoke("HandleSnipKey", shift); Assert.True(shift.Handled);
+            }
+            ShiftFormat();
+            Complete(capture.CopySnipColorAsync(outside, value => hex = value));
+            Assert.Equal("RGB(12, 34, 56)", hex);
+            capture.UpdateSnipColor(outside);
+            Assert.StartsWith("RGB(12, 34, 56)", ((TextBlock)Get("_snipColorLabel")!).Text);
+            ShiftFormat();
+            Complete(capture.CopySnipColorAsync(outside, value => hex = value));
+            Assert.Equal("#0C2238", hex);
             Assert.False((bool)Get("_snipClosed")!);
             Assert.True(capture.HasSelection);
             Complete(capture.CopySnipColorAsync(inside, _ => throw new InvalidOperationException("fixture")));
@@ -388,6 +402,62 @@ public sealed partial class ScreenTranslateShellTests
         catch (Exception error) { failures.Add(new InvalidOperationException("pin-preserves-pixels-on-dpi-change", error)); }
         finally { System.Runtime.InteropServices.Marshal.FreeHGlobal(memory); pin.Close(); }
         if (failures.Count > 0) throw new AggregateException(failures);
+    }
+
+    private static void VerifySnipImeAndReadableHud()
+    {
+        const BindingFlags flags = BindingFlags.Instance | BindingFlags.NonPublic;
+        using var pixels = new System.Drawing.Bitmap(1000, 700);
+        var capture = new ScreenCaptureWindow((System.Drawing.Bitmap)pixels.Clone(), new System.Drawing.Rectangle(0, 0, 1000, 700), snippingTools: true);
+        object? Get(string name) => typeof(ScreenCaptureWindow).GetField(name, flags)!.GetValue(capture);
+        void Set(string name, object value) => typeof(ScreenCaptureWindow).GetField(name, flags)!.SetValue(capture, value);
+        void Invoke(string name, params object[] args) => typeof(ScreenCaptureWindow).GetMethod(name, flags)!.Invoke(capture, args);
+        KeyEventArgs ImeKey() {
+            var key = new KeyEventArgs(Keyboard.PrimaryDevice, PresentationSource.FromVisual(capture), Environment.TickCount, Key.C) { RoutedEvent = Keyboard.PreviewKeyDownEvent };
+            typeof(KeyEventArgs).GetMethod("MarkImeProcessed", flags)!.Invoke(key, null);
+            return key;
+        }
+        try
+        {
+            capture.Show(); capture.Activate(); capture.Focus(); capture.UpdateLayout();
+            Assert.False(InputMethod.GetIsInputMethodEnabled(capture), "截图快捷键层不能启动输入法组合输入。");
+            Set("_selectionWpfRect", new Rect(100, 100, 600, 300)); Set("_hasSelection", true);
+            Invoke("UpdateSelectionMetadata"); Invoke("UpdateSelectionVisuals");
+            var button = Visuals<ToggleButton>(capture).Single(b => Equals(b.Tag, SnipTool.Pen));
+            button.Focus();
+            Assert.False(InputMethod.GetIsInputMethodEnabled(button), "工具栏取得焦点后同样不能启动输入法。");
+            // 模拟 WPF 已经把物理 C 标为 ImeProcessed；忙碌路径只验证路由，不访问系统剪贴板。
+            capture.Focus(); Set("_snipWriting", true);
+            var busyKey = ImeKey(); Invoke("HandleSnipKey", busyKey);
+            Assert.True(busyKey.Handled, "输入法处理后的 C 必须仍被截图快捷键路由识别。");
+            Set("_snipWriting", false);
+            Invoke("SetSnipTool", SnipTool.Text); Invoke("BeginSnipText", new Point(30, 30));
+            var editor = (TextBox)Get("_snipText")!;
+            Assert.True(InputMethod.GetIsInputMethodEnabled(editor), "文字标注必须继续允许中文输入。");
+            editor.Text = "中文标注 c"; editor.Focus();
+            var textKey = ImeKey(); Invoke("HandleSnipKey", textKey);
+            Assert.False(textKey.Handled); Assert.Same(editor, Keyboard.FocusedElement);
+            var textShift = new KeyEventArgs(Keyboard.PrimaryDevice, PresentationSource.FromVisual(capture), Environment.TickCount, Key.LeftShift) { RoutedEvent = Keyboard.PreviewKeyDownEvent };
+            Invoke("HandleSnipKey", textShift); Assert.False(textShift.Handled);
+            Assert.False((bool)Get("_snipCopyRgb")!);
+            Invoke("CommitSnipText"); capture.Focus();
+            Assert.Equal("中文标注 c", Assert.Single(((SnipDocument)Get("_snipDocument")!).Marks).Text);
+            Assert.False(InputMethod.GetIsInputMethodEnabled(capture));
+            capture.UpdateSnipColor(new Point(150, 150)); capture.UpdateLayout();
+            var label = (TextBlock)Get("_snipColorLabel")!;
+            var swatch = (Border)Get("_snipColorPreview")!;
+            Assert.True(label.FontSize >= 16); Assert.True(swatch.Width >= 18 && swatch.Height >= 18);
+            Assert.Contains("RGB", label.Text);
+            Set("_selectionWpfRect", new Rect(100, 100, 260, 70));
+            capture.UpdateSnipColor(new Point(150, 150)); capture.UpdateLayout();
+            Assert.DoesNotContain("RGB", label.Text);
+            var hud = (FrameworkElement)Get("_snipColorHud")!;
+            Assert.InRange(Canvas.GetLeft(hud) + hud.ActualWidth, 100, 360);
+            Assert.InRange(Canvas.GetTop(hud) + hud.ActualHeight, 100, 170);
+            Assert.Null(((Border)hud).Background); Assert.False(hud.IsHitTestVisible);
+            Render(capture, "snip-readable-color", 1000, 700);
+        }
+        finally { capture.Close(); }
     }
 
     private static BitmapSource SnipFixture(int width, int height)

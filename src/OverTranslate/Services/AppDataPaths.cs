@@ -4,7 +4,7 @@ using Velopack.Locators;
 namespace OverTranslate.Services;
 
 /// <summary>
-/// 便携版把数据保存在程序旁；安装版使用独立用户目录，避免升级或重装替换程序时丢失设置。
+/// 安装版使用固定用户目录；便携版默认使用程序旁的数据，本地构建可显式绑定共享目录。
 /// </summary>
 internal static class AppDataPaths
 {
@@ -29,8 +29,18 @@ internal static class AppDataPaths
             && locator.CurrentlyInstalledVersion is not null;
     }
 
-    internal static string ResolveRoot(string baseDirectory, string localApplicationData, bool installed) =>
-        installed ? Path.Combine(localApplicationData, "ScreenTranslate-data") : Path.Combine(baseDirectory, "data");
+    internal static string ResolveRoot(string baseDirectory, string localApplicationData, bool installed)
+    {
+        if (installed) return Path.Combine(localApplicationData, "ScreenTranslate-data");
+
+        // 本地日常版与预览版显式绑定同一资料目录；不扫描或合并其他副本的数据。
+        var profileFile = Path.Combine(baseDirectory, "data-path.txt");
+        if (!File.Exists(profileFile)) return Path.Combine(baseDirectory, "data");
+        var profile = File.ReadAllText(profileFile).Trim();
+        if (string.IsNullOrWhiteSpace(profile))
+            throw new InvalidDataException("data-path.txt 未指定数据目录，请修正后重新启动，原数据未更改。");
+        return Path.GetFullPath(profile, Path.GetFullPath(baseDirectory));
+    }
 
     internal static string Logs => Path.Combine(Root, "logs");
 

@@ -90,19 +90,19 @@ public partial class ScreenCaptureWindow
         var welcome = new StackPanel { Orientation = Orientation.Horizontal };
         var message = new StackPanel { Margin = new Thickness(10, 2, 26, 2), VerticalAlignment = VerticalAlignment.Center };
         message.Children.Add(new TextBlock { Text = "拖动选择截图区域", FontSize = 14, FontWeight = FontWeights.Medium, Foreground = new SolidColorBrush(Color.FromRgb(25, 37, 53)) });
-        message.Children.Add(new TextBlock { Text = "移动实时取色   ·   C 复制色值   ·   Esc 取消", Style = (Style)Resources["SnipHint"], Margin = new Thickness(0, 5, 0, 0) });
+        message.Children.Add(new TextBlock { Text = "C 复制色值   ·   Shift 切换 HEX/RGB   ·   Esc 取消", Style = (Style)Resources["SnipHint"], Margin = new Thickness(0, 5, 0, 0) });
         welcome.Children.Add(message);
         AddSnipButton(welcome, "取色（移动查看颜色，C 复制）", "pipette", () => SetSnipTool(SnipTool.Picker));
         AddSnipButton(welcome, "取消（Esc）", "x", Close, keepEnabledWhileWriting: true);
         _snipWelcome = SnipFloatingSurface(welcome); _snipCanvas.Children.Add(_snipWelcome);
         var colorRow = new StackPanel { Orientation = Orientation.Horizontal };
-        _snipColorPreview = new Border { Width = 8, Height = 8, CornerRadius = new CornerRadius(2), Margin = new Thickness(0, 0, 5, 0),
+        _snipColorPreview = new Border { Width = 18, Height = 18, CornerRadius = new CornerRadius(3), Margin = new Thickness(0, 0, 8, 0),
             VerticalAlignment = VerticalAlignment.Center,
             BorderBrush = new SolidColorBrush(Color.FromArgb(120, 128, 128, 128)), BorderThickness = new Thickness(1) };
-        _snipColorLabel = new TextBlock { FontSize = 10, VerticalAlignment = VerticalAlignment.Center,
+        _snipColorLabel = new TextBlock { FontSize = 16, FontWeight = FontWeights.Medium, VerticalAlignment = VerticalAlignment.Center,
             FontFamily = new System.Windows.Media.FontFamily("Cascadia Mono, Consolas") };
         colorRow.Children.Add(_snipColorPreview); colorRow.Children.Add(_snipColorLabel);
-        _snipColorHud = new Border { Child = colorRow, Opacity = 0.78, ClipToBounds = true,
+        _snipColorHud = new Border { Child = colorRow, Opacity = 0.86, ClipToBounds = true,
             IsHitTestVisible = false, Visibility = Visibility.Collapsed };
         _snipCanvas.Children.Add(_snipColorHud);
     }

@@ -29,7 +29,7 @@ result = subprocess.run(["git", "ls-files", "-z", "--cached", "--others", "--exc
 manifest = []
 for name in sorted(set(result.stdout.decode("utf-8").split("\0")) - {""}):
     path = Path(name)
-    if not (path.parts[0] in roots or name in files or name.startswith("docs/licenses/") or name.startswith("tools/UpdateFeedProbe/")):
+    if not (path.parts[0] in roots or name in files or name.startswith("docs/licenses/") or name.startswith("docs/guides/OLLAMA_GUIDE") or name.startswith("tools/UpdateFeedProbe/")):
         continue
     if any(part in forbidden_dirs for part in path.parts) or path.name in forbidden_names:
         continue

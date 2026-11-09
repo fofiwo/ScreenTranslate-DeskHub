@@ -19,6 +19,6 @@ try {
         if ($LASTEXITCODE -ne 0) { throw 'Commit failed' }
     }
     $env:GIT_TERMINAL_PROMPT = '0'
-    git -c credential.helper= -c 'credential.helper=!gh auth git-credential' -c credential.interactive=false -c http.proxy=http://127.0.0.1:10808 -c http.version=HTTP/1.1 -c http.lowSpeedLimit=1000 -c http.lowSpeedTime=30 push -u origin main
+    git -c credential.helper= -c credential.https://github.com.helper= -c 'credential.https://github.com.helper=!gh auth git-credential' -c credential.interactive=false -c http.https://github.com.proxy=http://127.0.0.1:10808 -c http.version=HTTP/1.1 -c http.lowSpeedLimit=1000 -c http.lowSpeedTime=30 push -u origin main
     if ($LASTEXITCODE -ne 0) { throw 'Push failed; local snapshot retained' }
 } finally { Pop-Location }

@@ -16,7 +16,8 @@ public class ShellQuickToolLayoutTests
     private static readonly XNamespace X = "http://schemas.microsoft.com/winfx/2006/xaml";
 
     [Theory]
-    [InlineData("CaptureBtn", "CaptureHotkeyText", "F8")]
+    [InlineData("ScreenshotBtn", "ScreenshotHotkeyText", "Ctrl+Alt+Q")]
+    [InlineData("PinImageBtn", "PinImageHotkeyText", "Ctrl+Alt+I")]
     [InlineData("OcrExtractBtn", "OcrHotkeyText", "Ctrl+Alt+O")]
     public void Quick_tool_text_fits_the_real_rail_at_minimum_window_size(
         string buttonName, string hotkeyName, string defaultHotkey) => OnSta(() =>
@@ -48,21 +49,13 @@ public class ShellQuickToolLayoutTests
                 }
 
                 Assert.Equal(Visibility.Visible, hotkey.Visibility);
-                Assert.Equal(TextTrimming.None, hotkey.TextTrimming);
+                Assert.Equal(TextTrimming.CharacterEllipsis, hotkey.TextTrimming);
+                Assert.Equal(text, hotkey.ToolTip);
                 AssertInside(frame, hotkey);
-                var natural = new FormattedText(text, CultureInfo.CurrentCulture, hotkey.FlowDirection,
-                    new Typeface(hotkey.FontFamily, hotkey.FontStyle, hotkey.FontWeight, hotkey.FontStretch),
-                    hotkey.FontSize, Brushes.Black, VisualTreeHelper.GetDpi(hotkey).PixelsPerDip);
-                Assert.True(hotkey.ActualWidth + 0.5 >= natural.WidthIncludingTrailingWhitespace,
-                    $"{buttonName}: shortcut needs {natural.WidthIncludingTrailingWhitespace:F2}, gets {hotkey.ActualWidth:F2}.");
                 var labelBounds = label.TransformToAncestor(frame).TransformBounds(new Rect(label.RenderSize));
                 var keyBounds = hotkey.TransformToAncestor(frame).TransformBounds(new Rect(hotkey.RenderSize));
-                Assert.True(keyBounds.Left >= frame.Padding.Left + frame.BorderThickness.Left - 0.5
-                    && keyBounds.Right <= frame.ActualWidth - frame.Padding.Right - frame.BorderThickness.Right + 0.5,
-                    "The entire shortcut must fit inside the button's content area.");
-                Assert.True(keyBounds.Height / hotkey.ActualHeight * hotkey.FontSize >= 9,
-                    "The long shortcut must remain legible after fitting.");
-                Assert.True(labelBounds.Bottom <= keyBounds.Top + 0.5, "The name and shortcut must not overlap.");
+                Assert.True(label.ActualWidth >= 45, "The action name must retain readable space.");
+                Assert.True(labelBounds.Right <= keyBounds.Left + 0.5, "The name and shortcut must not overlap.");
                 if (text == longHotkey && name == originalLabel) SaveEvidence(root, $"{buttonName}-{theme}");
             }
         }

@@ -23,32 +23,29 @@ public class ShellWindowMarkupTests
     /// WPF withholds tooltips from disabled controls unless asked.
     /// </summary>
     [Theory]
-    [InlineData("CaptureBtn")]
+    [InlineData("ScreenshotBtn")]
     [InlineData("OcrExtractBtn")]
     public void A_quick_tool_still_explains_itself_while_disabled(string name)
     {
         Assert.Equal("True", (string?)Row(name).Attribute("ToolTipService.ShowOnDisabled"));
     }
 
-    /// <summary>
-    /// 名称与快捷键分别占一行；名称允许省略，快捷键的完整可见性由实际布局测试验证。
-    /// </summary>
+    /// <summary>快捷操作单行排列；长快捷键允许省略，但完整内容必须可通过提示查看。</summary>
     [Theory]
-    [InlineData("CaptureBtn", "CaptureHotkeyText")]
+    [InlineData("ScreenshotBtn", "ScreenshotHotkeyText")]
     [InlineData("OcrExtractBtn", "OcrHotkeyText")]
-    public void A_quick_tool_stacks_its_name_above_its_untrimmed_shortcut(string row, string hotkey)
+    [InlineData("PinImageBtn", "PinImageHotkeyText")]
+    public void A_quick_tool_keeps_its_name_beside_its_shortcut(string row, string hotkey)
     {
         var panel = Row(row).Elements().Single();
-        Assert.Equal("StackPanel", panel.Name.LocalName);
-        Assert.Equal("Vertical", (string?)panel.Attribute("Orientation") ?? "Vertical");
-        var children = panel.Elements().ToList();
-        var shortcutAt = children.FindIndex(e => e.DescendantsAndSelf()
-            .Any(child => (string?)child.Attribute(X + "Name") == hotkey));
-        var labelAt = children.FindIndex(e => (string?)e.Attribute("TextTrimming") is not null);
-        Assert.True(labelAt >= 0 && shortcutAt > labelAt);
-        Assert.Equal("CharacterEllipsis", (string?)children[labelAt].Attribute("TextTrimming"));
+        Assert.Equal("Grid", panel.Name.LocalName);
         var shortcut = panel.Descendants().Single(e => (string?)e.Attribute(X + "Name") == hotkey);
-        Assert.Equal("None", (string?)shortcut.Attribute("TextTrimming") ?? "None");
+        Assert.Equal("1", (string?)shortcut.Attribute("Grid.Column"));
+        var label = panel.Elements().Single(e => (string?)e.Attribute("TextTrimming") is not null);
+        Assert.Equal("CharacterEllipsis", (string?)label.Attribute("TextTrimming"));
+        var style = Window().Descendants().Single(e => (string?)e.Attribute(X + "Key") == "QuickToolHotkeyText");
+        Assert.Contains(style.Elements(), e => (string?)e.Attribute("Property") == "ToolTip"
+            && ((string?)e.Attribute("Value"))?.Contains("Binding Text") == true);
     }
 
     /// <summary>

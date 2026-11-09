@@ -1,0 +1,55 @@
+<Window x:Class="OverTranslate.Views.ClipboardHistory.SyncSetupWindow"
+ xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+ Title="设置双向同步" Width="560" Height="540" MinWidth="480" MinHeight="520"
+ WindowStyle="None" ResizeMode="CanResizeWithGrip" WindowStartupLocation="CenterScreen" ShowInTaskbar="False"
+ Background="{DynamicResource AppWindowBg}" Foreground="{DynamicResource AppTextPrimary}"
+ FontFamily="{DynamicResource AppFont}" FontSize="14" UseLayoutRounding="True">
+ <WindowChrome.WindowChrome><WindowChrome CaptionHeight="40" ResizeBorderThickness="6" GlassFrameThickness="0" UseAeroCaptionButtons="False"/></WindowChrome.WindowChrome>
+ <Border Background="{DynamicResource AppWindowBg}" BorderBrush="{DynamicResource AppBorder}" BorderThickness="1">
+  <Grid>
+   <Grid.RowDefinitions><RowDefinition Height="40"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+   <Grid>
+    <TextBlock Text="设备与同步" FontSize="12" Foreground="{DynamicResource AppTextSecondary}" VerticalAlignment="Center" Margin="20,0,0,0"/>
+    <Button x:Name="CloseButton" HorizontalAlignment="Right" Style="{StaticResource WindowCloseButton}" Content="&#xE8BB;"
+     Click="Later_Click" ToolTip="下次启动时再询问" AutomationProperties.Name="关闭，下次再询问" WindowChrome.IsHitTestVisibleInChrome="True"/>
+   </Grid>
+   <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+    <StackPanel Margin="28,18,28,16">
+     <TextBlock Text="在自己的电脑间同步" FontSize="24" FontWeight="SemiBold" TextWrapping="Wrap"/>
+     <TextBlock Text="连接同一局域网内的另一台电脑，让常用内容随手可用。" Style="{StaticResource ProductHint}" Margin="0,10,0,24"/>
+     <Grid Margin="0,0,0,20">
+      <Grid.ColumnDefinitions><ColumnDefinition Width="32"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+      <TextBlock Text="&#xE77F;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="20" Foreground="{DynamicResource AppAccent}" Margin="0,2,0,0"/>
+      <StackPanel Grid.Column="1"><TextBlock Text="剪贴板" FontSize="15" FontWeight="SemiBold"/>
+       <TextBlock Text="自动同步新复制的文本与图片" Style="{StaticResource ProductHint}" Margin="0,4,0,0"/></StackPanel>
+     </Grid>
+     <Grid Margin="0,0,0,22">
+      <Grid.ColumnDefinitions><ColumnDefinition Width="32"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+      <TextBlock Text="&#xE8F1;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="20" Foreground="{DynamicResource AppAccent}" Margin="0,2,0,0"/>
+      <StackPanel Grid.Column="1"><TextBlock Text="提示词与模型库" FontSize="15" FontWeight="SemiBold"/>
+       <TextBlock Text="双向同步资料与修改，模型配置包括 API Key" Style="{StaticResource ProductHint}" Margin="0,4,0,0"/></StackPanel>
+     </Grid>
+     <Border Background="{DynamicResource AppHeaderBg}" CornerRadius="8" Padding="16">
+      <StackPanel>
+       <TextBlock Text="只与自己的可信电脑配对" FontWeight="SemiBold" TextWrapping="Wrap"/>
+       <TextBlock Text="开始后会生成本机地址和配对码。在另一台电脑输入，再回到本机确认，即可开始同步。" Style="{StaticResource ProductHint}" Margin="0,6,0,0"/>
+      </StackPanel>
+     </Border>
+     <TextBlock Text="以后可从主窗口左下角的“设备与同步”更改。" Style="{StaticResource ProductHint}" Margin="0,16,0,0"/>
+    </StackPanel>
+   </ScrollViewer>
+   <Border Grid.Row="2" BorderBrush="{DynamicResource AppBorder}" BorderThickness="0,1,0,0" Padding="28,16,28,20">
+    <StackPanel>
+     <TextBlock x:Name="ErrorText" Visibility="Collapsed" Text="同步设置未完成，请检查目录权限后重试。也可稍后从“设备与同步”开启。"
+      Style="{StaticResource ProductHint}" Foreground="{DynamicResource AppError}" Margin="0,0,0,12" AutomationProperties.LiveSetting="Assertive"/>
+     <TextBlock Text="“暂不使用”不再询问；“下次再说”下次启动提醒。" Style="{StaticResource ProductHint}" Margin="0,0,0,12"/>
+     <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+      <Button x:Name="LaterButton" Content="下次再说" HorizontalAlignment="Left" Style="{StaticResource ProductLink}" Click="Later_Click" IsCancel="True" ToolTip="本次关闭，下次启动时再询问"/>
+      <Button x:Name="DeclineButton" Grid.Column="1" Content="暂不使用" Style="{StaticResource ProductSecondaryButton}" Click="Decline_Click" ToolTip="记住选择，不再自动询问" Margin="0,0,10,0"/>
+      <Button x:Name="StartPairingButton" Grid.Column="2" Content="开始配对" Style="{StaticResource ProductButton}" Click="Start_Click"/>
+     </Grid>
+    </StackPanel>
+   </Border>
+  </Grid>
+ </Border>
+</Window>

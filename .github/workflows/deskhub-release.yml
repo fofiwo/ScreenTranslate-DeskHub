@@ -28,22 +28,20 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '8.0.x'
-      - name: Validate update and sync behavior
+      - name: Validate complete unit regression
         shell: pwsh
         run: |
-          dotnet test src/OverTranslate.Tests -c Release --filter 'FullyQualifiedName~DeskHubUpdateTests|FullyQualifiedName~DeltaAwareUpdateManagerTests|FullyQualifiedName~ReleaseNotesTests|FullyQualifiedName~UnifiedLanSyncTests|FullyQualifiedName~LibrarySyncTests|FullyQualifiedName~InstallationDataTests|FullyQualifiedName~SnipDocumentTests|FullyQualifiedName~HotkeyBindingsTests' --logger 'console;verbosity=minimal'
+          dotnet test src/OverTranslate.Tests -c Release --logger 'console;verbosity=minimal'
           if ($LASTEXITCODE -ne 0) { throw 'Required tests failed' }
       - name: Install pinned packaging tool
         shell: pwsh
         run: |
           dotnet tool install vpk --version 1.2.0 --tool-path .tools/velopack
           if ($LASTEXITCODE -ne 0) { throw 'Packaging tool install failed' }
-      - name: Validate update entry interactions
+      - name: Validate complete desktop interactions
         shell: pwsh
-        env:
-          SCREEN_TRANSLATE_UPDATE_ONLY: '1'
         run: |
-          dotnet test src/ScreenTranslate.UiTests -c Release --filter ProductShellStartsWithCaptureAndKeepsAllDestinationsReachable --logger 'console;verbosity=minimal'
+          dotnet test src/ScreenTranslate.UiTests -c Release --logger 'console;verbosity=minimal'
           if ($LASTEXITCODE -ne 0) { throw 'Update entry acceptance failed' }
       - name: Build clean installer and update feed
         shell: pwsh
@@ -60,11 +58,11 @@ jobs:
           $notes = @'
           ScreenTranslate DeskHub 安装版，适用于 Windows x64。
 
-          - 双击截图选区复制含标注图片并退出；复制失败时保留编辑内容。
-          - 贴图采用无边框、100% 原始物理像素展示，跨 DPI 变化保持缩放比例。
-          - 鼠标移动时实时显示冻结原图的 HEX／RGB；按 C 复制 HEX，Ctrl+C 复制图片。
-          - 色值提示以透明小字固定在选区内底部，按底图明暗切换字色，不拦截鼠标。
-          - 修复双击画笔残点、撤销重做历史、取色影响未完成笔画及选区离屏提示异常。
+          - 同步完整当前源码：新版多工具导航、独立截图工具页、剪贴板回填与设置开关、启动同步引导。
+          - 修复中文输入法吞掉 C 取色快捷键；文字标注仍支持中文输入。
+          - 放大取色色值文字与色块，保持选区内透明提示；默认复制 #RRGGBB，按 Shift 切换 HEX/RGB。
+          - 双击截图选区复制并退出；贴图保持无边框、100% 原始物理像素尺寸。
+          - 保留截图交互审查修复和最新剪贴板、资料库、同步改动。
           - 安装包不包含开发者的用户数据；升级保留独立数据目录。
 
           首次使用请下载 ScreenTranslate-win-Setup.exe。已有早期本地版需手动安装一次，之后可在应用内更新。

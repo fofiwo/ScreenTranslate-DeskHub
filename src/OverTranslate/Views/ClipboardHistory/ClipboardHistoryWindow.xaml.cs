@@ -20,7 +20,6 @@ using KeyEventArgs = System.Windows.Input.KeyEventArgs;
 using MessageBox = System.Windows.MessageBox;
 using ButtonBase = System.Windows.Controls.Primitives.ButtonBase;
 using ScrollBar = System.Windows.Controls.Primitives.ScrollBar;
-using Brush = System.Windows.Media.Brush;
 using Brushes = System.Windows.Media.Brushes;
 
 namespace OverTranslate.Views.ClipboardHistory;
@@ -121,7 +120,10 @@ public partial class ClipboardHistoryWindow : Window
     private static int _openVersion;
     private readonly ClipboardHistoryStore _store;
     private readonly Func<ClipboardRecord, Task> _copy;
-    private readonly Func<Task<bool>> _paste;
+    private readonly Func<OriginalApplicationPaste.Target, Task<bool>> _paste;
+    private readonly OverTranslate.Models.AppSettings _settings;
+    private readonly Func<bool> _saveSettings;
+    private OriginalApplicationPaste.Target _pasteTarget;
     private readonly ISystemClipboardHistory _systemHistory;
     private readonly CancellationTokenSource _lifetime = new();
     private readonly DispatcherTimer _timeTimer = new() { Interval = TimeSpan.FromMinutes(1) };
@@ -148,14 +150,18 @@ public partial class ClipboardHistoryWindow : Window
     internal ClipboardRecord? SelectedRecord => (HistoryList.SelectedItem as ClipboardRecordView)?.Record;
 
     internal ClipboardHistoryWindow(ClipboardHistoryStore store, Func<ClipboardRecord, Task>? copy = null,
-        Func<Task<bool>>? paste = null, ISystemClipboardHistory? systemHistory = null, bool managePosition = false)
+        Func<Task<bool>>? paste = null, ISystemClipboardHistory? systemHistory = null, bool managePosition = false,
+        OverTranslate.Models.AppSettings? settings = null, Func<bool>? saveSettings = null)
     {
         _store = store;
         _copy = copy ?? (record => ClipboardContent.CopyAsync(record, store));
-        _paste = paste ?? (() => OriginalApplicationPaste.PasteAsync(this));
+        _paste = paste is null ? target => OriginalApplicationPaste.PasteAsync(this, target) : _ => paste();
+        _settings = settings ?? SettingsService.Instance.Current;
+        _saveSettings = saveSettings ?? SettingsService.Instance.TrySave;
         _systemHistory = systemHistory ?? new SystemClipboardHistory();
         _managePosition = managePosition;
         InitializeComponent();
+        RefreshBehaviorSettings();
         SourceInitialized += (_, _) =>
         {
             if (!_managePosition) return;
@@ -174,7 +180,11 @@ public partial class ClipboardHistoryWindow : Window
             if (IsVisible) { _timeTimer.Start(); foreach (var view in _views.Values) view.RefreshTime(); RefreshViews(); }
             else { ++_previewVersion; _timeTimer.Stop(); PreviewPanel.Visibility = Visibility.Collapsed; PreviewImage.Source = null; PreviewText.Clear(); }
         };
-        Activated += (_, _) => { if (ClipboardHistoryRuntime.LastError is { } error) StatusText.Text = error; };
+        Activated += (_, _) =>
+        {
+            _pasteTarget = OriginalApplicationPaste.CaptureTarget();
+            if (ClipboardHistoryRuntime.LastError is { } error) StatusText.Text = error;
+        };
         Deactivated += (_, _) => ScheduleDismiss();
         MenuButton.ContextMenu.Closed += (_, _) => ScheduleDismiss();
         HistoryList.ContextMenu.Closed += (_, _) => ScheduleDismiss();
@@ -213,6 +223,8 @@ public partial class ClipboardHistoryWindow : Window
 
     internal void ShowPanel()
     {
+        _pasteTarget = OriginalApplicationPaste.CaptureTarget();
+        RefreshBehaviorSettings();
         SearchBox.Clear(); TypeFilter.SelectedIndex = 0;
         if (!IsVisible) Show();
         if (WindowState == WindowState.Minimized) WindowState = WindowState.Normal;
@@ -358,6 +370,7 @@ public partial class ClipboardHistoryWindow : Window
     internal async Task CopySelectedAsync(bool paste = false)
     {
         if (_busy || _filterPending || SelectedRecord is not { } record) return;
+        var pasteTarget = _pasteTarget;
         _busy = true;
         try
         {
@@ -366,7 +379,7 @@ public partial class ClipboardHistoryWindow : Window
             var copiedAt = DateTimeOffset.UtcNow;
             if (paste)
             {
-                if (await _paste()) { StatusText.Text = "已向原应用发送粘贴快捷键。"; Dismiss(); }
+                if (await _paste(pasteTarget)) { StatusText.Text = "已向原应用发送粘贴快捷键。"; Dismiss(); }
                 else { Show(); Activate(); StatusText.Text = "内容已复制，但无法自动粘贴。请切换到原应用按 Ctrl + V。"; }
             }
             else { StatusText.Text = "已复制。"; Dismiss(); }
@@ -383,6 +396,7 @@ public partial class ClipboardHistoryWindow : Window
     }
 
     internal Task PasteSelectedAsync() => CopySelectedAsync(true);
+    internal Task ActivateSelectedAsync() => CopySelectedAsync(_settings.ClipboardAutoPaste);
     private async void CopyMenu_Click(object sender, RoutedEventArgs e) => await CopySelectedAsync();
     private async void Paste_Click(object sender, RoutedEventArgs e) => await PasteSelectedAsync();
 
@@ -390,7 +404,7 @@ public partial class ClipboardHistoryWindow : Window
     {
         if (_busy || e.ChangedButton != MouseButton.Left || e.OriginalSource is not DependencyObject source || InsideAction(source)) return;
         if (ItemsControl.ContainerFromElement(HistoryList, source) is not ListBoxItem item || item.DataContext is not ClipboardRecordView) return;
-        HistoryList.SelectedItem = item.DataContext; e.Handled = true; await CopySelectedAsync();
+        HistoryList.SelectedItem = item.DataContext; e.Handled = true; await ActivateSelectedAsync();
     }
 
     private static bool InsideAction(DependencyObject? element)
@@ -512,8 +526,9 @@ public partial class ClipboardHistoryWindow : Window
     {
         WindowPinned = pinned; Topmost = pinned;
         WindowPinButton.Content = pinned ? "\uE77A" : "\uE718";
-        WindowPinButton.Background = pinned ? (Brush)FindResource("AppAccentSubtle") : Brushes.Transparent;
-        WindowPinButton.Foreground = (Brush)FindResource(pinned ? "AppAccent" : "AppTextSecondary");
+        if (pinned) WindowPinButton.SetResourceReference(BackgroundProperty, "AppAccentSubtle");
+        else WindowPinButton.Background = Brushes.Transparent;
+        WindowPinButton.SetResourceReference(ForegroundProperty, pinned ? "AppAccent" : "AppTextSecondary");
         WindowPinButton.ToolTip = pinned ? "取消固定窗口：点击外部自动收起" : "固定窗口：失焦后保持显示";
         System.Windows.Automation.AutomationProperties.SetName(WindowPinButton, pinned ? "取消固定窗口" : "固定窗口");
     }
@@ -526,7 +541,33 @@ public partial class ClipboardHistoryWindow : Window
     }
 
     private void Menu_Click(object sender, RoutedEventArgs e)
-    { MenuButton.ContextMenu.PlacementTarget = MenuButton; MenuButton.ContextMenu.IsOpen = true; }
+    { RefreshBehaviorSettings(); MenuButton.ContextMenu.PlacementTarget = MenuButton; MenuButton.ContextMenu.IsOpen = true; }
+
+    private void RefreshBehaviorSettings()
+    {
+        AutoPasteMenuItem.IsChecked = _settings.ClipboardAutoPaste;
+        RecordHistoryMenuItem.IsChecked = _settings.ClipboardHistoryEnabled;
+        ActionHint.Text = _settings.ClipboardAutoPaste ? "点击 / Enter 粘贴 · Esc 收起" : "点击 / Enter 复制 · Esc 收起";
+        RecordingHint.Text = _settings.ClipboardHistoryEnabled ? "剪贴板历史" : "历史记录已暂停";
+    }
+
+    private void BehaviorSetting_Click(object sender, RoutedEventArgs e)
+    {
+        var previousPaste = _settings.ClipboardAutoPaste;
+        var previousHistory = _settings.ClipboardHistoryEnabled;
+        _settings.ClipboardAutoPaste = AutoPasteMenuItem.IsChecked;
+        _settings.ClipboardHistoryEnabled = RecordHistoryMenuItem.IsChecked;
+        if (!_saveSettings())
+        {
+            _settings.ClipboardAutoPaste = previousPaste;
+            _settings.ClipboardHistoryEnabled = previousHistory;
+            StatusText.Text = "设置保存失败，请检查目录权限或磁盘空间后重试。";
+        }
+        else StatusText.Text = ReferenceEquals(sender, AutoPasteMenuItem)
+            ? (_settings.ClipboardAutoPaste ? "自动粘贴已开启：点击条目后回到原输入框。" : "自动粘贴已关闭：点击条目只复制内容。")
+            : (_settings.ClipboardHistoryEnabled ? "历史记录已开启，仅记录此后复制的内容。" : "历史记录已暂停，已有内容仍可使用。" );
+        RefreshBehaviorSettings();
+    }
     private void ShortcutSettings_Click(object sender, RoutedEventArgs e) { Dismiss(); ShellWindow.ShowOrActivate(ShellPage.Settings).ShowQuickToolSettings(); }
     private void OpenFolder_Click(object sender, RoutedEventArgs e)
     {
@@ -595,7 +636,7 @@ public partial class ClipboardHistoryWindow : Window
             HistoryList.ScrollIntoView(HistoryList.SelectedItem);
         }
         else if (e.Key == Key.Enter && PreviewPanel.Visibility != Visibility.Visible && (SearchBox.IsKeyboardFocusWithin || HistoryList.IsKeyboardFocusWithin))
-        { e.Handled = true; await CopySelectedAsync(); }
+        { e.Handled = true; await ActivateSelectedAsync(); }
     }
 
     private async void Import_Click(object sender, RoutedEventArgs e) => await ImportSystemHistoryAsync();

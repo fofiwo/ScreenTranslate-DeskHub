@@ -28,15 +28,20 @@ public sealed partial class ScreenTranslateShellTests
             state.SetValue(null, null);
             shell = new ShellWindow(() => new LibraryState(), () => { });
             var button = (Button)shell.FindName("UpdateButton");
-            Assert.Equal("检查更新", button.Content);
+            Assert.Equal("安装新版", button.Content);
             Render(shell, "update-entry-minimum", 1100, 680);
-            AssertInside((FrameworkElement)shell.Content, button);
+            Assert.Equal(Visibility.Collapsed, button.Visibility);
+            ((RadioButton)shell.FindName("AboutNav")).IsChecked = true;
+            var overview = Assert.IsType<ProductAboutPage>(((Border)shell.FindName("ContentHost")).Child);
+            Render(shell, "about-update-entry-minimum", 1100, 680);
+            var manual = Visuals<Button>(overview).Single(b => Equals(b.Content, "检查更新"));
+            AssertInside((FrameworkElement)shell.Content, manual);
 
             var pending = new TaskCompletionSource<OverTranslate.Services.UpdateInfo?>();
             pendingField.SetValue(null, pending.Task);
-            button.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-            Assert.Equal("正在检查更新…", button.Content);
-            Assert.False(button.IsEnabled);
+            manual.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Assert.Equal("正在检查更新…", manual.Content);
+            Assert.False(manual.IsEnabled);
 
             // Prerelease fixture skips release-note networking; no package is downloaded or applied.
             var asset = new VelopackAsset { PackageId = "ScreenTranslate", Version = SemanticVersion.Parse("9.9.9-test"),
@@ -47,9 +52,15 @@ public sealed partial class ScreenTranslateShellTests
                 new Velopack.UpdateInfo(asset, false, null!, []));
             state.SetValue(null, info);
             pending.SetResult(info);
-            PumpUntil(() => button.IsEnabled);
+            PumpUntil(() => manual.IsEnabled);
             ((EventHandler?)changed.GetValue(null))?.Invoke(null, EventArgs.Empty);
-            Assert.Equal("发现新版 v9.9.9-test", button.Content);
+            Assert.Equal(Visibility.Visible, button.Visibility);
+            Render(shell, "multitool-update-available", 1100, 680);
+            var tools = (ScrollViewer)shell.FindName("ToolScroll");
+            Assert.True(tools.ScrollableHeight < 1, $"Update notice must not hide tools: extent {tools.ExtentHeight}, viewport {tools.ViewportHeight}.");
+            AssertInside((FrameworkElement)shell.Content, button);
+            Assert.Equal("安装新版", button.Content);
+            Assert.Contains("9.9.9-test", Assert.IsType<string>(button.ToolTip));
             Assert.Equal(FontWeights.SemiBold, button.FontWeight);
             button.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
             PumpUntil(() => Application.Current.Windows.OfType<UpdateWindow>().Any(w => w.IsVisible));
@@ -60,7 +71,7 @@ public sealed partial class ScreenTranslateShellTests
 
             tray = new TrayMenuWindow();
             var trayButton = (Button)tray.FindName("UpdateTrayButton");
-            Assert.Equal(button.Content, trayButton.Content);
+            Assert.Equal("发现新版 v9.9.9-test", trayButton.Content);
             trayButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
             Assert.Single(Application.Current.Windows.OfType<UpdateWindow>());
 

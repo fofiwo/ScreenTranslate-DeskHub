@@ -33,6 +33,8 @@ public sealed partial class ScreenTranslateShellTests
             PumpUntil(() => !window.IsRefreshing);
             Assert.True(ReferenceEquals(original, list.ItemsSource), "未变化的列表不应重建");
 
+            window.Dispatcher.Invoke(() => { }, System.Windows.Threading.DispatcherPriority.ApplicationIdle);
+
             var gate = typeof(ClipboardHistoryStore).GetField("_gate", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(store)!;
             using var entered = new ManualResetEventSlim();
             var writer = Task.Run(() => { lock (gate) { entered.Set(); Thread.Sleep(500); } });
@@ -40,9 +42,9 @@ public sealed partial class ScreenTranslateShellTests
             var watch = Stopwatch.StartNew();
             window.RefreshViews();
             var inputHandled = false;
-            window.Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Input, () => inputHandled = true);
+            // 在输入真正得到响应时计时；消息泵随后等待 Background 定时器的时间不属于输入延迟。
+            window.Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Input, () => { watch.Stop(); inputHandled = true; });
             PumpUntil(() => inputHandled);
-            watch.Stop();
             Assert.True(watch.ElapsedMilliseconds < 150, $"刷新阻塞 UI {watch.ElapsedMilliseconds} ms");
             writer.GetAwaiter().GetResult();
             PumpUntil(() => !window.IsRefreshing);
@@ -71,13 +73,16 @@ public sealed partial class ScreenTranslateShellTests
         var bitmap = System.Windows.Media.Imaging.BitmapSource.Create(width, height, 96, 96,
             System.Windows.Media.PixelFormats.Bgra32, null, pixels, stride);
         var data = new System.Windows.DataObject(); data.SetImage(bitmap); data.SetText("image fixture");
+        // 清空前面其它窗口留下的布局队列，避免把无关 Render 优先级任务归因于本次压缩。
+        System.Windows.Threading.Dispatcher.CurrentDispatcher.Invoke(() => { }, System.Windows.Threading.DispatcherPriority.ApplicationIdle);
         var watch = Stopwatch.StartNew();
         var capture = ClipboardContent.CaptureAsync(data, "fixture");
+        var preparationMs = watch.ElapsedMilliseconds;
         var handled = false;
         System.Windows.Threading.Dispatcher.CurrentDispatcher.BeginInvoke(
-            System.Windows.Threading.DispatcherPriority.Input, () => handled = true);
+            System.Windows.Threading.DispatcherPriority.Input, () => { watch.Stop(); handled = true; });
         PumpUntil(() => handled);
-        Assert.True(watch.ElapsedMilliseconds < 150, $"图片压缩阻塞 UI {watch.ElapsedMilliseconds} ms");
+        Assert.True(watch.ElapsedMilliseconds < 150, $"图片压缩阻塞 UI {watch.ElapsedMilliseconds} ms（同步读取准备 {preparationMs} ms）");
         PumpUntil(() => capture.IsCompleted);
         var result = capture.GetAwaiter().GetResult()!;
         Assert.Equal("image fixture", result.Record.Text);
