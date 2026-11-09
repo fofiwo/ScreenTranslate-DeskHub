@@ -44,6 +44,11 @@ public sealed partial class ScreenTranslateShellTests
                     Source = new Uri("pack://application:,,,/ScreenTranslate;component/Resources/Strings.zh-Hans.xaml", UriKind.Absolute)
                 };
                 ApplyTheme(app, "Light");
+                if (Environment.GetEnvironmentVariable("SCREEN_TRANSLATE_UPDATE_ONLY") == "1")
+                {
+                    VerifyUpdateEntries();
+                    return;
+                }
                 if (Environment.GetEnvironmentVariable("SCREEN_TRANSLATE_CLIPBOARD_PIN_ONLY") == "1")
                 {
                     VerifyClipboardWindowPinToggle();

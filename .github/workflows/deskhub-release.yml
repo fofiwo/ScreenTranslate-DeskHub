@@ -38,6 +38,13 @@ jobs:
         run: |
           dotnet tool install vpk --version 1.2.0 --tool-path .tools/velopack
           if ($LASTEXITCODE -ne 0) { throw 'Packaging tool install failed' }
+      - name: Validate update entry interactions
+        shell: pwsh
+        env:
+          SCREEN_TRANSLATE_UPDATE_ONLY: '1'
+        run: |
+          dotnet test src/ScreenTranslate.UiTests -c Release --filter ProductShellStartsWithCaptureAndKeepsAllDestinationsReachable --logger 'console;verbosity=minimal'
+          if ($LASTEXITCODE -ne 0) { throw 'Update entry acceptance failed' }
       - name: Build clean installer and update feed
         shell: pwsh
         run: |
