@@ -34,6 +34,17 @@ public sealed class SnipDocument
         _redo.Push(_marks[^1]); _marks.RemoveAt(_marks.Count - 1); return true;
     }
 
+    internal SnipMark[] CaptureRedo() => _redo.ToArray();
+
+    internal bool DiscardLast(SnipMark expected, IReadOnlyList<SnipMark> previousRedo)
+    {
+        if (_marks.Count == 0 || !ReferenceEquals(_marks[^1], expected)) return false;
+        _marks.RemoveAt(_marks.Count - 1);
+        _redo.Clear();
+        for (var i = previousRedo.Count - 1; i >= 0; i--) _redo.Push(previousRedo[i]);
+        return true;
+    }
+
     public bool Redo()
     {
         if (!_redo.TryPop(out var mark)) return false;

@@ -15,7 +15,9 @@ public sealed partial class ScreenTranslateShellTests
 {
     private static void VerifySnippingTools()
     {
+        VerifySnipReviewCases();
         VerifySnipAdversarialInput();
+        VerifySnipQuickInteractions();
         using var pixels = new System.Drawing.Bitmap(1000, 700);
         using (var graphics = System.Drawing.Graphics.FromImage(pixels))
         {
@@ -69,7 +71,7 @@ public sealed partial class ScreenTranslateShellTests
             toolButtons.Single(b => Equals(b.Tag, SnipTool.Picker)).RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
             Assert.Equal(Visibility.Visible, ((FrameworkElement)Get("_snipColorPreview")!).Visibility);
             Assert.Equal(Visibility.Collapsed, ((FrameworkElement)Get("_snipOptions")!).Visibility);
-            Invoke("SetSnipStatus", "#EEF5FC    RGB(238, 245, 252) · 单击复制 HEX");
+            capture.UpdateSnipColor(new Point(20 / scaleX, 20 / scaleY));
             Render(capture, "snip-picker", (int)(1000 / scaleX), (int)(700 / scaleY), scaleX);
             Render(capture, "snip-narrow-before-layout", 600, 420);
             Invoke("LayoutSnipToolbar");
@@ -102,7 +104,7 @@ public sealed partial class ScreenTranslateShellTests
         try
         {
             Assert.True(first.Topmost); Assert.True(second.Topmost);
-            Render(first, "snip-pinned", 604, 338);
+            Render(first, "snip-pinned", 600, 300);
             first.Close();
             BitmapSource? pinned = null;
             var copy = second.CopyAsync(image => pinned = image);
@@ -187,6 +189,205 @@ public sealed partial class ScreenTranslateShellTests
             Assert.InRange(after / before, 1.08, 1.12);
         }
         finally { pin.Close(); }
+    }
+
+    private static void VerifySnipQuickInteractions()
+    {
+        using var pixels = new System.Drawing.Bitmap(1000, 700);
+        using (var graphics = System.Drawing.Graphics.FromImage(pixels))
+        {
+            graphics.Clear(System.Drawing.Color.FromArgb(12, 34, 56));
+            graphics.FillRectangle(System.Drawing.Brushes.White, 100, 100, 600, 300);
+        }
+        var capture = new ScreenCaptureWindow((System.Drawing.Bitmap)pixels.Clone(), new System.Drawing.Rectangle(0, 0, 1000, 700), snippingTools: true);
+        const BindingFlags flags = BindingFlags.Instance | BindingFlags.NonPublic;
+        object? Get(string name) => typeof(ScreenCaptureWindow).GetField(name, flags)!.GetValue(capture);
+        void Set(string name, object value) => typeof(ScreenCaptureWindow).GetField(name, flags)!.SetValue(capture, value);
+        void Invoke(string name, params object[] args) => typeof(ScreenCaptureWindow).GetMethod(name, flags)!.Invoke(capture, args);
+        void Complete(System.Threading.Tasks.Task task) { PumpUntil(() => task.IsCompleted); task.GetAwaiter().GetResult(); }
+        try
+        {
+            capture.Show(); capture.UpdateLayout();
+            var sx = (double)Get("_dpiX")!; var sy = (double)Get("_dpiY")!;
+            var inside = new Point(150 / sx, 150 / sy);
+            var outside = new Point(20 / sx, 20 / sy);
+            Set("_selectionWpfRect", new Rect(100 / sx, 100 / sy, 600 / sx, 300 / sy)); Set("_hasSelection", true);
+            Invoke("UpdateSelectionMetadata"); Invoke("UpdateSelectionVisuals");
+            var document = (SnipDocument)Get("_snipDocument")!;
+            document.Add(new SnipMark(SnipTool.Rectangle, Colors.Red, 3, [new(20, 20), new(200, 100)]));
+            foreach (var tool in new[] { SnipTool.Select, SnipTool.Rectangle, SnipTool.Picker })
+            {
+                Invoke("SetSnipTool", tool);
+                Assert.Equal(Colors.White, capture.UpdateSnipColor(inside));
+                Assert.Equal(Color.FromRgb(12, 34, 56), capture.UpdateSnipColor(outside));
+                Assert.Contains("#0C2238", ((TextBlock)Get("_snipColorLabel")!).Text);
+                Assert.Contains("RGB(12, 34, 56)", ((TextBlock)Get("_snipColorLabel")!).Text);
+                Assert.Equal(Colors.White, capture.UpdateSnipColor(new Point(120 / sx, 140 / sy))); // 标注下仍取原图。
+            }
+            capture.UpdateSnipColor(new Point(capture.ActualWidth - 1, capture.ActualHeight - 1));
+            capture.UpdateLayout();
+            var hud = (FrameworkElement)Get("_snipColorHud")!;
+            Assert.False(hud.IsHitTestVisible);
+            Assert.Null(((Border)hud).Background);
+            Assert.InRange(Canvas.GetLeft(hud), 100 / sx, 700 / sx - hud.ActualWidth);
+            Assert.InRange(Canvas.GetTop(hud), 100 / sy, 400 / sy - hud.ActualHeight);
+            AssertInside((FrameworkElement)capture.Content, hud);
+            Render(capture, "snip-live-color", (int)(1000 / sx), (int)(700 / sy), sx);
+            string? hex = null;
+            Complete(capture.CopySnipColorAsync(outside, value => hex = value));
+            Assert.Equal("#0C2238", hex);
+            Assert.False((bool)Get("_snipClosed")!);
+            Assert.True(capture.HasSelection);
+            Complete(capture.CopySnipColorAsync(inside, _ => throw new InvalidOperationException("fixture")));
+            Assert.Contains("颜色复制失败", ((TextBlock)Get("_snipStatus")!).Text);
+            capture.UpdateSnipColor(outside);
+            Assert.Contains("颜色复制失败", ((TextBlock)Get("_snipStatus")!).Text); // 移动不覆盖失败反馈。
+            var outsideColorWritten = false;
+            Complete(capture.CopySnipColorAsync(new Point(-1, -1), _ => outsideColorWritten = true));
+            Assert.False(outsideColorWritten);
+
+            foreach (var source in new DependencyObject[] { (DependencyObject)Get("_snipToolbar")!, new TextBox(), (DependencyObject)capture.FindName("TopLeftHandle") })
+            {
+                var rejected = capture.CopySnipOnDoubleClickAsync(inside, source, _ => Assert.Fail("控件不能触发双击截图"));
+                Complete(rejected); Assert.False(rejected.Result);
+            }
+            var outsideCopy = capture.CopySnipOnDoubleClickAsync(outside, null, _ => Assert.Fail("不能双击选区外复制"));
+            Complete(outsideCopy); Assert.False(outsideCopy.Result);
+            // 画笔双击的首击点去除；已有矩形和其他独立画笔点保留。
+            Invoke("SetSnipTool", SnipTool.Pen);
+            ((List<Point>)Get("_snipPoints")!).Add(new Point(40, 40)); Invoke("FinishSnipStroke");
+            Assert.Equal(2, document.Marks.Count);
+            Complete(capture.CopySnipOnDoubleClickAsync(inside, null, _ => throw new InvalidOperationException("fixture")));
+            Assert.Single(document.Marks);
+            Assert.False((bool)Get("_snipClosed")!);
+            ((List<Point>)Get("_snipPoints")!).Add(new Point(50, 50)); Invoke("FinishSnipStroke");
+            Invoke("SetSnipTool", SnipTool.Select);
+            BitmapSource? copied = null;
+            var success = capture.CopySnipOnDoubleClickAsync(inside, null, image => copied = image);
+            Complete(success); Assert.True(success.Result);
+            Assert.True((bool)Get("_snipClosed")!);
+            Assert.Equal(2, document.Marks.Count);
+            Assert.NotNull(copied); Assert.Equal(600, copied.PixelWidth); Assert.Equal(300, copied.PixelHeight);
+            Assert.Equal(Colors.Red, SnipDocument.Sample(copied, 20, 40));
+            Assert.Equal(Color.FromRgb(12, 34, 56), SnipDocument.Sample(copied, 50, 50));
+        }
+        finally { capture.Close(); }
+
+        foreach (var size in new[] { (1, 1), (3, 2), (600, 300), (5000, 3000) })
+        {
+            var pin = PinnedImageWindow.Open(SnipFixture(size.Item1, size.Item2), 100, 100);
+            try
+            {
+                pin.UpdateLayout();
+                Assert.Equal(WindowStyle.None, pin.WindowStyle); Assert.Equal(ResizeMode.NoResize, pin.ResizeMode);
+                var display = Assert.IsType<Image>(pin.Content);
+                Assert.Empty(Visuals<Button>(pin));
+                var dpi = VisualTreeHelper.GetDpi(pin);
+                var physical = OverTranslate.Services.ScreenGeometry.PhysicalBounds(pin);
+                Assert.InRange(physical.Width, size.Item1 - 1.0, size.Item1 + 1.0);
+                Assert.InRange(physical.Height, size.Item2 - 1.0, size.Item2 + 1.0);
+                Assert.InRange(display.ActualWidth * dpi.DpiScaleX, size.Item1 - 1.0, size.Item1 + 1.0);
+                Assert.InRange(display.ActualHeight * dpi.DpiScaleY, size.Item2 - 1.0, size.Item2 + 1.0);
+                Assert.Equal(3, pin.ContextMenu.Items.Count);
+                pin.SetZoom(0.5); pin.UpdateLayout();
+                Assert.InRange(display.ActualWidth * dpi.DpiScaleX, Math.Max(1, Math.Round(size.Item1 * 0.5)) - 1, Math.Max(1, Math.Round(size.Item1 * 0.5)) + 1);
+                ((MenuItem)pin.ContextMenu.Items[1]).RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent)); pin.UpdateLayout();
+                Assert.InRange(display.ActualWidth * dpi.DpiScaleX, size.Item1 - 1.0, size.Item1 + 1.0);
+            }
+            finally { pin.Close(); }
+        }
+    }
+
+    private static void VerifySnipReviewCases()
+    {
+        const BindingFlags flags = BindingFlags.Instance | BindingFlags.NonPublic;
+        var failures = new List<Exception>();
+        foreach (var scenario in new[] { "stationary-move-double-click", "discarded-click-redo", "preserve-existing-redo", "copy-color-mid-stroke", "offscreen-color-hud" })
+        {
+            using var pixels = new System.Drawing.Bitmap(1000, 700);
+            using (var graphics = System.Drawing.Graphics.FromImage(pixels)) graphics.Clear(System.Drawing.Color.White);
+            var capture = new ScreenCaptureWindow((System.Drawing.Bitmap)pixels.Clone(), new System.Drawing.Rectangle(0, 0, 1000, 700), snippingTools: true);
+            object? Get(string name) => typeof(ScreenCaptureWindow).GetField(name, flags)!.GetValue(capture);
+            void Set(string name, object value) => typeof(ScreenCaptureWindow).GetField(name, flags)!.SetValue(capture, value);
+            void Invoke(string name, params object[] args) => typeof(ScreenCaptureWindow).GetMethod(name, flags)!.Invoke(capture, args);
+            try
+            {
+                capture.Show(); capture.UpdateLayout();
+                var sx = (double)Get("_dpiX")!; var sy = (double)Get("_dpiY")!;
+                Set("_selectionWpfRect", new Rect(100 / sx, 100 / sy, 600 / sx, 300 / sy)); Set("_hasSelection", true);
+                Invoke("UpdateSelectionMetadata"); Invoke("UpdateSelectionVisuals"); Invoke("SetSnipTool", SnipTool.Pen);
+                var document = (SnipDocument)Get("_snipDocument")!;
+                if (scenario == "preserve-existing-redo")
+                {
+                    document.Add(new SnipMark(SnipTool.Arrow, Colors.Blue, 3, [new(20, 20), new(200, 100)]));
+                    document.Undo();
+                }
+                if (scenario == "offscreen-color-hud")
+                {
+                    Set("_selectionWpfRect", new Rect(capture.ActualWidth + 100, 100, 50, 50));
+                    capture.UpdateSnipColor(new Point(150 / sx, 150 / sy));
+                    Assert.Equal(Visibility.Collapsed, ((FrameworkElement)Get("_snipColorHud")!).Visibility);
+                    Set("_selectionWpfRect", new Rect(100, 100, 60, 25));
+                    capture.UpdateSnipColor(new Point(150 / sx, 150 / sy)); capture.UpdateLayout();
+                    var hud = (FrameworkElement)Get("_snipColorHud")!;
+                    Assert.Equal(Visibility.Visible, hud.Visibility);
+                    Assert.InRange(Canvas.GetLeft(hud), 100, 160 - hud.ActualWidth);
+                    Assert.InRange(Canvas.GetTop(hud), 100, 125 - hud.ActualHeight);
+                    Assert.DoesNotContain("RGB", ((TextBlock)Get("_snipColorLabel")!).Text);
+                    continue;
+                }
+                var points = (List<Point>)Get("_snipPoints")!;
+                points.Add(new Point(40, 40));
+                if (scenario == "stationary-move-double-click") points.Add(new Point(40, 40));
+                if (scenario == "copy-color-mid-stroke")
+                {
+                    points.Add(new Point(100, 100));
+                    var colorCopy = capture.CopySnipColorAsync(new Point(150 / sx, 150 / sy), _ => { });
+                    PumpUntil(() => colorCopy.IsCompleted); colorCopy.GetAwaiter().GetResult();
+                    Invoke("FinishSnipStroke");
+                    Assert.Equal(Colors.Red, Assert.Single(document.Marks).Color);
+                }
+                else
+                {
+                    Invoke("FinishSnipStroke");
+                    var copy = capture.CopySnipOnDoubleClickAsync(new Point(150 / sx, 150 / sy), null, _ => throw new InvalidOperationException("fixture failure"));
+                    PumpUntil(() => copy.IsCompleted); copy.GetAwaiter().GetResult();
+                    Assert.Empty(document.Marks);
+                    if (scenario == "preserve-existing-redo")
+                    {
+                        Assert.True(document.Redo());
+                        Assert.Equal(SnipTool.Arrow, Assert.Single(document.Marks).Tool);
+                    }
+                    else Assert.False(document.CanRedo, "双击首击点不能进入重做记录。");
+                }
+            }
+            catch (Exception error) { failures.Add(new InvalidOperationException(scenario, error)); }
+            finally { capture.Close(); }
+        }
+        var pin = PinnedImageWindow.Open(SnipFixture(600, 300), 100, 100);
+        var memory = System.Runtime.InteropServices.Marshal.AllocHGlobal(16);
+        try
+        {
+            // 合成单个测试窗口的 DPI 消息，不改系统显示设置或用户窗口。
+            System.Runtime.InteropServices.Marshal.Copy(new[] { 100, 100, 1300, 700 }, 0, memory, 4);
+            SendMessage(new System.Windows.Interop.WindowInteropHelper(pin).Handle, 0x02E0, new IntPtr(192 | (192 << 16)), memory);
+            pin.Dispatcher.Invoke(() => { }, System.Windows.Threading.DispatcherPriority.ApplicationIdle);
+            pin.UpdateLayout();
+            var actual = OverTranslate.Services.ScreenGeometry.PhysicalBounds(pin);
+            Assert.InRange(actual.Width, 599, 601);
+            Assert.InRange(actual.Height, 299, 301);
+            pin.SetZoom(0.5);
+            System.Runtime.InteropServices.Marshal.Copy(new[] { 100, 100, 250, 175 }, 0, memory, 4);
+            SendMessage(new System.Windows.Interop.WindowInteropHelper(pin).Handle, 0x02E0, new IntPtr(96 | (96 << 16)), memory);
+            pin.Dispatcher.Invoke(() => { }, System.Windows.Threading.DispatcherPriority.ApplicationIdle);
+            pin.UpdateLayout();
+            actual = OverTranslate.Services.ScreenGeometry.PhysicalBounds(pin);
+            Assert.InRange(actual.Width, 299, 301);
+            Assert.InRange(actual.Height, 149, 151);
+        }
+        catch (Exception error) { failures.Add(new InvalidOperationException("pin-preserves-pixels-on-dpi-change", error)); }
+        finally { System.Runtime.InteropServices.Marshal.FreeHGlobal(memory); pin.Close(); }
+        if (failures.Count > 0) throw new AggregateException(failures);
     }
 
     private static BitmapSource SnipFixture(int width, int height)

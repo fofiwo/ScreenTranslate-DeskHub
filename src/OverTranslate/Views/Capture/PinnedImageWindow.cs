@@ -1,11 +1,12 @@
+using System.Runtime.InteropServices;
 using System.Windows;
+using System.Windows.Interop;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using OverTranslate.Services;
-using Button = System.Windows.Controls.Button;
-using Color = System.Windows.Media.Color;
 using Image = System.Windows.Controls.Image;
 using ContextMenu = System.Windows.Controls.ContextMenu;
 using MenuItem = System.Windows.Controls.MenuItem;
@@ -17,11 +18,14 @@ public sealed class PinnedImageWindow : Window
 {
     private static readonly HashSet<PinnedImageWindow> Windows = [];
     private readonly BitmapSource _image;
-    private readonly TextBlock _status;
     private readonly Image _display;
+    private readonly System.Windows.Controls.ToolTip _feedback;
+    private readonly System.Windows.Threading.DispatcherTimer _feedbackTimer;
     private bool _copying;
     private bool _closed;
     private readonly CancellationTokenSource _cancellation = new();
+    private HwndSource? _windowSource;
+    private double _zoom = 1;
 
     internal PinnedImageWindow(BitmapSource image)
     {
@@ -29,36 +33,29 @@ public sealed class PinnedImageWindow : Window
         if (!_image.IsFrozen) _image.Freeze();
         Title = "截图贴图"; Topmost = true; ShowInTaskbar = false;
         Resources.MergedDictionaries.Add(new ResourceDictionary { Source = new Uri("/ScreenTranslate;component/Views/Capture/SnipStyles.xaml", UriKind.Relative) });
-        WindowStyle = WindowStyle.None; ResizeMode = ResizeMode.CanResizeWithGrip;
-        MinWidth = 160; MinHeight = 90; Background = System.Windows.Media.Brushes.White;
-        var root = new DockPanel();
-        var header = new DockPanel { Background = System.Windows.Media.Brushes.White, Height = 38, LastChildFill = true };
-        _status = new TextBlock { Text = "贴图 · 滚轮缩放", VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0, 4, 0), IsHitTestVisible = false };
-        var close = new Button { Style = (Style)Resources["SnipAction"], Width = 36, Height = 34, ToolTip = "关闭贴图（Esc）" };
-        close.Content = SnipIcons.Create("x", close, 16);
-        System.Windows.Automation.AutomationProperties.SetName(close, "关闭贴图");
-        close.Click += (_, _) => Close(); DockPanel.SetDock(close, Dock.Right); header.Children.Add(close);
-        var copy = new Button { Style = (Style)Resources["SnipAction"], Width = 36, Height = 34, ToolTip = "复制贴图（Ctrl+C）" };
-        copy.Content = SnipIcons.Create("copy", copy, 16);
-        System.Windows.Automation.AutomationProperties.SetName(copy, "复制贴图");
-        copy.Click += async (_, _) => await CopyAsync(); DockPanel.SetDock(copy, Dock.Right); header.Children.Add(copy);
-        header.Children.Add(_status); DockPanel.SetDock(header, Dock.Top); root.Children.Add(header);
-        var display = _display = new Image { Source = _image, Stretch = Stretch.Uniform, Margin = new Thickness(1) };
-        root.Children.Add(display);
-        var border = new Border { Child = root, BorderBrush = new SolidColorBrush(Color.FromRgb(202, 213, 226)), BorderThickness = new Thickness(1) };
-        Content = border;
-        header.MouseLeftButtonDown += (_, e) => { if (e.ClickCount == 2) SetZoom(1); else DragMove(); };
-        display.MouseLeftButtonDown += (_, _) => DragMove();
+        WindowStyle = WindowStyle.None; ResizeMode = ResizeMode.NoResize; AllowsTransparency = true;
+        MinWidth = 0; MinHeight = 0; Background = System.Windows.Media.Brushes.Transparent;
+        var display = _display = new Image { Source = _image, Stretch = Stretch.Fill, SnapsToDevicePixels = true };
+        RenderOptions.SetBitmapScalingMode(display, BitmapScalingMode.NearestNeighbor);
+        Content = display;
+        SourceInitialized += (_, _) => {
+            _windowSource = HwndSource.FromHwnd(new WindowInteropHelper(this).Handle);
+            _windowSource.AddHook(AllowOriginalImageSize);
+        };
+        display.MouseLeftButtonDown += (_, e) => { if (e.ClickCount == 2) SetZoom(1); else DragMove(); };
+        _feedback = new System.Windows.Controls.ToolTip { PlacementTarget = display, Placement = PlacementMode.MousePoint, StaysOpen = true };
+        _feedbackTimer = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromSeconds(2) };
+        _feedbackTimer.Tick += (_, _) => { _feedbackTimer.Stop(); _feedback.IsOpen = false; };
         PreviewMouseWheel += (_, e) => { if (e.Delta != 0) SetZoom(CurrentZoom * Math.Pow(1.1, e.Delta / 120.0)); e.Handled = true; };
         KeyDown += async (_, e) => {
             if (e.Key == Key.Escape) { Close(); e.Handled = true; }
             else if (e.Key == Key.C && Keyboard.Modifiers.HasFlag(ModifierKeys.Control)) { await CopyAsync(); e.Handled = true; }
         };
         var menu = new ContextMenu();
-        var reset = new MenuItem { Header = "原始大小" }; reset.Click += (_, _) => SetZoom(1); menu.Items.Add(reset);
-        var closeItem = new MenuItem { Header = "关闭贴图" }; closeItem.Click += (_, _) => Close(); menu.Items.Add(closeItem); ContextMenu = menu;
-        Closed += (_, _) => { _closed = true; _cancellation.Cancel(); _cancellation.Dispose(); Windows.Remove(this); };
-        display.SizeChanged += (_, _) => _status.Text = $"贴图 · {CurrentZoom:P0}";
+        var copy = new MenuItem { Header = "复制图片", InputGestureText = "Ctrl+C" }; copy.Click += async (_, _) => await CopyAsync(); menu.Items.Add(copy);
+        var reset = new MenuItem { Header = "原始尺寸（100%）", InputGestureText = "双击" }; reset.Click += (_, _) => SetZoom(1); menu.Items.Add(reset);
+        var closeItem = new MenuItem { Header = "关闭贴图", InputGestureText = "Esc" }; closeItem.Click += (_, _) => Close(); menu.Items.Add(closeItem); ContextMenu = menu;
+        Closed += (_, _) => { _closed = true; _windowSource?.RemoveHook(AllowOriginalImageSize); _feedbackTimer.Stop(); _feedback.IsOpen = false; _cancellation.Cancel(); _cancellation.Dispose(); Windows.Remove(this); };
     }
 
     public static PinnedImageWindow Open(BitmapSource image, int physicalX, int physicalY)
@@ -84,19 +81,51 @@ public sealed class PinnedImageWindow : Window
         }
     }
 
+    protected override void OnDpiChanged(DpiScale oldDpi, DpiScale newDpi)
+    {
+        base.OnDpiChanged(oldDpi, newDpi);
+        // WPF 在通知 DPI 变化后还会应用系统建议的放大尺寸；待该过程结束再恢复物理像素大小。
+        Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Loaded, new Action(() => {
+            if (!_closed) ResizeImage(VisualTreeHelper.GetDpi(this));
+        }));
+    }
+
+    private void ResizeImage(DpiScale dpi)
+    {
+        Width = Math.Max(1, Math.Round(_image.PixelWidth * _zoom)) / dpi.DpiScaleX;
+        Height = Math.Max(1, Math.Round(_image.PixelHeight * _zoom)) / dpi.DpiScaleY;
+    }
+
+    private IntPtr AllowOriginalImageSize(IntPtr hwnd, int message, IntPtr wParam, IntPtr lParam, ref bool handled)
+    {
+        if (message == 0x0024) // WM_GETMINMAXINFO
+        {
+            // WPF 会缓存系统的屏幕尺寸上限；先放宽该值，再让 WPF 处理，避免大图被缩小。
+            var info = Marshal.PtrToStructure<MinMaxInfo>(lParam);
+            info.MaxTrackSize.X = Math.Max(info.MaxTrackSize.X, _image.PixelWidth * 4);
+            info.MaxTrackSize.Y = Math.Max(info.MaxTrackSize.Y, _image.PixelHeight * 4);
+            Marshal.StructureToPtr(info, lParam, false);
+        }
+        return IntPtr.Zero;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct NativePoint { public int X; public int Y; }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct MinMaxInfo
+    {
+        public NativePoint Reserved, MaxSize, MaxPosition, MinTrackSize, MaxTrackSize;
+    }
+
     internal void SetZoom(double zoom)
     {
         UpdateLayout();
-        var requested = Math.Clamp(zoom, 0.1, 4);
+        _zoom = Math.Clamp(zoom, 0.1, 4);
         var bounds = ScreenGeometry.PhysicalBounds(this);
         var screen = System.Windows.Forms.Screen.FromPoint(new System.Drawing.Point((int)bounds.Left, (int)bounds.Top)).WorkingArea;
         var scale = VisualTreeHelper.GetDpi(this).DpiScaleX;
-        var horizontalChrome = Math.Max(4, ActualWidth - _display.ActualWidth);
-        var verticalChrome = Math.Max(42, ActualHeight - _display.ActualHeight);
-        var fit = Math.Min(requested, Math.Min((screen.Width / scale - horizontalChrome) * scale / _image.PixelWidth,
-            (screen.Height / scale - verticalChrome) * scale / _image.PixelHeight));
-        Width = Math.Max(MinWidth, _image.PixelWidth * fit / scale + horizontalChrome);
-        Height = Math.Max(MinHeight, _image.PixelHeight * fit / scale + verticalChrome);
+        ResizeImage(VisualTreeHelper.GetDpi(this));
         UpdateLayout();
         ScreenGeometry.MoveToPhysical(this,
             (int)Math.Clamp(bounds.Left, screen.Left, Math.Max(screen.Left, screen.Right - Width * scale)),
@@ -113,11 +142,17 @@ public sealed class PinnedImageWindow : Window
                 if (write is not null) write(_image);
                 else { var data = new DataObject(); data.SetImage(_image); System.Windows.Clipboard.SetDataObject(data, true); }
             }, _cancellation.Token);
-            if (!_closed) _status.Text = "图片已复制";
+            if (!_closed) ShowFeedback("图片已复制");
         }
         catch (OperationCanceledException) { }
-        catch (Exception) { if (!_closed) _status.Text = "复制失败，请重试"; }
+        catch (Exception) { if (!_closed) ShowFeedback("复制失败，请重试"); }
         finally { _copying = false; }
+    }
+
+    private void ShowFeedback(string text)
+    {
+        _feedback.Content = text; _feedback.IsOpen = true;
+        _feedbackTimer.Stop(); _feedbackTimer.Start();
     }
 
     public static void Shutdown() { foreach (var window in Windows.ToArray()) window.Close(); }

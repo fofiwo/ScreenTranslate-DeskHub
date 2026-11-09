@@ -16,6 +16,8 @@ public partial class ScreenCaptureWindow
     private Border? _snipWelcome;
     private Border? _snipSizeBadge;
     private Border? _snipColorPreview;
+    private Border? _snipColorHud;
+    private TextBlock? _snipColorLabel;
     private readonly Dictionary<Color, ToggleButton> _snipColors = [];
     private readonly List<Button> _snipWriteActions = [];
     private Button? _snipCopy;
@@ -31,7 +33,7 @@ public partial class ScreenCaptureWindow
             (SnipTool.Pen, "画笔"), (SnipTool.Text, "文字"), (SnipTool.Mosaic, "马赛克"), (SnipTool.Picker, "取色") })
         {
             var button = new ToggleButton { Style = (Style)Resources["SnipTool"], Tag = tool,
-                ToolTip = label + (tool == SnipTool.Picker ? "（C）" : "") };
+                ToolTip = label + (tool == SnipTool.Picker ? "（移动查看颜色，C 复制）" : "") };
             var icon = tool switch { SnipTool.Select => "crop", SnipTool.Rectangle => "square", SnipTool.Arrow => "move-up-right",
                 SnipTool.Pen => "pen-line", SnipTool.Text => "type", SnipTool.Mosaic => "grid-2x2", _ => "pipette" };
             button.Content = SnipIcons.Create(icon, button);
@@ -79,10 +81,8 @@ public partial class ScreenCaptureWindow
         }
         _snipOptions = options; content.Children.Add(options);
         var statusRow = new DockPanel { Margin = new Thickness(7, 8, 7, 2) };
-        _snipColorPreview = new Border { Width = 14, Height = 14, CornerRadius = new CornerRadius(4), Margin = new Thickness(0, 0, 6, 0), Visibility = Visibility.Collapsed,
-            BorderBrush = new SolidColorBrush(Color.FromArgb(35, 0, 0, 0)), BorderThickness = new Thickness(1) };
         _snipStatus = new TextBlock { Style = (Style)Resources["SnipHint"], TextAlignment = TextAlignment.Center };
-        statusRow.Children.Add(_snipColorPreview); statusRow.Children.Add(_snipStatus); content.Children.Add(statusRow);
+        statusRow.Children.Add(_snipStatus); content.Children.Add(statusRow);
         _snipToolbar = SnipFloatingSurface(content); _snipCanvas!.Children.Add(_snipToolbar);
         _snipSize = new TextBlock { Foreground = System.Windows.Media.Brushes.White, FontFamily = new System.Windows.Media.FontFamily("Cascadia Mono, Consolas"), FontSize = 11 };
         _snipSizeBadge = new Border { Background = new SolidColorBrush(Color.FromArgb(235, 25, 37, 53)), CornerRadius = new CornerRadius(5), Padding = new Thickness(8, 4, 8, 4), Child = _snipSize, IsHitTestVisible = false, Visibility = Visibility.Collapsed };
@@ -90,11 +90,21 @@ public partial class ScreenCaptureWindow
         var welcome = new StackPanel { Orientation = Orientation.Horizontal };
         var message = new StackPanel { Margin = new Thickness(10, 2, 26, 2), VerticalAlignment = VerticalAlignment.Center };
         message.Children.Add(new TextBlock { Text = "拖动选择截图区域", FontSize = 14, FontWeight = FontWeights.Medium, Foreground = new SolidColorBrush(Color.FromRgb(25, 37, 53)) });
-        message.Children.Add(new TextBlock { Text = "C 取色   ·   Esc 取消", Style = (Style)Resources["SnipHint"], Margin = new Thickness(0, 5, 0, 0) });
+        message.Children.Add(new TextBlock { Text = "移动实时取色   ·   C 复制色值   ·   Esc 取消", Style = (Style)Resources["SnipHint"], Margin = new Thickness(0, 5, 0, 0) });
         welcome.Children.Add(message);
-        AddSnipButton(welcome, "取色（C）", "pipette", () => SetSnipTool(SnipTool.Picker));
+        AddSnipButton(welcome, "取色（移动查看颜色，C 复制）", "pipette", () => SetSnipTool(SnipTool.Picker));
         AddSnipButton(welcome, "取消（Esc）", "x", Close, keepEnabledWhileWriting: true);
         _snipWelcome = SnipFloatingSurface(welcome); _snipCanvas.Children.Add(_snipWelcome);
+        var colorRow = new StackPanel { Orientation = Orientation.Horizontal };
+        _snipColorPreview = new Border { Width = 8, Height = 8, CornerRadius = new CornerRadius(2), Margin = new Thickness(0, 0, 5, 0),
+            VerticalAlignment = VerticalAlignment.Center,
+            BorderBrush = new SolidColorBrush(Color.FromArgb(120, 128, 128, 128)), BorderThickness = new Thickness(1) };
+        _snipColorLabel = new TextBlock { FontSize = 10, VerticalAlignment = VerticalAlignment.Center,
+            FontFamily = new System.Windows.Media.FontFamily("Cascadia Mono, Consolas") };
+        colorRow.Children.Add(_snipColorPreview); colorRow.Children.Add(_snipColorLabel);
+        _snipColorHud = new Border { Child = colorRow, Opacity = 0.78, ClipToBounds = true,
+            IsHitTestVisible = false, Visibility = Visibility.Collapsed };
+        _snipCanvas.Children.Add(_snipColorHud);
     }
 
     private Button AddSnipButton(Panel panel, string text, string icon, Action action, bool keepEnabledWhileWriting = false)

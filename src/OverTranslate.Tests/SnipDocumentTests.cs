@@ -26,6 +26,26 @@ public class SnipDocumentTests
     }
 
     [Fact]
+    public void DiscardedClickRestoresRedoOrderWithoutRemovingUnrelatedMarks()
+    {
+        var document = new SnipDocument();
+        document.Add(Mark(SnipTool.Rectangle));
+        document.Add(Mark(SnipTool.Arrow));
+        document.Add(Mark(SnipTool.Text));
+        document.Undo(); document.Undo();
+        var redo = document.CaptureRedo();
+        document.Add(Mark(SnipTool.Pen));
+        var click = document.Marks[^1];
+        Assert.False(document.DiscardLast(document.Marks[0], redo));
+        Assert.Equal(2, document.Marks.Count);
+        Assert.True(document.DiscardLast(click, redo));
+        Assert.Equal(SnipTool.Rectangle, Assert.Single(document.Marks).Tool);
+        Assert.True(document.Redo()); Assert.Equal(SnipTool.Arrow, document.Marks[^1].Tool);
+        Assert.True(document.Redo()); Assert.Equal(SnipTool.Text, document.Marks[^1].Tool);
+        Assert.False(document.Redo());
+    }
+
+    [Fact]
     public void ExportPreservesPhysicalPixelsAndDrawsOnlyCommittedMarks() => OnSta(() =>
     {
         var source = Pixels(32, 24, (x, y) => Colors.White);

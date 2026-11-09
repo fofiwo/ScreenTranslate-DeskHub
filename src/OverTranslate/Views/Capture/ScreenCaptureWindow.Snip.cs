@@ -41,6 +41,7 @@ public partial class ScreenCaptureWindow
     private bool _snipWriting;
     private bool _snipClosed;
     private bool _snipRecoveryYielded;
+    private (SnipMark Mark, SnipMark[] Redo)? _snipDoubleClickStroke;
 
     internal void ApplySnipRecovery(bool yielded, IntPtr recoveryWindow)
     {
@@ -79,11 +80,12 @@ public partial class ScreenCaptureWindow
     {
         if (_snipWriting || _snipClosed) return;
         CommitSnipText(); FinishSnipStroke(); _snipTool = tool;
+        _snipDoubleClickStroke = null;
         foreach (var (kind, button) in _snipTools) button.IsChecked = kind == tool;
         RefreshSnipSelection();
         SetSnipStatus(tool switch {
-            SnipTool.Select => "拖动移动选区，四角调整大小 · Enter 复制 · Ctrl+P 贴图",
-            SnipTool.Picker => "移动鼠标查看原始像素颜色，单击复制 HEX · C 返回选区",
+            SnipTool.Select => "拖动移动选区，四角调整大小 · 双击 / Enter 复制 · C 复制色值",
+            SnipTool.Picker => "移动鼠标实时取色 · C / 单击复制 HEX · 双击选区复制截图",
             SnipTool.Text => "在选区单击输入文字 · Enter 确认 · Shift+Enter 换行",
             _ => "在选区拖动标注 · Ctrl+Z 撤销 · Ctrl+Y 重做" });
         Focus();
@@ -111,8 +113,8 @@ public partial class ScreenCaptureWindow
         _snipToolbar!.Visibility = _hasSelection || _snipTool == SnipTool.Picker ? Visibility.Visible : Visibility.Collapsed;
         _snipWelcome!.Visibility = !_hasSelection && _snipTool != SnipTool.Picker ? Visibility.Visible : Visibility.Collapsed;
         _snipSizeBadge!.Visibility = _hasSelection ? Visibility.Visible : Visibility.Collapsed;
-        _snipColorPreview!.Visibility = _snipTool == SnipTool.Picker ? Visibility.Visible : Visibility.Collapsed;
         RefreshSnipDrawing(); LayoutSnipToolbar();
+        if (_snipColorHud?.Visibility == Visibility.Visible) UpdateSnipColor(Mouse.GetPosition(this));
     }
 
     private void SetSnipWriting(bool writing)
@@ -193,8 +195,16 @@ public partial class ScreenCaptureWindow
     {
         if (PendingSnipMark() is not { } mark) return;
         _snipPoints.Clear();
+        _snipDoubleClickStroke = null;
         if (mark.Tool == SnipTool.Pen || (mark.Points.Count > 1 && (mark.Points[^1] - mark.Points[0]).Length >= 1))
+        {
+            var clickSize = System.Windows.Forms.SystemInformation.DoubleClickSize;
+            var click = mark.Tool == SnipTool.Pen && mark.Points.All(p => Math.Abs(p.X - mark.Points[0].X) <= clickSize.Width / 2.0
+                && Math.Abs(p.Y - mark.Points[0].Y) <= clickSize.Height / 2.0);
+            var redo = click ? _snipDocument.CaptureRedo() : [];
             _snipDocument.Add(mark);
+            if (click) _snipDoubleClickStroke = (_snipDocument.Marks[^1], redo);
+        }
         _snipSurface?.ReleaseMouseCapture(); RefreshSnipDrawing();
     }
 
@@ -238,9 +248,8 @@ public partial class ScreenCaptureWindow
         return false;
     }
 
-    private Color SnipColorAt(MouseEventArgs e)
+    private Color SnipColorAt(Point point)
     {
-        var point = e.GetPosition(this);
         var x = Math.Clamp((int)(point.X * _dpiX), 0, _screenshot.Width - 1);
         var y = Math.Clamp((int)(point.Y * _dpiY), 0, _screenshot.Height - 1);
         var color = _screenshot.GetPixel(x, y);
@@ -249,29 +258,98 @@ public partial class ScreenCaptureWindow
 
     private void SnipPreviewMove(object sender, MouseEventArgs e)
     {
-        if (_snipWriting || _snipTool != SnipTool.Picker || IsSnipToolbarTarget(e.OriginalSource as DependencyObject)) return;
-        var color = SnipColorAt(e);
+        if (_snipClosed) return;
+        UpdateSnipColor(e.GetPosition(this));
+    }
+
+    internal Color UpdateSnipColor(Point point)
+    {
+        var color = SnipColorAt(point);
         _snipColorPreview!.Background = new SolidColorBrush(color);
-        SetSnipStatus($"{SnipDocument.Hex(color)}    RGB({color.R}, {color.G}, {color.B}) · 单击复制 HEX");
+        var region = new Rect(0, 0, Math.Max(1, _snipCanvas!.ActualWidth), Math.Max(1, _snipCanvas.ActualHeight));
+        if (_hasSelection) region.Intersect(_selectionWpfRect);
+        if (region.IsEmpty || region.Width <= 0 || region.Height <= 0)
+        {
+            _snipColorHud!.Visibility = Visibility.Collapsed;
+            return color;
+        }
+        var inset = Math.Min(8, Math.Min(region.Width, region.Height) / 4);
+        _snipColorLabel!.Text = region.Width >= 300
+            ? $"{SnipDocument.Hex(color)}   RGB({color.R}, {color.G}, {color.B})   · C 复制"
+            : $"{SnipDocument.Hex(color)} · C";
+        _snipColorHud!.MaxWidth = Math.Max(1, region.Width - inset * 2);
+        _snipColorHud.MaxHeight = Math.Max(1, region.Height - inset * 2);
+        _snipColorHud!.Visibility = Visibility.Visible;
+        _snipColorHud.Measure(new System.Windows.Size(double.PositiveInfinity, double.PositiveInfinity));
+        var size = _snipColorHud.DesiredSize;
+        var x = _hasSelection ? region.Left + inset : point.X + 20;
+        var y = _hasSelection ? region.Bottom - inset - size.Height : point.Y + 24;
+        x = Math.Clamp(x, region.Left, Math.Max(region.Left, region.Right - size.Width));
+        y = Math.Clamp(y, region.Top, Math.Max(region.Top, region.Bottom - size.Height));
+        // 用提示所在位置的原图明暗选择字色；不绘制底板，避免遮挡截图。
+        var underText = SnipColorAt(new Point(x, y + size.Height / 2));
+        _snipColorLabel.Foreground = (underText.R * 299 + underText.G * 587 + underText.B * 114) >= 140000
+            ? System.Windows.Media.Brushes.Black : System.Windows.Media.Brushes.White;
+        Canvas.SetLeft(_snipColorHud, x);
+        Canvas.SetTop(_snipColorHud, y);
+        return color;
+    }
+
+    internal async Task CopySnipColorAsync(Point? point = null, Action<string>? write = null)
+    {
+        if (_snipWriting || _snipClosed) return;
+        var position = point ?? Mouse.GetPosition(this);
+        if (position.X < 0 || position.Y < 0 || position.X >= ActualWidth || position.Y >= ActualHeight) return;
+        FinishSnipStroke();
+        var color = UpdateSnipColor(position); SetSnipWriting(true);
+        try
+        {
+            var hex = SnipDocument.Hex(color);
+            await SnipClipboard.WriteAsync(() => {
+                if (write is not null) write(hex); else System.Windows.Clipboard.SetDataObject(hex, true);
+            }, _snipCancellation.Token);
+            if (!_snipClosed) { ApplySnipColor(color); SetSnipStatus($"已复制 {hex} · RGB({color.R}, {color.G}, {color.B})"); }
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception) { if (!_snipClosed) SetSnipStatus("颜色复制失败，请重试；可按 Esc 取消。"); }
+        finally { SetSnipWriting(false); }
+    }
+
+    private bool CanCopySnipOnDoubleClick(Point point, DependencyObject? source)
+    {
+        if (_snipClosed || _snipWriting || !_hasSelection || !_selectionWpfRect.Contains(point) || IsSnipToolbarTarget(source)) return false;
+        for (var current = source; current is not null; current = current is Visual ? VisualTreeHelper.GetParent(current) : LogicalTreeHelper.GetParent(current))
+            if (current is TextBox || ReferenceEquals(current, TopLeftHandle) || ReferenceEquals(current, TopRightHandle)
+                || ReferenceEquals(current, BottomLeftHandle) || ReferenceEquals(current, BottomRightHandle)) return false;
+        return true;
+    }
+
+    internal async Task<bool> CopySnipOnDoubleClickAsync(Point point, DependencyObject? source, Action<BitmapSource>? write = null)
+    {
+        if (!CanCopySnipOnDoubleClick(point, source)) return false;
+        // 双击的第一下可能被画笔记为一个点；完成截图时不把这个点带入结果。
+        if (_snipDoubleClickStroke is { } stroke) _snipDocument.DiscardLast(stroke.Mark, stroke.Redo);
+        _snipDoubleClickStroke = null;
+        await CopySnipAsync(write);
+        return true;
     }
 
     private async void SnipPickerDown(object sender, MouseButtonEventArgs e)
     {
+        if (e.ClickCount == 2 && CanCopySnipOnDoubleClick(e.GetPosition(this), e.OriginalSource as DependencyObject))
+        {
+            e.Handled = true;
+            await CopySnipOnDoubleClickAsync(e.GetPosition(this), e.OriginalSource as DependencyObject);
+            return;
+        }
+        // 只关联本次双击的第一下，不能删除更早的独立画笔点。
+        _snipDoubleClickStroke = null;
         if (_snipTool != SnipTool.Picker && !_hasSelection && !IsSnipToolbarTarget(e.OriginalSource as DependencyObject))
             _snipWelcome!.Visibility = Visibility.Collapsed;
         if (_snipTool != SnipTool.Picker || IsSnipToolbarTarget(e.OriginalSource as DependencyObject)) return;
         e.Handled = true;
         if (_snipWriting) return;
-        var color = SnipColorAt(e); SetSnipWriting(true);
-        try
-        {
-            var hex = SnipDocument.Hex(color);
-            await SnipClipboard.WriteAsync(() => System.Windows.Clipboard.SetDataObject(hex, true), _snipCancellation.Token);
-            if (!_snipClosed) { ApplySnipColor(color); SetSnipStatus($"已复制 {hex} · RGB({color.R}, {color.G}, {color.B}) · C 返回选区"); }
-        }
-        catch (OperationCanceledException) { }
-        catch (Exception) { if (!_snipClosed) SetSnipStatus("颜色复制失败，请重试；可按 Esc 取消。"); }
-        finally { SetSnipWriting(false); }
+        await CopySnipColorAsync(e.GetPosition(this));
     }
 
     internal async Task CopySnipAsync(Action<BitmapSource>? write = null)
@@ -320,7 +398,7 @@ public partial class ScreenCaptureWindow
         else if (control && e.Key == Key.Y) { _snipDocument.Redo(); RefreshSnipDrawing(); }
         else if (control && e.Key == Key.P) PinSnip();
         else if ((control && e.Key == Key.C) || e.Key == Key.Enter) _ = CopySnipAsync();
-        else if (Keyboard.Modifiers == ModifierKeys.None && e.Key == Key.C) SetSnipTool(_snipTool == SnipTool.Picker ? SnipTool.Select : SnipTool.Picker);
+        else if (Keyboard.Modifiers == ModifierKeys.None && e.Key == Key.C) _ = CopySnipColorAsync();
         else return false;
         e.Handled = true; return true;
     }
