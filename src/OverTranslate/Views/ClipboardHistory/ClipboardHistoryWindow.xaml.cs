@@ -380,6 +380,13 @@ public partial class ClipboardHistoryWindow : Window
 
     private void Filter_Changed(object sender, RoutedEventArgs e)
     {
+        if (SyncPanel is not null && HistoryPanel is not null && HistoryFooter is not null)
+        {
+            var syncing = SyncTab.IsSelected;
+            SyncPanel.Visibility = syncing ? Visibility.Visible : Visibility.Collapsed;
+            SearchPanel.Visibility = HistoryPanel.Visibility = HistoryFooter.Visibility = syncing ? Visibility.Collapsed : Visibility.Visible;
+            if (syncing) { ClosePreview(); return; }
+        }
         if (HistoryList is not null) { _filterPending = true; HistoryList.IsEnabled = false; }
         RefreshViews();
     }
@@ -660,6 +667,7 @@ public partial class ClipboardHistoryWindow : Window
         if (e.Key is Key.Enter or Key.Up or Key.Down && e.OriginalSource is DependencyObject source && InsideAction(source)) return;
         if (e.Key == Key.Escape)
         { e.Handled = true; if (PreviewPanel.Visibility == Visibility.Visible) ClosePreview(); else Dismiss(); }
+        else if (SyncTab.IsSelected) return;
         else if (PreviewPanel.Visibility != Visibility.Visible && e.Key is Key.Up or Key.Down && !TypeFilter.IsKeyboardFocusWithin)
         {
             e.Handled = true;

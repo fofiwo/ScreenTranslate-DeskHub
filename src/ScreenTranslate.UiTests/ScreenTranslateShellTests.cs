@@ -95,6 +95,11 @@ public sealed partial class ScreenTranslateShellTests
                     VerifySyncSetupDialog();
                     return;
                 }
+                if (Environment.GetEnvironmentVariable("SCREEN_TRANSLATE_SYNC_FEEDBACK_ONLY") == "1")
+                {
+                    VerifySyncFeedbackAndFilePicker();
+                    return;
+                }
                 if (Environment.GetEnvironmentVariable("SCREEN_TRANSLATE_MULTITOOL_ONLY") == "1")
                 {
                     VerifyShortcutHintsMatchBindings();
