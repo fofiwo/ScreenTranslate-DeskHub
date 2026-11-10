@@ -35,6 +35,7 @@ public class RealtimeRegionStateTests
     }
 
     [Fact]
+    [System.Runtime.Versioning.SupportedOSPlatform("windows10.0.18362.0")]
     public void PollingIsNeverFasterThanFramesAreReadBack()
     {
         // Both capture backends throttle the one expensive step — the GPU-to-CPU readback — so a

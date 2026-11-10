@@ -105,6 +105,7 @@ public static class WgcCapability
     /// only knowable by trying, and the refusal at start covers them. This is the part that is
     /// decided before the user has chosen anything, and it never changes while the program runs.
     /// </remarks>
+    [SupportedOSPlatformGuard("windows10.0.18362.0")]
     public static bool SupportsScreenMode => IsCaptureSupported && SupportsWindowExclusion;
 
     /// <summary>

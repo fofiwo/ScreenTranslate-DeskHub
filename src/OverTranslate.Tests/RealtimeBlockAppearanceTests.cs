@@ -101,10 +101,10 @@ public class RealtimeBlockAppearanceTests
 
         var band = Assert.IsType<Border>(Assert.Single(((Canvas)window.FindName("ScrimCanvas")).Children));
         var holder = Assert.Single(((Canvas)window.FindName("TextCanvas")).Children);
-        return (band, FindText(holder)!);
+        return (band, Assert.IsType<TextBlock>(FindText(holder)));
     }
 
-    private static TextBlock? FindText(object element) => element switch
+    private static TextBlock? FindText(object? element) => element switch
     {
         TextBlock text => text,
         Border { Child: { } child } => FindText(child),

@@ -259,7 +259,7 @@ public sealed class MangaModelStoreTests : IDisposable
     }
 
     [Fact]
-    public void AtStart_AnUnfinishedFolderIsRemoved_AndACompleteOneKept()
+    public async Task AtStart_AnUnfinishedFolderIsRemoved_AndACompleteOneKept()
     {
         var folder = Path.Combine(_root, "v1");
         Directory.CreateDirectory(folder);
@@ -269,7 +269,7 @@ public sealed class MangaModelStoreTests : IDisposable
         store.DiscardIncomplete();
         Assert.False(Directory.Exists(folder));
 
-        store.DownloadAsync().GetAwaiter().GetResult();
+        await store.DownloadAsync();
         store.DiscardIncomplete();
         Assert.Equal(MangaModelState.Ready, store.State);
     }

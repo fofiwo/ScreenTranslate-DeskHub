@@ -1,4 +1,5 @@
 using System.Drawing;
+using System.Runtime.Versioning;
 using OverTranslate.Services.Realtime.Capture;
 using Xunit;
 
@@ -14,6 +15,7 @@ namespace OverTranslate.Tests;
 /// of the primary has negative coordinates, and a remembered layout can name a screen that is no
 /// longer arranged the way it was.
 /// </remarks>
+[SupportedOSPlatform("windows10.0.18362.0")]
 public class MonitorResolutionTests
 {
     private static Rectangle Primary =>

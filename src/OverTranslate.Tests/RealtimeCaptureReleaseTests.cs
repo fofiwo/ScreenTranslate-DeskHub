@@ -12,19 +12,24 @@ namespace OverTranslate.Tests;
 public class RealtimeCaptureReleaseTests
 {
     [Fact]
-    public void TheReleaseDoesNotRunOnTheCallersThread()
+    public async Task TheReleaseDoesNotRunOnTheCallersThread()
     {
         var capture = new FakeCapture(() => { });
+        var callerThread = 0;
+        // 独立调用线程不会在 await 后被线程池复用为释放线程。
+        var watch = Task.Factory.StartNew(() =>
+        {
+            callerThread = Environment.CurrentManagedThreadId;
+            return RealtimeCaptureRelease.Release(capture);
+        }, CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default).Unwrap();
 
-        var watch = RealtimeCaptureRelease.Release(capture);
-
-        Assert.True(watch.Wait(TimeSpan.FromSeconds(5)));
-        Assert.True(capture.Started.IsSet);
-        Assert.NotEqual(Environment.CurrentManagedThreadId, capture.DisposedOnThread);
+        await watch.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.True(capture.Started.Task.IsCompletedSuccessfully);
+        Assert.NotEqual(callerThread, capture.DisposedOnThread);
     }
 
     [Fact]
-    public void AReleaseThatNeverReturnsDoesNotHoldTheCaller()
+    public async Task AReleaseThatNeverReturnsDoesNotHoldTheCaller()
     {
         using var never = new ManualResetEventSlim(false);
         var capture = new FakeCapture(() => never.Wait());
@@ -33,21 +38,23 @@ public class RealtimeCaptureReleaseTests
             capture, release => Task.Run(release), TimeSpan.FromMilliseconds(50));
 
         // Returned at once; the release is still running elsewhere.
-        Assert.False(watch.IsCompleted);
-        Assert.True(capture.Started.Wait(TimeSpan.FromSeconds(5)));
-        never.Set();
-        Assert.True(watch.Wait(TimeSpan.FromSeconds(5)));
+        try
+        {
+            Assert.False(watch.IsCompleted);
+            await capture.Started.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        }
+        finally { never.Set(); await watch.WaitAsync(TimeSpan.FromSeconds(5)); }
     }
 
     [Fact]
-    public void AFailingReleaseIsContained()
+    public async Task AFailingReleaseIsContained()
     {
         var capture = new FakeCapture(() => throw new InvalidOperationException("device lost"));
 
         var watch = RealtimeCaptureRelease.Release(capture);
 
-        Assert.True(watch.Wait(TimeSpan.FromSeconds(5)));
-        Assert.True(capture.Started.IsSet);
+        await watch.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.True(capture.Started.Task.IsCompletedSuccessfully);
     }
 
     [Fact]
@@ -58,7 +65,7 @@ public class RealtimeCaptureReleaseTests
 
     private sealed class FakeCapture(Action onDispose) : IRealtimeCaptureBackend
     {
-        public ManualResetEventSlim Started { get; } = new(false);
+        public TaskCompletionSource Started { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
         public int DisposedOnThread { get; private set; }
 
@@ -74,7 +81,7 @@ public class RealtimeCaptureReleaseTests
         public void Dispose()
         {
             DisposedOnThread = Environment.CurrentManagedThreadId;
-            Started.Set();
+            Started.SetResult();
             onDispose();
         }
     }
