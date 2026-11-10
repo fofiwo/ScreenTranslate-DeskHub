@@ -139,6 +139,7 @@ public partial class ClipboardHistoryWindow : Window
     private int _previewVersion;
     private bool _filterPending;
     private bool _refreshing;
+    private Task _refreshTask = Task.CompletedTask;
     private int _refreshVersion;
     private int _changeQueued;
     private IReadOnlyList<ClipboardRecord>? _shownSnapshot;
@@ -215,8 +216,11 @@ public partial class ClipboardHistoryWindow : Window
         {
             var store = await ClipboardHistoryRuntime.StoreAsync;
             if (version != _openVersion) return;
-            _current ??= new ClipboardHistoryWindow(store, managePosition: true);
-            _current.ShowPanel();
+            var window = _current ??= new ClipboardHistoryWindow(store, managePosition: true);
+            // 首次显示前准备好列表与默认选中项，避免首个点击／Enter 被加载过程吞掉。
+            if (window._shownSnapshot is null) await window._refreshTask;
+            if (version != _openVersion) return;
+            window.ShowPanel();
         }
         catch (Exception) { AppMessageWindow.ShowMessage("剪贴板历史暂时无法打开，请检查数据目录权限与磁盘空间。", "剪贴板", MessageBoxButton.OK, MessageBoxImage.Warning); }
         finally { if (version == _openVersion) _opening = false; }
@@ -298,7 +302,7 @@ public partial class ClipboardHistoryWindow : Window
         if (_closed || HistoryList is null || TypeFilter is null || SearchBox is null || EmptyState is null) return;
         SearchPlaceholder.Visibility = SearchBox.Text.Length == 0 ? Visibility.Visible : Visibility.Collapsed;
         ++_refreshVersion;
-        if (!_refreshing) _ = RefreshLoopAsync();
+        if (!_refreshing) _refreshTask = RefreshLoopAsync();
     }
 
     private async Task RefreshLoopAsync()

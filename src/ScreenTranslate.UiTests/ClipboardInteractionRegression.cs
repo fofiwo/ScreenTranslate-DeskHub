@@ -88,6 +88,75 @@ public sealed partial class ScreenTranslateShellTests
             ApplyTheme(System.Windows.Application.Current, "Light");
         }
         finally { window.Close(); Directory.Delete(folder, true); }
+        VerifyClipboardFirstWake(click: false);
+        VerifyClipboardFirstWake(click: true);
+        VerifyClipboardFirstWake(click: false, cancel: true);
+    }
+
+    private static void VerifyClipboardFirstWake(bool click, bool cancel = false)
+    {
+        var folder = Path.Combine(Path.GetTempPath(), "clipboard-first-wake-" + Guid.NewGuid().ToString("N"));
+        var store = new ClipboardHistoryStore(folder);
+        store.Add(new() { Text = "首次唤醒测试" });
+        var copies = 0;
+        var pastes = 0;
+        var saved = 0;
+        store.Changed += (_, _) => Interlocked.Exchange(ref saved, 1);
+        var window = new ClipboardHistoryWindow(store, _ => { copies++; return Task.CompletedTask; },
+            () => { pastes++; return Task.FromResult(true); }, settings: new AppSettings(), saveSettings: () => true,
+            syncActivities: new OverTranslate.Services.Lan.SyncActivityStore(Path.Combine(folder, "activity.json")))
+        { Left = -10000, Top = -10000 };
+        // 为真实 Open 路径注入临时存储，避免读取个人剪贴板历史。
+        var current = typeof(ClipboardHistoryWindow).GetField("_current", System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic)!;
+        var loader = typeof(ClipboardHistoryRuntime).GetField("StoreLoader", System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic)!.GetValue(null)!;
+        var pending = typeof(ClipboardHistoryStoreLoader).GetField("_pending", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
+        var previousStore = pending.GetValue(loader);
+        Assert.Null(current.GetValue(null));
+        current.SetValue(null, window);
+        pending.SetValue(loader, Task.FromResult(store));
+        var query = (TextBox)window.FindName("SearchBox");
+        var list = (ListBox)window.FindName("HistoryList");
+        var shown = false;
+        window.ContentRendered += (_, _) =>
+        {
+            shown = true;
+            window.Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Input, () =>
+            {
+                if (click)
+                {
+                    list.UpdateLayout();
+                    if (list.ItemContainerGenerator.ContainerFromIndex(0) is not ListBoxItem item) return;
+                    var body = Visuals<TextBlock>(item).First(t => t.Text == "首次唤醒测试");
+                    body.RaiseEvent(new MouseButtonEventArgs(Mouse.PrimaryDevice, 0, MouseButton.Left)
+                        { RoutedEvent = Mouse.PreviewMouseUpEvent });
+                }
+                else query.RaiseEvent(new KeyEventArgs(Keyboard.PrimaryDevice, PresentationSource.FromVisual(window), 0, Key.Enter)
+                    { RoutedEvent = Keyboard.PreviewKeyDownEvent });
+            });
+        };
+        try
+        {
+            ClipboardHistoryWindow.Open();
+            if (cancel)
+            {
+                Assert.False(window.IsVisible);
+                ClipboardHistoryWindow.Toggle();
+                PumpUntil(() => !window.IsRefreshing);
+                Assert.False(window.IsVisible);
+                Assert.Equal(0, copies);
+                ClipboardHistoryWindow.Open();
+            }
+            PumpUntil(() => shown && !window.IsRefreshing && !window.IsBusy);
+            Assert.Equal(1, copies);
+            Assert.Equal(1, pastes);
+            Assert.False(window.IsVisible);
+            PumpUntil(() => Volatile.Read(ref saved) == 1);
+        }
+        finally
+        {
+            window.Close();
+            pending.SetValue(loader, previousStore); Directory.Delete(folder, true);
+        }
     }
 
     private static void VerifyPausedClipboardCapture(ClipboardHistoryStore store, AppSettings settings)
