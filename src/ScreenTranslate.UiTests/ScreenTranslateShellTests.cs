@@ -24,6 +24,9 @@ public sealed partial class ScreenTranslateShellTests
     public void ProductShellStartsWithCaptureAndKeepsAllDestinationsReachable()
     {
         Exception? failure = null;
+        var elapsed = System.Diagnostics.Stopwatch.StartNew();
+        var phases = new System.Collections.Concurrent.ConcurrentQueue<string>();
+        void Checkpoint(string phase) => phases.Enqueue($"{elapsed.Elapsed.TotalSeconds:0.0}s {phase}");
         var thread = new Thread(() =>
         {
             SynchronizationContext.SetSynchronizationContext(new DispatcherSynchronizationContext(Dispatcher.CurrentDispatcher));
@@ -44,6 +47,43 @@ public sealed partial class ScreenTranslateShellTests
                     Source = new Uri("pack://application:,,,/ScreenTranslate;component/Resources/Strings.zh-Hans.xaml", UriKind.Absolute)
                 };
                 ApplyTheme(app, "Light");
+                if (Environment.GetEnvironmentVariable("SCREEN_TRANSLATE_FRONTEND_PERFORMANCE_ONLY") == "1")
+                {
+                    VerifyLibraryReadPerformance();
+                    VerifyLibraryColdOpenPerformance();
+                    VerifyShellReadPerformance();
+                    VerifyAiReadPerformance();
+                    VerifyClipboardRapidToggle();
+                    return;
+                }
+                if (Environment.GetEnvironmentVariable("SCREEN_TRANSLATE_LIBRARY_REGRESSION_ONLY") == "1")
+                {
+                    var fixtureStore = new LibraryStore(System.IO.Path.Combine(libraryDirectory, "library.json"));
+                    shell = new ShellWindow(fixtureStore.Read, () => { });
+                    VerifyLibraryLauncher(shell, fixtureStore, libraryDirectory);
+                    shell.Close(); shell = null;
+                    VerifyLibraryQuickAccess();
+                    VerifyLibraryWindow();
+                    VerifyDeletedPromptEditorKeepsInput();
+                    VerifyAiSettingsPage();
+                    return;
+                }
+                if (Environment.GetEnvironmentVariable("SCREEN_TRANSLATE_CLIPBOARD_TOGGLE_ONLY") == "1")
+                {
+                    VerifyClipboardRapidToggle();
+                    return;
+                }
+                if (Environment.GetEnvironmentVariable("SCREEN_TRANSLATE_DIALOG_DESIGN_ONLY") == "1")
+                {
+                    VerifyAuxiliarySurfaceDesign();
+                    return;
+                }
+                if (Environment.GetEnvironmentVariable("SCREEN_TRANSLATE_SAVE_FEEDBACK_ONLY") == "1")
+                {
+                    VerifyLibrarySaveFeedback(libraryDirectory);
+                    VerifyLibraryAiFeedback(libraryDirectory);
+                    return;
+                }
                 if (Environment.GetEnvironmentVariable("SCREEN_TRANSLATE_LIBRARY_QUICK_ACCESS_ONLY") == "1")
                 {
                     VerifyLibraryQuickAccess();
@@ -72,7 +112,16 @@ public sealed partial class ScreenTranslateShellTests
                     if (Environment.GetEnvironmentVariable("SCREEN_TRANSLATE_CLIPBOARD_NATIVE") == "1") VerifyNativeClipboardPaste();
                     return;
                 }
+                if (Environment.GetEnvironmentVariable("SCREEN_TRANSLATE_CLIPBOARD_POPUP_ONLY") == "1")
+                {
+                    VerifySystemClipboardHistory();
+                    return;
+                }
+                Checkpoint("auxiliary dialogs start");
+                VerifyAuxiliarySurfaceDesign();
+                Checkpoint("snipping tools start");
                 VerifySnippingTools();
+                Checkpoint("snipping tools complete");
                 if (Environment.GetEnvironmentVariable("SCREEN_TRANSLATE_SNIP_ONLY") == "1") return;
                 if (Environment.GetEnvironmentVariable("SCREEN_TRANSLATE_LAYOUT_ONLY") == "1")
                 {
@@ -116,14 +165,11 @@ public sealed partial class ScreenTranslateShellTests
                     VerifyClipboardWindowPinToggle();
                     return;
                 }
-                if (Environment.GetEnvironmentVariable("SCREEN_TRANSLATE_CLIPBOARD_POPUP_ONLY") == "1")
-                {
-                    VerifySystemClipboardHistory();
-                    return;
-                }
                 VerifyUpdateEntries();
+                Checkpoint("library quick access start");
                 VerifyLibraryQuickAccess();
                 VerifyBorderlessShortcutShell();
+                Checkpoint("shell navigation start");
                 VerifyShortcutHintsMatchBindings();
                 VerifyScreenshotToolActions();
                 VerifyMultitoolNavigation();
@@ -136,6 +182,7 @@ public sealed partial class ScreenTranslateShellTests
                 var openedLibrary = 0;
                 shell = new ShellWindow(libraryStore.Read, () => openedLibrary++);
                 VerifyLibraryLauncher(shell, libraryStore, libraryDirectory);
+                Checkpoint("library launcher complete");
                 ((System.Windows.Controls.Button)shell.FindName("LibraryBtn")).RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Button.ClickEvent));
                 Assert.Equal(1, openedLibrary);
                 using (var trayIcon = AppIconService.CreateTrayIcon())
@@ -218,6 +265,7 @@ public sealed partial class ScreenTranslateShellTests
                 VerifyShortcutRecording();
                 VerifyOcrSaveFailure();
                 VerifyDpiLayout(shell);
+                Checkpoint("settings and DPI complete");
 
                 var control = new OverTranslate.Views.Realtime.RealtimeControlWindow(new System.Drawing.Rectangle(0, 0, 1920, 1080));
                 try
@@ -258,9 +306,13 @@ public sealed partial class ScreenTranslateShellTests
                 shell.Navigate(ShellPage.Realtime);
                 Render(shell, "continuous-light");
                 VerifyHiddenShellReopens(shell);
+                Checkpoint("clipboard history start");
                 VerifySystemClipboardHistory();
-                VerifyLibraryWindow();
+                Checkpoint("library regression start");
+                VerifyLibraryWindow(Checkpoint);
+                Checkpoint("library regression complete");
                 VerifyDeletedPromptEditorKeepsInput();
+                Checkpoint("all checks complete");
                 shell.Close(); shell = null;
                 Assert.Null(ShellWindow.Current);
             }
@@ -273,7 +325,8 @@ public sealed partial class ScreenTranslateShellTests
         });
         thread.SetApartmentState(ApartmentState.STA);
         thread.Start();
-        Assert.True(thread.Join(TimeSpan.FromSeconds(60)), "Product shell test timed out.");
+        // 全流程覆盖多个独立窗口；这里只限制总时长，性能预算仍由专项断言检查。
+        Assert.True(thread.Join(TimeSpan.FromSeconds(90)), "Product shell test timed out.\n" + string.Join("\n", phases));
         if (failure is not null) System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(failure).Throw();
     }
 
@@ -282,14 +335,14 @@ public sealed partial class ScreenTranslateShellTests
         var summary = (TextBlock)shell.FindName("LibrarySummaryText");
         var hotkey = (TextBlock)shell.FindName("LibraryHotkeyText");
         var entry = (System.Windows.Controls.Button)shell.FindName("LibraryBtn");
-        Assert.Equal("提示词 0 · 连接 0", summary.Text);
+        PumpUntil(() => summary.Text == "提示词 0 · 连接 0");
         store.Update(s =>
         {
             s.Prompts = Enumerable.Range(0, 12).Select(i => new LibraryPrompt { Title = $"示例 {i}" }).ToList();
             s.Connections = Enumerable.Range(0, 12).Select(i => new LibraryConnection { Platform = $"本地 {i}" }).ToList();
         });
         typeof(Window).GetMethod("OnActivated", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(shell, [EventArgs.Empty]);
-        Assert.Equal("提示词 12 · 连接 12", summary.Text);
+        PumpUntil(() => summary.Text == "提示词 12 · 连接 12");
         Render(shell, "shell-library-entry", 1220, 800);
         Render(shell, "shell-library-entry-minimum", 1100, 680);
         AssertInside((FrameworkElement)shell.Content, entry);
@@ -324,14 +377,14 @@ public sealed partial class ScreenTranslateShellTests
             {
                 System.IO.File.WriteAllText(path, damaged);
                 shell.RefreshLibrarySummary();
-                Assert.Equal("资料暂不可用，请打开检查", summary.Text);
+                PumpUntil(() => summary.Text == "资料暂不可用，请打开检查");
                 Assert.True(entry.IsEnabled);
             }
         }
         finally { System.IO.File.WriteAllBytes(path, saved); }
         store.Update(s => s.Prompts.RemoveAt(0));
         shell.RefreshLibrarySummary();
-        Assert.Equal("提示词 11 · 连接 12", summary.Text);
+        PumpUntil(() => summary.Text == "提示词 11 · 连接 12");
     }
 
     private static void ApplyTheme(System.Windows.Application app, string theme)
@@ -594,7 +647,7 @@ public sealed partial class ScreenTranslateShellTests
         }
     }
 
-    private static void VerifyLibraryWindow()
+    private static void VerifyLibraryWindow(Action<string>? checkpoint = null)
     {
         var directory = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "library-ui-" + Guid.NewGuid());
         LibraryWindow? window = null;
@@ -740,10 +793,15 @@ public sealed partial class ScreenTranslateShellTests
             VerifyLibraryDragOrder(directory);
             VerifyLibraryConnectionEditor(directory);
             VerifyLibraryHttpPermission(directory);
+            checkpoint?.Invoke("library save feedback start");
             VerifyLibrarySaveFeedback(directory);
+            VerifyLibraryAiFeedback(directory);
+            checkpoint?.Invoke("library copy regressions start");
             VerifyLibraryCopyRetries(directory);
             VerifyPromptCopyAdversarial(directory);
+            checkpoint?.Invoke("compact library start");
             VerifyCompactLibrary(directory);
+            checkpoint?.Invoke("library typography start");
             VerifyLibraryTypography(directory);
             window.CloseForTests(); window = null;
             window = new LibraryWindow(new LibraryStore(System.IO.Path.Combine(directory, "library.json")), copy: copied.Add);
@@ -755,8 +813,11 @@ public sealed partial class ScreenTranslateShellTests
             Assert.Equal("cached-a", copied.Last());
             Assert.Equal("cached-a", ((TextBlock)window.FindName("CopyModelId")).Text);
             store.SaveConnection(new() { Platform = "另一连接", Endpoint = "http://localhost:11435/v1", Model = "other-fixed" });
+            ReloadLibrary(window);
             ((TextBox)window.FindName("ModelSearch")).Text = "另一连接";
             window.UpdateLayout();
+            PumpUntil(() => Visuals<System.Windows.Controls.Button>((DependencyObject)window.Content)
+                .First(b => Equals(b.Content, "复制模型 ID")).Tag is LibraryConnection { Model: "other-fixed" });
             Click("复制模型 ID");
             PumpUntil(() => !window.IsCopyPending);
             Assert.Equal("other-fixed", copied.Last());
@@ -820,7 +881,7 @@ public sealed partial class ScreenTranslateShellTests
             var longNote = string.Concat(Enumerable.Repeat("这是已经迁入的长备注，需要无损保存。", 36));
             store.SavePrompt(new() { Title = string.Concat(Enumerable.Repeat("长标题用于检查截断及完整预览", 8)), Description = longDescription,
                 Content = "仅用于布局验收的虚构内容。\n" + new string('W', 500), Tags = ["长文本验收", new string('标', 80)] });
-            typeof(LibraryWindow).GetMethod("RefreshViews", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(window, null);
+            ReloadLibrary(window);
             Render(window, "library-long-prompts-minimum", 880, 580);
             Click("编辑");
             Assert.Equal(longDescription, ((TextBox)window.FindName("PromptDescription")).Text);
@@ -832,7 +893,7 @@ public sealed partial class ScreenTranslateShellTests
 
             store.SaveConnection(new() { Platform = string.Concat(Enumerable.Repeat("自定义长平台名称", 18)), Endpoint = "http://localhost/" + new string('a', 260), Model = new string('m', 230), Note = longNote,
                 RemainingBalance = "余额为手动记录，不代表实时平台额度" }, fetchedModelIds: [new string('d', 280)]);
-            typeof(LibraryWindow).GetMethod("RefreshViews", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(window, null);
+            ReloadLibrary(window);
             tabs.SelectedIndex = 1;
             Render(window, "library-long-models-minimum", 880, 580);
             Click("编辑");

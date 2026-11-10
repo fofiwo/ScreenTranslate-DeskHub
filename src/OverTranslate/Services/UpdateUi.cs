@@ -52,15 +52,15 @@ internal static class UpdateUi
             reportStatus?.Invoke(message);
             if (reportStatus is not null) return;
             if (owner?.IsVisible == true)
-                System.Windows.MessageBox.Show(owner, message, "ScreenTranslate 更新", MessageBoxButton.OK, MessageBoxImage.Information);
+                OverTranslate.Views.Controls.AppMessageWindow.ShowMessage(owner, message, "ScreenTranslate 更新", MessageBoxButton.OK, MessageBoxImage.Information);
             else
-                System.Windows.MessageBox.Show(message, "ScreenTranslate 更新", MessageBoxButton.OK, MessageBoxImage.Information);
+                OverTranslate.Views.Controls.AppMessageWindow.ShowMessage(message, "ScreenTranslate 更新", MessageBoxButton.OK, MessageBoxImage.Information);
         }
     }
 
     internal static void OpenReleases()
     {
         try { Process.Start(new ProcessStartInfo(UpdateService.ReleasesUrl) { UseShellExecute = true }); }
-        catch { System.Windows.MessageBox.Show("无法打开浏览器，请访问：\n" + UpdateService.ReleasesUrl, "下载更新"); }
+        catch { OverTranslate.Views.Controls.AppMessageWindow.ShowMessage("无法打开浏览器，请访问：\n" + UpdateService.ReleasesUrl, "下载更新"); }
     }
 }

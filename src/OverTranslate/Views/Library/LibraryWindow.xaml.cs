@@ -1,4 +1,4 @@
-﻿using System.ComponentModel;
+using System.ComponentModel;
 using System.Collections.ObjectModel;
 using System.IO;
 using System.Windows;
@@ -13,14 +13,26 @@ using CheckBox = System.Windows.Controls.CheckBox;
 using ComboBox = System.Windows.Controls.ComboBox;
 using ListBox = System.Windows.Controls.ListBox;
 using KeyEventArgs = System.Windows.Input.KeyEventArgs;
-using MessageBox = System.Windows.MessageBox;
+using OverTranslate.Views.Controls;
 
 namespace OverTranslate.Views.Library;
 
 public partial class LibraryWindow : Window
 {
     private static LibraryWindow? _current;
+    private static bool _opening;
+    private static int _openVersion;
+    private static Task<(LibraryStore Store, LibraryState State)>? _openingStore;
     private readonly LibraryStore _store;
+    private LibraryState _viewState;
+    private Task _reloadTask = Task.CompletedTask;
+    private int _reloadVersion;
+    private bool _reloading;
+    private Task _tabSaveTask = Task.CompletedTask;
+    private int _tabSaveVersion;
+    private bool _changingData;
+    private Task _dataChangeTask = Task.CompletedTask;
+    private Task _summaryWrites = Task.CompletedTask;
     private readonly LibraryHttp _http;
     private readonly Action<string> _copy;
     private readonly HashSet<string> _refreshing = [];
@@ -55,23 +67,31 @@ public partial class LibraryWindow : Window
     internal bool IsCopyPending => _pendingCopies > 0;
     private readonly System.Windows.Threading.DispatcherTimer _rankTimer = new() { Interval = TimeSpan.FromMilliseconds(600) };
     private readonly System.Windows.Threading.DispatcherTimer _saveNoticeTimer = new() { Interval = TimeSpan.FromSeconds(6) };
+    // 提示关闭或被新任务替换后，旧请求不再更新它。
+    private int _saveNoticeVersion;
     private bool _savingEditor;
     private Task _editorSaveTask = Task.CompletedTask;
 
     public LibraryWindow() : this(new LibraryStore(LibraryStore.DefaultPath)) { }
 
-    internal LibraryWindow(LibraryStore store, LibraryHttp? http = null, Action<string>? copy = null)
+    internal LibraryWindow(LibraryStore store, LibraryHttp? http = null, Action<string>? copy = null, LibraryState? initialState = null)
     {
         _store = store;
+        _viewState = initialState ?? store.Read();
         _http = http ?? new();
         _copy = copy ?? (text => LibraryClipboard.SetText(text, new System.Windows.Interop.WindowInteropHelper(this).EnsureHandle()));
         InitializeComponent();
-        Shell.WindowFrame.Attach(this);
         _rankTimer.Tick += (_, _) => RankCopiedPrompts();
         _copyFeedbackTimer.Tick += (_, _) => ResetCopyFeedback();
         _saveNoticeTimer.Tick += (_, _) => DismissSaveNotice();
         LibrarySyncNotifications.Changed += SyncChanged;
-        Activated += (_, _) => RefreshShortcut();
+        Activated += async (_, _) =>
+        {
+            RefreshShortcut();
+            if (EditorLayer.Visibility == Visibility.Visible) return;
+            try { await ReloadViewsAsync(); }
+            catch (Exception ex) { if (!_shutdown) Notice(Error(ex), true); }
+        };
         Deactivated += (_, _) => { CancelPendingCopy(); ResetCopyFeedback(); };
         IsVisibleChanged += (_, _) =>
         {
@@ -83,7 +103,7 @@ public partial class LibraryWindow : Window
         TypeBox.ItemsSource = ModelPlatforms.Types;
         _ready = true;
         _loading = true;
-        Tabs.SelectedIndex = Math.Clamp(_store.Read().SelectedTab, 0, 1);
+        Tabs.SelectedIndex = Math.Clamp(_viewState.SelectedTab, 0, 1);
         _loading = false;
         RefreshViews();
         RefreshShortcut();
@@ -91,23 +111,47 @@ public partial class LibraryWindow : Window
 
     public static void Open() => Open(quickAccess: false);
 
-    private static void Open(bool quickAccess)
+    private static async void Open(bool quickAccess)
     {
         try
         {
-            _current ??= new LibraryWindow();
+            await OpenAsync(quickAccess, () => new LibraryStore(LibraryStore.DefaultPath));
+        }
+        catch (Exception ex) { AppMessageWindow.ShowMessage(Error(ex), "资料库暂时无法打开", MessageBoxButton.OK, MessageBoxImage.Warning); }
+    }
+
+    internal static async Task OpenAsync(bool quickAccess, Func<LibraryStore> createStore)
+    {
+        var version = ++_openVersion;
+        _opening = true;
+        try
+        {
+            if (_current is null)
+            {
+                _openingStore ??= Task.Run(() => { var store = createStore(); return (Store: store, State: store.Read()); });
+                var loaded = await _openingStore;
+                if (version != _openVersion) return;
+                _current ??= new LibraryWindow(loaded.Store, initialState: loaded.State);
+            }
+            if (version != _openVersion) return;
             _current.SetQuickAccess(quickAccess);
             _current.RefreshShortcut();
             if (!_current.IsVisible) _current.Show();
             if (_current.WindowState == WindowState.Minimized) _current.WindowState = WindowState.Normal;
             _current.Activate();
         }
-        catch (Exception ex) { MessageBox.Show(Error(ex), "资料库暂时无法打开", MessageBoxButton.OK, MessageBoxImage.Warning); }
+        catch when (version != _openVersion) { }
+        finally
+        {
+            if (_openingStore?.IsCompleted == true) _openingStore = null;
+            if (version == _openVersion) _opening = false;
+        }
     }
 
     public static void Toggle()
     {
         if (_current is { IsVisible: true, WindowState: not WindowState.Minimized }) _current.ToggleVisibility();
+        else if (_opening) { ++_openVersion; _opening = false; }
         else Open(quickAccess: true);
     }
 
@@ -127,14 +171,9 @@ public partial class LibraryWindow : Window
     private void SetQuickAccess(bool quickAccess)
     {
         ManagementHeader.Visibility = quickAccess ? Visibility.Collapsed : Visibility.Visible;
+        ManagementChrome.Visibility = quickAccess ? Visibility.Collapsed : Visibility.Visible;
         QuickWindowControls.Visibility = quickAccess ? Visibility.Visible : Visibility.Collapsed;
-        WindowStyle = quickAccess ? WindowStyle.None : WindowStyle.SingleBorderWindow;
-        System.Windows.Shell.WindowChrome.SetWindowChrome(this, quickAccess ? new System.Windows.Shell.WindowChrome
-        {
-            CaptionHeight = 0, ResizeBorderThickness = new Thickness(6),
-            GlassFrameThickness = new Thickness(0), CornerRadius = new CornerRadius(0),
-            UseAeroCaptionButtons = false
-        } : null);
+        System.Windows.Shell.WindowChrome.GetWindowChrome(this).CaptionHeight = quickAccess ? 0 : 40;
     }
 
     private void QuickClose_Click(object sender, RoutedEventArgs e) => Close();
@@ -148,6 +187,7 @@ public partial class LibraryWindow : Window
 
     public static void Shutdown()
     {
+        ++_openVersion; _opening = false;
         if (_current is null) return;
         _current._shutdown = true;
         _current.Close();
@@ -171,6 +211,8 @@ public partial class LibraryWindow : Window
         // 保存任务不依赖界面线程；正常退出前写完已成功复制的记录。
         try { _copyHistory.GetAwaiter().GetResult(); }
         catch { /* 复制调用方负责提示保存失败，退出时不再抛出。 */ }
+        try { Task.WhenAll(_tabSaveTask, _dataChangeTask, _summaryWrites).GetAwaiter().GetResult(); }
+        catch { /* 后台写入的调用方负责显示错误。 */ }
         _lifetime.Cancel(); _editorRequest?.Cancel(); _http.Dispose(); _lifetime.Dispose();
     }
 
@@ -185,12 +227,6 @@ public partial class LibraryWindow : Window
 
     private static string Error(Exception ex) => ex is InvalidOperationException or InvalidDataException
         ? ex.Message : ex is OperationCanceledException ? "操作已取消或超时，原有资料已保留。" : "操作失败，请检查目录权限、资料格式或网络。原有资料未覆盖。";
-
-    private bool Run(Action action)
-    {
-        try { action(); return true; }
-        catch (Exception ex) { Notice(Error(ex), true); return false; }
-    }
 
     private void Notice(string text, bool error = false)
     {
@@ -290,12 +326,95 @@ public partial class LibraryWindow : Window
         _copyFeedbackTimer.Start();
     }
 
-    private void Tabs_Changed(object sender, SelectionChangedEventArgs e)
+    private async void Tabs_Changed(object sender, SelectionChangedEventArgs e)
     {
         if (!_ready || _loading || !ReferenceEquals(e.Source, Tabs)) return;
         CancelPendingCopy();
         ResetCopyFeedback();
-        Run(() => _store.Update(s => s.SelectedTab = Tabs.SelectedIndex));
+        var selected = Tabs.SelectedIndex;
+        _viewState.SelectedTab = selected;
+        var version = ++_tabSaveVersion;
+        var previous = _tabSaveTask;
+        var save = Task.Run(async () =>
+        {
+            try { await previous; } catch { /* 上次失败由原调用方报告，仍允许后续重试。 */ }
+            if (version == Volatile.Read(ref _tabSaveVersion)) _store.Update(s => s.SelectedTab = selected);
+        });
+        _tabSaveTask = save;
+        try
+        {
+            await save;
+        }
+        catch (Exception ex) { if (!_shutdown) Notice(Error(ex), true); }
+    }
+
+    internal Task ReloadViewsAsync()
+    {
+        ++_reloadVersion;
+        if (!_reloading) _reloadTask = ReloadLoopAsync();
+        return _reloadTask;
+    }
+
+    private async Task ReloadLoopAsync()
+    {
+        _reloading = true;
+        try
+        {
+            while (!_shutdown)
+            {
+                var version = _reloadVersion;
+                var previous = _viewState;
+                var pendingCopies = _copyHistory;
+                var result = await Task.Run(async () =>
+                {
+                    try { await pendingCopies; } catch { /* 复制历史保存失败由原调用方报告。 */ }
+                    var state = _store.Read();
+                    return (State: state, Changed: !SameVisibleRows(state, previous));
+                });
+                if (_shutdown) return;
+                if (version != _reloadVersion) continue;
+                if (result.Changed) { _viewState = result.State; RefreshViews(); }
+                return;
+            }
+        }
+        finally { _reloading = false; }
+    }
+
+    // 只比较列表与详情消费的字段；不为检测变化再次序列化整份正文及同步元数据。
+    private static bool SameVisibleRows(LibraryState a, LibraryState b) =>
+        a.Prompts.Count == b.Prompts.Count && a.Connections.Count == b.Connections.Count
+        && a.Prompts.Zip(b.Prompts).All(p => p.First.Id == p.Second.Id && p.First.Title == p.Second.Title
+            && p.First.Description == p.Second.Description && p.First.Content == p.Second.Content
+            && p.First.CopyCount == p.Second.CopyCount && p.First.CreatedAt == p.Second.CreatedAt
+            && p.First.UpdatedAt == p.Second.UpdatedAt && p.First.Tags.SequenceEqual(p.Second.Tags))
+        && a.Connections.Zip(b.Connections).All(p => p.First.Id == p.Second.Id && p.First.Platform == p.Second.Platform
+            && p.First.ModelType == p.Second.ModelType && p.First.Endpoint == p.Second.Endpoint
+            && p.First.AllowInsecureEndpoint == p.Second.AllowInsecureEndpoint && p.First.ApiKeyProtected == p.Second.ApiKeyProtected
+            && p.First.Model == p.Second.Model && p.First.LastCopiedModelId == p.Second.LastCopiedModelId
+            && p.First.RemainingBalance == p.Second.RemainingBalance && p.First.Note == p.Second.Note
+            && p.First.ModelIds.SequenceEqual(p.Second.ModelIds) && p.First.ModelsUpdatedAt == p.Second.ModelsUpdatedAt
+            && p.First.Revision == p.Second.Revision && p.First.CreatedAt == p.Second.CreatedAt && p.First.UpdatedAt == p.Second.UpdatedAt);
+
+    private async Task<bool> ChangeDataAsync(Action change)
+    {
+        if (_changingData || _shutdown) return false;
+        _changingData = true;
+        Notice("正在保存资料…");
+        var persisted = false;
+        try
+        {
+            _dataChangeTask = Task.Run(change);
+            await _dataChangeTask;
+            persisted = true;
+            await ReloadViewsAsync();
+            return !_shutdown;
+        }
+        catch (Exception ex)
+        {
+            if (!_shutdown) Notice(persisted ? "资料已保存，但列表刷新失败，请重新打开资料库查看。" : Error(ex), true);
+            return false;
+        }
+        finally { _changingData = false; }
     }
 
     private void RefreshViews()
@@ -304,7 +423,8 @@ public partial class LibraryWindow : Window
         _loading = true;
         try
         {
-            var state = _store.Read();
+            // 搜索、筛选和追加列表只使用界面快照，写入完成及同步通知才重新读盘。
+            var state = _viewState;
             _promptOrder = state.Prompts.Select((p, index) => (p.Id, index))
                 .GroupBy(p => p.Id).ToDictionary(g => g.Key, g => g.First().index);
             var promptId = (PromptList.SelectedItem as LibraryPrompt)?.Id;
@@ -382,6 +502,7 @@ public partial class LibraryWindow : Window
                 try
                 {
                     var count = await SaveCopyHistory(() => _store.RememberCopiedPrompt(item.Id));
+                    ++_reloadVersion;
                     item.CopyCount = Math.Max(item.CopyCount, count);
                     // 搜索或筛选可能已替换列表对象，按 ID 更新当前快照。
                     foreach (var current in _promptItems.Where(p => p.Id == item.Id))
@@ -458,11 +579,12 @@ public partial class LibraryWindow : Window
         _editorKind = ""; _editingPrompt = null; _editingConnection = null;
         ModelKey.Clear(); EditorLayer.Visibility = Visibility.Collapsed;
     }
-    private void CancelEditor_Click(object sender, RoutedEventArgs e)
+    private async void CancelEditor_Click(object sender, RoutedEventArgs e)
     {
         if (_savingEditor) return;
         CloseEditor();
-        if (Run(RefreshViews)) Notice("已取消编辑，原有资料未更改。");
+        try { await ReloadViewsAsync(); if (!_shutdown) Notice("已取消编辑，原有资料未更改。"); }
+        catch (Exception ex) { if (!_shutdown) Notice(Error(ex), true); }
     }
     private void NewPrompt_Click(object sender, RoutedEventArgs e) => BeginPromptEditor(new(), false);
     private bool _editingPromptWasSaved, _editingConnectionWasSaved;
@@ -477,34 +599,46 @@ public partial class LibraryWindow : Window
         PromptBody.Text = item.Content; PromptTags.Text = string.Join("，", item.Tags); PromptBody.Focus();
     }
     private void PromptBody_Changed(object sender, TextChangedEventArgs e) { if (CharacterCount is not null) CharacterCount.Text = $"{PromptBody.Text.Length:N0} 字符"; }
-    private void DeletePrompt_Click(object sender, RoutedEventArgs e)
+    private async void DeletePrompt_Click(object sender, RoutedEventArgs e)
     {
-        if (((Button)sender).Tag is not LibraryPrompt p || MessageBox.Show(this, "删除这条提示词？", "确认删除", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes) return;
-        if (Run(() => _store.Update(s => s.Prompts.RemoveAll(x => x.Id == p.Id)))) { RefreshViews(); Notice("提示词已删除。"); }
+        if (((Button)sender).Tag is not LibraryPrompt p || AppMessageWindow.ShowMessage(this, "删除这条提示词？", "确认删除", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes) return;
+        if (await ChangeDataAsync(() => _store.Update(s => s.Prompts.RemoveAll(x => x.Id == p.Id)))) Notice("提示词已删除。");
     }
 
     private async void Summarize_Click(object sender, RoutedEventArgs e)
     { if (((Button)sender).Tag is LibraryPrompt p) await Summarize(p); }
-    private async Task Summarize(LibraryPrompt item)
+    private async Task Summarize(LibraryPrompt item, bool afterSave = false)
     {
         if (!_summarizing.Add(item.Id)) { Notice("这条提示词正在整理，请稍候。"); return; }
-        Notice("AI 正在整理标题、描述和标签…");
+        var saved = afterSave ? "提示词已保存，" : "";
+        var label = $"《{FeedbackLabel(item.Title)}》";
+        var noticeVersion = ShowSaveFeedback($"{saved}AI 正在整理{label}的标题、描述和标签…", busy: true);
         try
         {
             var version = item.UpdatedAt; var content = item.Content;
             var title = item.Title; var description = item.Description; var tags = item.Tags.ToArray();
-            var summary = await _http.SummarizeAsync(_store.Read().Ai, item, _lifetime.Token);
-            _store.Update(s =>
+            var ai = await Task.Run(() => _store.Read().Ai);
+            if (_shutdown) return;
+            var summary = await _http.SummarizeAsync(ai, item, _lifetime.Token);
+            var save = Task.Run(() => _store.Update(s =>
             {
                 var current = s.Prompts.FirstOrDefault(p => p.Id == item.Id);
                 if (current is null || current.UpdatedAt != version || current.Content != content || current.Title != title || current.Description != description || !current.Tags.SequenceEqual(tags))
                     throw new InvalidOperationException("提示词已更改，本次 AI 整理未写入。");
                 current.Title = summary.Title; current.Description = summary.Description; current.Tags = summary.Tags;
                 current.UpdatedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-            });
-            RefreshViews(); Notice("AI 已更新标题、描述和标签，正文保持原样。");
+            }));
+            _summaryWrites = Task.WhenAll(_summaryWrites, save);
+            await save;
+            await ReloadViewsAsync();
+            if (!_shutdown && noticeVersion == _saveNoticeVersion)
+                ShowSaveFeedback($"AI 整理完成：{label}。已更新标题、描述和标签，正文保持原样。");
         }
-        catch (Exception ex) { Notice(Error(ex), true); }
+        catch (Exception ex)
+        {
+            if (!_shutdown && noticeVersion == _saveNoticeVersion)
+                ShowSaveFeedback($"{saved}AI 整理失败：{label}。{Error(ex)}", error: true);
+        }
         finally { _summarizing.Remove(item.Id); }
     }
 
@@ -629,8 +763,9 @@ public partial class LibraryWindow : Window
         button.IsEnabled = false; Notice("正在获取完整模型目录，成功后覆盖旧列表…");
         try
         {
-            await _store.RefreshModelsAsync(connection.Id, _http.ListModelsAsync, _lifetime.Token);
-            RefreshViews(); Notice("模型列表已更新并保存。");
+            var token = _lifetime.Token;
+            await Task.Run(() => _store.RefreshModelsAsync(connection.Id, _http.ListModelsAsync, token));
+            await ReloadViewsAsync(); if (!_shutdown) Notice("模型列表已更新并保存。");
         }
         catch (Exception ex) { Notice(Error(ex), true); }
         finally { _refreshing.Remove(connection.Id); button.IsEnabled = true; button.Content = label; }
@@ -651,17 +786,17 @@ public partial class LibraryWindow : Window
         {
             if (await Copy(id, $"模型 ID《{id}》", anchor) != true) return;
             connection.LastCopiedModelId = id;
-            try { await SaveCopyHistory(() => { _store.RememberCopiedModel(connection.Id, connection.Revision, id); return true; }); }
+            try { await SaveCopyHistory(() => { _store.RememberCopiedModel(connection.Id, connection.Revision, id); return true; }); ++_reloadVersion; }
             catch (Exception) { Notice("模型 ID 已复制，但未能保存复制记录，请检查资料文件或重新打开连接后重试。", true); }
         }
         finally { _pendingCopies--; }
     }
-    private void CloneModel_Click(object sender, RoutedEventArgs e)
-    { if (((Button)sender).Tag is LibraryConnection c && Run(() => _store.DuplicateConnection(c.Id))) { RefreshViews(); Notice("已克隆一条连接资料。"); } }
-    private void DeleteModel_Click(object sender, RoutedEventArgs e)
+    private async void CloneModel_Click(object sender, RoutedEventArgs e)
+    { if (((Button)sender).Tag is LibraryConnection c && await ChangeDataAsync(() => _store.DuplicateConnection(c.Id))) Notice("已克隆一条连接资料。"); }
+    private async void DeleteModel_Click(object sender, RoutedEventArgs e)
     {
-        if (((Button)sender).Tag is not LibraryConnection c || MessageBox.Show(this, "删除这条连接资料及其已保存列表？", "确认删除", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes) return;
-        if (Run(() => _store.Update(s => s.Connections.RemoveAll(x => x.Id == c.Id)))) { RefreshViews(); Notice("连接资料已删除。"); }
+        if (((Button)sender).Tag is not LibraryConnection c || AppMessageWindow.ShowMessage(this, "删除这条连接资料及其已保存列表？", "确认删除", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes) return;
+        if (await ChangeDataAsync(() => _store.Update(s => s.Connections.RemoveAll(x => x.Id == c.Id)))) Notice("连接资料已删除。");
     }
 
     private void SetEditorSaving(bool saving)
@@ -680,16 +815,32 @@ public partial class LibraryWindow : Window
     }
 
     private void DismissSaveNotice()
-    { _saveNoticeTimer.Stop(); SaveNotice.Visibility = Visibility.Collapsed; }
+    {
+        _saveNoticeVersion++;
+        _saveNoticeTimer.Stop();
+        SaveNotice.Visibility = Visibility.Collapsed;
+        SaveNoticeSpinner.Visibility = Visibility.Collapsed;
+    }
 
     private void DismissSaveNotice_Click(object sender, RoutedEventArgs e) => DismissSaveNotice();
 
     private void ShowSaveSuccess(string text)
+        => ShowSaveFeedback(text);
+
+    private int ShowSaveFeedback(string text, bool busy = false, bool error = false)
     {
-        Notice(text);
+        var version = ++_saveNoticeVersion;
+        _saveNoticeTimer.Stop();
+        Notice(text, error);
         SaveNoticeText.Text = text;
+        SaveNoticeSpinner.Visibility = busy ? Visibility.Visible : Visibility.Collapsed;
+        SaveNoticeIcon.Visibility = busy ? Visibility.Collapsed : Visibility.Visible;
+        SaveNoticeIcon.Text = error ? "!" : "✓";
+        SaveNoticeIcon.SetResourceReference(TextBlock.ForegroundProperty, error ? "AppError" : "AppSuccess");
+        SaveNotice.SetResourceReference(Border.BorderBrushProperty, error ? "AppError" : "AppSuccess");
         SaveNotice.Visibility = Visibility.Visible;
-        _saveNoticeTimer.Stop(); _saveNoticeTimer.Start();
+        if (!busy && !error) _saveNoticeTimer.Start();
+        return version;
     }
 
     private static string FeedbackLabel(string value) => value.Length <= 48 ? value : value[..48] + "…";
@@ -697,12 +848,16 @@ public partial class LibraryWindow : Window
     private void SyncChanged()
     {
         if (_shutdown || Dispatcher.HasShutdownStarted) return;
-        Dispatcher.BeginInvoke(() =>
+        Dispatcher.BeginInvoke(async () =>
         {
             if (_shutdown) return;
             if (EditorLayer.Visibility == Visibility.Visible)
                 Notice("已收到其他设备的资料变更；当前输入保留，保存时会检查是否与远端修改冲突。");
-            else if (Run(RefreshViews)) Notice("已同步其他设备的资料。冲突版本会标记为同步冲突副本。");
+            else
+            {
+                try { await ReloadViewsAsync(); if (!_shutdown) Notice("已同步其他设备的资料。冲突版本会标记为同步冲突副本。"); }
+                catch (Exception ex) { if (!_shutdown) Notice(Error(ex), true); }
+            }
         });
     }
 
@@ -736,17 +891,19 @@ public partial class LibraryWindow : Window
                 var result = await save;
                 persisted = true;
                 if (_shutdown) return;
-                CloseEditor(); _visiblePrompts = 30; RefreshViews();
+                _visiblePrompts = 30; await ReloadViewsAsync();
+                if (_shutdown) return;
+                CloseEditor();
                 // 筛选或分页隐藏了刚保存的条目时，恢复完整列表并定位到它。
                 if (_promptItems.All(p => p.Id != result.Saved.Id))
                 {
                     _selectedTags.Clear(); TagFilters.UnselectAll(); PromptSearch.Clear();
-                    _visiblePrompts = Math.Max(30, LibraryStore.FilterPrompts(_store.Read(), "", []).ToList().FindIndex(p => p.Id == result.Saved.Id) + 1);
+                    _visiblePrompts = Math.Max(30, LibraryStore.FilterPrompts(_viewState, "", []).ToList().FindIndex(p => p.Id == result.Saved.Id) + 1);
                     RefreshViews();
                 }
                 PromptList.SelectedItem = _promptItems.FirstOrDefault(p => p.Id == result.Saved.Id);
                 if (PromptList.SelectedItem is not null) PromptList.ScrollIntoView(PromptList.SelectedItem);
-                ShowSaveSuccess($"提示词已保存：《{FeedbackLabel(result.Saved.Title)}》。" + (result.AutoSummarize ? "将继续进行 AI 整理。" : ""));
+                ShowSaveSuccess($"提示词已保存：《{FeedbackLabel(result.Saved.Title)}》。");
                 if (result.AutoSummarize) summarize = result.Saved;
             }
             else if (_editorKind == "model")
@@ -758,7 +915,9 @@ public partial class LibraryWindow : Window
                 var saved = await save;
                 persisted = true;
                 if (_shutdown) return;
-                CloseEditor(); RefreshViews();
+                await ReloadViewsAsync();
+                if (_shutdown) return;
+                CloseEditor();
                 if (!ModelList.Items.OfType<LibraryConnection>().Any(c => c.Id == saved.Id))
                 { ModelSearch.Clear(); RefreshViews(); }
                 ModelList.SelectedItem = ModelList.Items.OfType<LibraryConnection>().FirstOrDefault(c => c.Id == saved.Id);
@@ -774,7 +933,7 @@ public partial class LibraryWindow : Window
                     : "保存失败：" + Error(ex) + " 输入内容已保留，可修改后重新保存。", true);
         }
         finally { SetEditorSaving(false); }
-        if (summarize is not null && !_shutdown) await Summarize(summarize);
+        if (summarize is not null && !_shutdown) await Summarize(summarize, afterSave: true);
     }
 
     private void AiSettings_Click(object sender, RoutedEventArgs e) => OpenAiSettings();

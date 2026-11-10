@@ -35,6 +35,8 @@ public sealed partial class ScreenTranslateShellTests
             Assert.Equal(Visibility.Collapsed, header.Visibility);
             Assert.Equal(WindowStyle.None, window.WindowStyle);
             AssertNoNativeCaption(window);
+            Assert.False(((FrameworkElement)window.FindName("ManagementChrome")).IsVisible);
+            Assert.Equal(0, System.Windows.Shell.WindowChrome.GetWindowChrome(window).CaptionHeight);
             Assert.Equal(ResizeMode.CanResize, window.ResizeMode);
             Assert.False(((TextBlock)window.FindName("ShortcutHint")).IsVisible);
 
@@ -62,11 +64,31 @@ public sealed partial class ScreenTranslateShellTests
             LibraryWindow.Open();
             Render(window, "library-management-header", 880, 580);
             Assert.True(header.IsVisible);
-            Assert.Equal(WindowStyle.SingleBorderWindow, window.WindowStyle);
-            Assert.True(NativeTopInset(window) >= 20, "The ordinary management entry must restore its native title bar.");
-            VerifyNativeFrameIsNotOverridden(window);
+            Assert.Equal(WindowStyle.None, window.WindowStyle);
+            AssertNoNativeCaption(window);
+            Assert.True(((FrameworkElement)window.FindName("ManagementChrome")).IsVisible);
+            VerifyWindowChromeInput(window);
+            Assert.Equal(40, System.Windows.Shell.WindowChrome.GetWindowChrome(window).CaptionHeight);
             Assert.Equal("快捷", search.Text);
             Assert.Same(selected, ((ListBox)window.FindName("PromptList")).SelectedItem);
+
+            var chrome = (FrameworkElement)window.FindName("ManagementChrome");
+            var maximize = Visuals<System.Windows.Controls.Button>(chrome).Single(b => b.Name == "MaximizeButton");
+            maximize.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Button.ClickEvent));
+            PumpUntil(() => window.WindowState == WindowState.Maximized);
+            AssertNoNativeCaption(window);
+            maximize.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Button.ClickEvent));
+            PumpUntil(() => window.WindowState == WindowState.Normal);
+            Visuals<System.Windows.Controls.Button>(chrome).Single(b => b.Name == "MinimizeButton")
+                .RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Button.ClickEvent));
+            PumpUntil(() => window.WindowState == WindowState.Minimized);
+            LibraryWindow.Open();
+            Assert.Equal(WindowState.Normal, window.WindowState);
+            Visuals<System.Windows.Controls.Button>(chrome).Single(b => b.Name == "CloseButton")
+                .RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Button.ClickEvent));
+            PumpUntil(() => !window.IsVisible);
+            LibraryWindow.Open();
+            Assert.Equal("快捷", search.Text);
 
             window.Hide();
             LibraryWindow.Toggle();
@@ -114,6 +136,22 @@ public sealed partial class ScreenTranslateShellTests
             window.CloseForTests();
             System.IO.Directory.Delete(directory, true);
         }
+
+        var ocr = new OverTranslate.Views.Settings.ScreenTranslateSettingsWindow
+        { WindowStartupLocation = WindowStartupLocation.Manual, Left = -10000, Top = -10000, ShowActivated = false };
+        try
+        {
+            ocr.Show(); ocr.UpdateLayout();
+            VerifyWindowChromeInput(ocr);
+            Assert.Equal(WindowStyle.None, ocr.WindowStyle);
+            AssertNoNativeCaption(ocr);
+            Assert.Equal(40, System.Windows.Shell.WindowChrome.GetWindowChrome(ocr).CaptionHeight);
+            Render(ocr, "ocr-settings-custom-chrome", 740, 760);
+            Visuals<System.Windows.Controls.Button>((FrameworkElement)ocr.Content).Single(b => b.Name == "CloseButton")
+                .RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Button.ClickEvent));
+            PumpUntil(() => !ocr.IsVisible);
+        }
+        finally { ocr.Close(); }
     }
 
 }

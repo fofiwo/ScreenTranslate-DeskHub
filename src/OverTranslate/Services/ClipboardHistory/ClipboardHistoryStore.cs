@@ -67,6 +67,7 @@ internal sealed record ClipboardWindowPlacement(int X, int Y, double Width, doub
 internal sealed class ClipboardHistoryStore
 {
     private readonly object _gate = new();
+    private readonly InstalledDataRecovery? _recovery;
     private readonly Dictionary<string, ClipboardRecord> _records = new(StringComparer.Ordinal);
     private readonly HashSet<string> _unreadableIds = new(StringComparer.OrdinalIgnoreCase);
     private IReadOnlyList<ClipboardRecord>? _snapshot;
@@ -75,9 +76,10 @@ internal sealed class ClipboardHistoryStore
     public int UnreadableCount { get; private set; }
     public event EventHandler? Changed;
 
-    public ClipboardHistoryStore(string folder)
+    public ClipboardHistoryStore(string folder, InstalledDataRecovery? recovery = null)
     {
         Folder = Path.GetFullPath(folder);
+        _recovery = recovery ?? AppDataPaths.Recovery;
         if (!Directory.Exists(Folder)) return;
         foreach (var path in Directory.EnumerateFiles(Folder, "*.clip"))
         {
@@ -165,7 +167,7 @@ internal sealed class ClipboardHistoryStore
     public void Delete(string id)
     {
         RequireId(id);
-        lock (_gate) DeleteCore(id);
+        lock (_gate) { if (_records.ContainsKey(id)) DeleteCore(id); }
         Changed?.Invoke(this, EventArgs.Empty);
     }
 
@@ -180,22 +182,55 @@ internal sealed class ClipboardHistoryStore
                 try { DeleteCore(id); deleted++; }
                 catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { failed++; }
             }
+            try
+            {
+                var orphans = new[] { Folder, _recovery?.GetBackupPath(Folder) }
+                    .Where(folder => folder is not null && Directory.Exists(folder))
+                    .SelectMany(folder => Directory.EnumerateFiles(folder!))
+                    .Where(path => Path.GetExtension(path).Equals(".png", StringComparison.OrdinalIgnoreCase)
+                        || Path.GetExtension(path).Equals(".clip", StringComparison.OrdinalIgnoreCase))
+                    .Select(path => Path.GetFileNameWithoutExtension(path).ToLowerInvariant())
+                    .Where(id => ValidId(id) && !_records.ContainsKey(id) && !_unreadableIds.Contains(id)
+                        && !File.Exists(Path.Combine(Folder, id + ".clip"))).Distinct().ToArray();
+                foreach (var id in orphans)
+                {
+                    try
+                    {
+                        // 文件名不足以证明归属；只有可读取且未置顶的恢复记录才能授权清理残留。
+                        var backup = _recovery?.GetBackupPath(Path.Combine(Folder, id + ".clip"));
+                        if (backup is null) { failed++; continue; }
+                        var record = JsonSerializer.Deserialize<ClipboardRecord>(LocalSecretStore.Unprotect(File.ReadAllText(backup)));
+                        if (record is null || record.SchemaVersion != 1 || record.Id != id || !ValidContent(record))
+                        { failed++; continue; }
+                        if (!record.IsPinned) DeleteCore(id);
+                    }
+                    catch (Exception ex) when (ex is IOException or InvalidDataException or InvalidOperationException or UnauthorizedAccessException
+                        or JsonException or CryptographicException or FormatException or ArgumentException or System.ComponentModel.Win32Exception)
+                    { failed++; }
+                }
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { failed++; }
         }
         if (deleted > 0) Changed?.Invoke(this, EventArgs.Empty);
         return (deleted, failed);
     }
 
     private void DeleteCore(string id)
+    {
+        if (_unreadableIds.Contains(id)) throw new InvalidDataException("无法读取的历史文件已保留，请先检查数据文件。");
+        // 只处理自有记录和附件；全部取得删除权限后再动磁盘，主记录最后删除。
+        var paths = new[] { ImagePath(id), Path.Combine(Folder, id + ".clip") }
+            .SelectMany(path => _recovery?.GetBackupPath(path) is { } backup ? new[] { backup, path } : new[] { path }).ToArray();
+        var handles = new List<SafeFileHandle>();
+        try
         {
-            if (!_records.ContainsKey(id)) return;
-            // 两个文件都取得删除权限后才开始删除，锁定/权限失败时保持记录可见。
-            using var metadata = ReserveDelete(Path.Combine(Folder, id + ".clip"));
-            using var image = File.Exists(ImagePath(id)) ? ReserveDelete(ImagePath(id)) : null;
-            File.Delete(Path.Combine(Folder, id + ".clip"));
-            // 只删除本条拥有的附件，绝不删除记录中引用的原文件。
-            File.Delete(ImagePath(id));
+            foreach (var path in paths)
+                if (ReserveDelete(path) is { } handle) handles.Add(handle);
+            foreach (var path in paths) File.Delete(path);
             _records.Remove(id); _snapshot = null;
         }
+        finally { foreach (var handle in handles) handle.Dispose(); }
+    }
     public byte[] ReadImage(string id) { RequireId(id); return File.ReadAllBytes(ImagePath(id)); }
     private string ImagePath(string id) => Path.Combine(Folder, id + ".png");
     private void Save(ClipboardRecord record) => AtomicWrite(Path.Combine(Folder, record.Id + ".clip"),
@@ -212,24 +247,39 @@ internal sealed class ClipboardHistoryStore
         Directory.CreateDirectory(Folder);
         AtomicWrite(Path.Combine(Folder, "window.json"), JsonSerializer.SerializeToUtf8Bytes(placement));
     }
-    public void ClearPlacement() => File.Delete(Path.Combine(Folder, "window.json"));
+    public void ClearPlacement()
+    {
+        var path = Path.Combine(Folder, "window.json");
+        File.Delete(path);
+        _recovery?.BackupFile(path);
+    }
 
     private static bool ValidId(string? id) => id is { Length: 64 } && id.All(c => c is >= '0' and <= '9' or >= 'a' and <= 'f');
     private static bool ValidContent(ClipboardRecord value) => value.Text is not null && value.Html is not null
         && value.Rtf is not null && value.Source is not null && value.Files is not null
         && value.Files.All(f => !string.IsNullOrWhiteSpace(f));
-    private static SafeFileHandle ReserveDelete(string path)
+    private static SafeFileHandle? ReserveDelete(string path)
     {
         var handle = CreateFile(path, 0x00010000, FileShare.Delete, IntPtr.Zero, FileMode.Open, 0, IntPtr.Zero);
-        if (!handle.IsInvalid) return handle;
+        if (!handle.IsInvalid)
+        {
+            try
+            {
+                if ((File.GetAttributes(path) & FileAttributes.ReadOnly) != 0)
+                    throw new UnauthorizedAccessException("历史文件为只读，已保留记录，请解除只读后重试。");
+                return handle;
+            }
+            catch { handle.Dispose(); throw; }
+        }
         var error = Marshal.GetLastWin32Error(); handle.Dispose();
+        if (error is 2 or 3) return null;
         throw new IOException("无法取得历史文件删除权限，记录已保留。", new System.ComponentModel.Win32Exception(error));
     }
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true, EntryPoint = "CreateFileW")]
     private static extern SafeFileHandle CreateFile(string path, uint access, FileShare share, IntPtr security,
         FileMode mode, uint attributes, IntPtr template);
     private static void RequireId(string id) { if (!ValidId(id)) throw new ArgumentException("无效的剪贴板记录标识。", nameof(id)); }
-    private static void AtomicWrite(string path, byte[] bytes)
+    private void AtomicWrite(string path, byte[] bytes)
     {
         var temporary = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
         try
@@ -237,6 +287,7 @@ internal sealed class ClipboardHistoryStore
             using (var stream = new FileStream(temporary, FileMode.CreateNew, FileAccess.Write, FileShare.None))
             { stream.Write(bytes); stream.Flush(true); }
             File.Move(temporary, path, true);
+            _recovery?.BackupFile(path);
         }
         finally { if (File.Exists(temporary)) File.Delete(temporary); }
     }

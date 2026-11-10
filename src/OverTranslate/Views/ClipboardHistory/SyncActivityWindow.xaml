@@ -1,0 +1,53 @@
+<Window x:Class="OverTranslate.Views.ClipboardHistory.SyncActivityWindow"
+ xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+ xmlns:controls="clr-namespace:OverTranslate.Views.Controls"
+ xmlns:lan="clr-namespace:OverTranslate.Services.Lan"
+ Title="同步记录" Width="680" Height="560" MinWidth="460" MinHeight="440" WindowStartupLocation="CenterOwner" Style="{StaticResource ProductToolWindow}"
+ Background="{DynamicResource AppWindowBg}" Foreground="{DynamicResource AppTextPrimary}" FontFamily="{DynamicResource AppFont}">
+ <DockPanel><controls:ToolWindowHeader DockPanel.Dock="Top"/>
+ <Border Padding="24" Background="{DynamicResource AppWindowBg}"><Grid><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+  <DockPanel><Button Content="设备与同步" DockPanel.Dock="Right" Style="{StaticResource ProductLink}" Click="Setup_Click"/>
+   <TextBlock Text="同步记录" Style="{StaticResource ProductDialogTitle}"/>
+  </DockPanel>
+  <StackPanel Grid.Row="1" Margin="0,8,0,12"><TextBlock x:Name="CurrentStatus" TextWrapping="Wrap"/>
+   <TextBlock Text="保留最近 100 条 · 不记录剪贴板正文、资料库内容或配对码" Foreground="{DynamicResource AppTextSecondary}" TextWrapping="Wrap" Margin="0,6,0,0"/>
+   <TextBlock x:Name="StorageWarning" Style="{StaticResource ProductInlineError}" AutomationProperties.LiveSetting="Polite"/>
+  </StackPanel>
+  <Grid Grid.Row="2"><ListBox x:Name="ActivityList" Background="Transparent" BorderBrush="{DynamicResource AppBorder}" Foreground="{DynamicResource AppTextPrimary}" ItemContainerStyle="{StaticResource ProductListItem}" VirtualizingPanel.ScrollUnit="Pixel" ScrollViewer.HorizontalScrollBarVisibility="Disabled" SelectionChanged="Selection_Changed" AutomationProperties.Name="持久化同步记录">
+   <ListBox.ItemTemplate><DataTemplate><StackPanel>
+    <DockPanel><TextBlock Text="{Binding Updated, StringFormat={}{0:MM-dd HH:mm:ss}}" DockPanel.Dock="Right" Style="{StaticResource ProductHint}" Margin="12,0,0,0"/>
+     <TextBlock Text="{Binding KindLabel}" FontWeight="SemiBold" FontSize="14"/>
+    </DockPanel>
+    <WrapPanel Margin="0,4,0,0"><TextBlock Margin="0,0,4,0"><TextBlock.Style><Style TargetType="TextBlock"><Setter Property="Text" Value="发送至"/><Style.Triggers><DataTrigger Binding="{Binding Incoming}" Value="True"><Setter Property="Text" Value="接收自"/></DataTrigger></Style.Triggers></Style></TextBlock.Style></TextBlock>
+     <TextBlock Text="{Binding Peer}" TextWrapping="Wrap"/>
+    </WrapPanel>
+    <TextBlock Text="{Binding StateLabel}" TextWrapping="Wrap" Margin="0,8,0,0">
+     <TextBlock.Style><Style TargetType="TextBlock"><Setter Property="Foreground" Value="{DynamicResource AppTextSecondary}"/>
+      <Style.Triggers>
+       <DataTrigger Binding="{Binding Active}" Value="True"><Setter Property="Foreground" Value="{DynamicResource AppAccent}"/></DataTrigger>
+       <DataTrigger Binding="{Binding State}" Value="{x:Static lan:SyncState.Completed}"><Setter Property="Foreground" Value="{DynamicResource AppSuccess}"/></DataTrigger>
+       <DataTrigger Binding="{Binding State}" Value="{x:Static lan:SyncState.Failed}"><Setter Property="Foreground" Value="{DynamicResource AppError}"/></DataTrigger>
+       <DataTrigger Binding="{Binding State}" Value="{x:Static lan:SyncState.Rejected}"><Setter Property="Foreground" Value="{DynamicResource AppWarning}"/></DataTrigger>
+       <DataTrigger Binding="{Binding State}" Value="{x:Static lan:SyncState.Interrupted}"><Setter Property="Foreground" Value="{DynamicResource AppWarning}"/></DataTrigger>
+      </Style.Triggers>
+     </Style></TextBlock.Style>
+    </TextBlock>
+    <TextBlock Text="{Binding Name}" TextWrapping="Wrap" Margin="0,4,0,0"><TextBlock.Style><Style TargetType="TextBlock"><Style.Triggers><Trigger Property="Text" Value=""><Setter Property="Visibility" Value="Collapsed"/></Trigger></Style.Triggers></Style></TextBlock.Style></TextBlock>
+    <TextBlock Text="{Binding IssueLabel}" Style="{StaticResource ProductInlineError}"/>
+    <TextBlock Margin="0,4,0,0"><TextBlock.Style><Style TargetType="TextBlock" BasedOn="{StaticResource ProductHint}"><Style.Triggers><DataTrigger Binding="{Binding Total}" Value="0"><Setter Property="Visibility" Value="Collapsed"/></DataTrigger></Style.Triggers></Style></TextBlock.Style>
+     <Run Text="{Binding Completed, StringFormat={}{0:N0}}"/><Run Text=" / "/><Run Text="{Binding Total, StringFormat={}{0:N0}}"/><Run Text=" 字节"/>
+    </TextBlock>
+    <TextBlock Margin="0,4,0,0"><TextBlock.Style><Style TargetType="TextBlock" BasedOn="{StaticResource ProductHint}"><Style.Triggers><DataTrigger Binding="{Binding Folder}" Value=""><Setter Property="Visibility" Value="Collapsed"/></DataTrigger></Style.Triggers></Style></TextBlock.Style><Run Text="保存位置："/><Run Text="{Binding Folder}"/></TextBlock>
+   </StackPanel></DataTemplate></ListBox.ItemTemplate>
+  </ListBox><TextBlock x:Name="EmptyHint" Text="还没有同步记录。连接并开启对应同步后，结果会显示在这里。" Style="{StaticResource ProductHint}" Margin="24" VerticalAlignment="Center" IsHitTestVisible="False"/></Grid>
+  <StackPanel Grid.Row="3" Margin="0,12,0,0">
+   <TextBlock Text="资料库失败后自动重试；剪贴板失败可重新复制。文件可选择记录重新发送。" Style="{StaticResource ProductHint}" Margin="0,0,0,10"/>
+   <WrapPanel Margin="0,0,-8,-8">
+   <Button x:Name="CancelSendButton" Content="取消发送" Style="{StaticResource ProductSecondaryButton}" Click="CancelSend_Click" IsEnabled="False" Margin="0,0,8,8"/>
+   <Button x:Name="RetryButton" Content="重新发送…" ToolTip="重新选择接收方并发送" Style="{StaticResource ProductSecondaryButton}" Click="Retry_Click" IsEnabled="False" Margin="0,0,8,8"/>
+   <Button x:Name="OpenFolderButton" Content="打开接收目录" Style="{StaticResource ProductSecondaryButton}" Click="OpenFolder_Click" IsEnabled="False" Margin="0,0,8,8"/>
+   </WrapPanel>
+  </StackPanel>
+ </Grid></Border>
+ </DockPanel>
+</Window>

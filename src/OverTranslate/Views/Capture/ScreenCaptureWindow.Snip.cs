@@ -368,11 +368,18 @@ public partial class ScreenCaptureWindow
         FinishSnipStroke(); CommitSnipText(); SetSnipWriting(true);
         try
         {
-            var image = _snipDocument.Render(_snipSource);
-            await SnipClipboard.WriteAsync(() => {
-                if (write is not null) write(image);
-                else { var data = new DataObject(); data.SetImage(image); System.Windows.Clipboard.SetDataObject(data, true); }
-            }, _snipCancellation.Token);
+            var source = _snipSource;
+            var document = new SnipDocument();
+            foreach (var mark in _snipDocument.Marks) document.Add(mark);
+            var cancellationToken = _snipCancellation.Token;
+            await SnipClipboard.RunStaAsync(async () => {
+                cancellationToken.ThrowIfCancellationRequested();
+                var image = document.Marks.Count == 0 ? source : document.Render(source);
+                await SnipClipboard.WriteAsync(() => {
+                    if (write is not null) write(image);
+                    else { var data = new DataObject(); data.SetImage(image); System.Windows.Clipboard.SetDataObject(data, true); }
+                }, cancellationToken);
+            });
             if (!_snipClosed) Close();
         }
         catch (OperationCanceledException) { }
@@ -438,14 +445,32 @@ public partial class ScreenCaptureWindow
 
 internal static class SnipClipboard
 {
+    // 已进入 OLE 的写入无法中断；后续截图、色值和贴图复制须等它结束。
+    private static readonly SemaphoreSlim Writer = new(1, 1);
+
+    // WPF 图片与 OLE 剪贴板需要 STA；重试后的 continuation 也必须回到同一线程。
+    internal static async Task RunStaAsync(Func<Task> write)
+    {
+        var thread = new HookThread("Snip clipboard");
+        thread.Start();
+        try { await thread.Dispatcher!.InvokeAsync(write).Task.Unwrap(); }
+        // 无 UI 上下文时 continuation 可能在 STA 上执行，不能让线程等待自身退出。
+        finally { await Task.Run(thread.Dispose); }
+    }
+
     internal static async Task WriteAsync(Action write, CancellationToken cancellationToken)
     {
-        for (var attempt = 0; ; attempt++)
+        await Writer.WaitAsync(cancellationToken);
+        try
         {
-            cancellationToken.ThrowIfCancellationRequested();
-            try { write(); return; }
-            catch (ExternalException ex) when (ex.ErrorCode == unchecked((int)0x800401D0) && attempt < 4)
-            { await Task.Delay(40 * (attempt + 1), cancellationToken); }
+            for (var attempt = 0; ; attempt++)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                try { write(); return; }
+                catch (ExternalException ex) when (ex.ErrorCode == unchecked((int)0x800401D0) && attempt < 4)
+                { await Task.Delay(40 * (attempt + 1), cancellationToken); }
+            }
         }
+        finally { Writer.Release(); }
     }
 }

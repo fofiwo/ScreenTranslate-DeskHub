@@ -34,6 +34,9 @@ public partial class ShellWindow : Window
     private static ShellWindow? _instance;
     private readonly Func<LibraryState> _readLibrary;
     private readonly Action _openLibrary;
+    private bool _summaryRefreshing;
+    private bool _summaryClosed;
+    private int _summaryVersion;
 
     /// <summary>
     /// The open shell, or null when it is closed to the tray.
@@ -256,17 +259,36 @@ public partial class ShellWindow : Window
         RefreshQuickToolAvailability();
     }
 
-    internal void RefreshLibrarySummary()
+    internal async void RefreshLibrarySummary()
     {
+        ++_summaryVersion;
+        if (_summaryRefreshing || _summaryClosed) return;
+        _summaryRefreshing = true;
         try
         {
-            var state = _readLibrary();
-            LibrarySummaryText.Text = $"提示词 {state.Prompts.Count} · 连接 {state.Connections.Count}";
+            while (!_summaryClosed)
+            {
+                var version = _summaryVersion;
+                string text;
+                try
+                {
+                    text = await Task.Run(() =>
+                    {
+                        var state = _readLibrary();
+                        return $"提示词 {state.Prompts.Count} · 连接 {state.Connections.Count}";
+                    });
+                }
+                catch (Exception ex) when (ex is System.IO.IOException or System.IO.InvalidDataException or UnauthorizedAccessException or System.Text.Json.JsonException or InvalidOperationException)
+                {
+                    text = "资料暂不可用，请打开检查";
+                }
+                if (_summaryClosed) return;
+                if (version != _summaryVersion) continue;
+                LibrarySummaryText.Text = text;
+                return;
+            }
         }
-        catch (Exception ex) when (ex is System.IO.IOException or System.IO.InvalidDataException or UnauthorizedAccessException or System.Text.Json.JsonException)
-        {
-            LibrarySummaryText.Text = "资料暂不可用，请打开检查";
-        }
+        finally { _summaryRefreshing = false; }
     }
 
     private void LibraryBtn_Click(object sender, RoutedEventArgs e) => _openLibrary();
@@ -641,6 +663,7 @@ public partial class ShellWindow : Window
 
     protected override void OnClosed(EventArgs e)
     {
+        _summaryClosed = true;
         // The window is destroyed on close (not hidden), so the pages' timers, TTS playback
         // and HTTP handles have to go with it.
 

@@ -17,6 +17,35 @@ public class ShellWindowMarkupTests
         .Descendants()
         .Single(e => (string?)e.Attribute(X + "Name") == name);
 
+    [Fact]
+    public void App_prompts_do_not_open_native_message_boxes()
+    {
+        var calls = Directory.EnumerateFiles(StringsParityTests.ProjectDirectory(), "*.cs", SearchOption.AllDirectories)
+            .Where(path => !path.Split(Path.DirectorySeparatorChar).Any(part => part is "obj" or "bin"))
+            .Where(path => System.Text.RegularExpressions.Regex.IsMatch(File.ReadAllText(path), @"\bMessageBox\.Show\s*\("))
+            .Select(Path.GetFileName).ToArray();
+        Assert.Empty(calls);
+    }
+
+    [Fact]
+    public void App_windows_do_not_fall_back_to_system_title_bars()
+    {
+        var project = StringsParityTests.ProjectDirectory();
+        var style = XDocument.Load(Path.Combine(project, "Themes", "ProductStyles.xaml"))
+            .Descendants().Single(e => (string?)e.Attribute(X + "Key") == "ProductToolWindow");
+        Assert.Contains(style.Elements(), e => (string?)e.Attribute("Property") == "WindowStyle"
+            && (string?)e.Attribute("Value") == "None");
+        foreach (var path in Directory.EnumerateFiles(Path.Combine(project, "Views"), "*.xaml", SearchOption.AllDirectories))
+        {
+            var root = XDocument.Load(path).Root!;
+            if (root.Name.LocalName != "Window") continue;
+            var explicitStyle = (string?)root.Attribute("WindowStyle");
+            Assert.True(explicitStyle is not null ? explicitStyle == "None"
+                : (string?)root.Attribute("Style") == "{StaticResource ProductToolWindow}",
+                $"{Path.GetFileName(path)} must use the application's window chrome.");
+        }
+    }
+
     /// <summary>
     /// Both 快速工具 rows are switched off for the length of a realtime session, and their tooltips
     /// are then the only place that reason exists — the rail has no room for a note beside them.

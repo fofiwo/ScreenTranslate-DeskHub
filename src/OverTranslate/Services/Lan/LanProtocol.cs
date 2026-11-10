@@ -6,11 +6,11 @@ using OverTranslate.Services.Library;
 
 namespace OverTranslate.Services.Lan;
 
-internal sealed record LanClipboardPayload(string Kind, byte[] Bytes);
+internal sealed record LanClipboardPayload(string Kind, byte[] Bytes, long Sequence = 0);
 internal sealed record LanPairRequest(string Name, string Address);
 internal sealed record LanProgress(string Name, long Completed, long Total, string Phase);
 internal sealed record LanHeader(string Kind, string Id = "", string Name = "", long Length = 0,
-    string Hash = "", bool Accepted = false, int Version = 3);
+    string Hash = "", bool Accepted = false, int Version = 3, bool FileOffers = false, bool Reconnect = false);
 
 internal static class LanProtocol
 {
@@ -46,7 +46,7 @@ internal static class LanProtocol
         if (!Guid.TryParseExact(header.Id, "N", out _) || header.Hash.Length != 64
             || !header.Hash.All(Uri.IsHexDigit) || header.Length < 0)
             throw new InvalidDataException("传输信息无效。");
-        if (header.Kind == "file")
+        if (header.Kind is "file" or "bundle" or "file-offer")
         {
             if (header.Length > MaxFile) throw new InvalidDataException("文件超过 64 GB 上限。");
             LanFiles.ValidateName(header.Name);

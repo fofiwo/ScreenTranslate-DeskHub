@@ -1,10 +1,12 @@
 <Window x:Class="OverTranslate.Views.ClipboardHistory.LanTransferWindow"
  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+ xmlns:controls="clr-namespace:OverTranslate.Views.Controls"
  Title="设备与同步 · ScreenTranslate" Width="880" Height="790" MinWidth="760" MinHeight="650"
  WindowStartupLocation="CenterScreen" Background="{DynamicResource AppWindowBg}"
  Foreground="{DynamicResource AppTextPrimary}" FontFamily="{DynamicResource AppFont}" FontSize="13"
- UseLayoutRounding="True" Closing="Window_Closing">
+ UseLayoutRounding="True" Closing="Window_Closing" Style="{StaticResource ProductToolWindow}">
+ <DockPanel><controls:ToolWindowHeader DockPanel.Dock="Top"/>
  <ScrollViewer Background="{DynamicResource AppWindowBg}" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
  <StackPanel Margin="24">
   <DockPanel>
@@ -13,6 +15,7 @@
     <TextBlock Text="同一局域网内，任选一种方式连接" Margin="0,8,0,0" Foreground="{DynamicResource AppTextSecondary}"/></StackPanel>
   </DockPanel>
   <TextBlock x:Name="ConnectionStatus" Text="尚未连接" Margin="0,16,0,20" TextWrapping="Wrap" AutomationProperties.LiveSetting="Polite"/>
+  <CheckBox x:Name="RememberDeviceBox" Content="记住此设备，启动后自动重连（使用 Windows 账户加密保存）" Style="{StaticResource ModernCheckBox}" IsChecked="True" Checked="RememberDevice_Changed" Unchecked="RememberDevice_Changed" Margin="0,0,0,14"/>
   <Grid>
    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="40"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
    <Border Grid.Column="1" Width="1" Background="{DynamicResource AppBorder}"/>
@@ -49,17 +52,18 @@
   <Grid Margin="0,0,0,12">
    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="40"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
    <StackPanel>
-    <CheckBox x:Name="AutoSyncBox" Content="剪贴板 · 文本与图片" Foreground="{DynamicResource AppTextPrimary}" Checked="AutoSync_Changed" Unchecked="AutoSync_Changed"/>
+    <CheckBox x:Name="AutoSyncBox" Content="剪贴板 · 文本与图片" Style="{StaticResource ModernCheckBox}" Checked="AutoSync_Changed" Unchecked="AutoSync_Changed"/>
     <TextBlock x:Name="ClipboardStatus" Text="未连接" TextWrapping="Wrap" Margin="22,6,0,0" Foreground="{DynamicResource AppTextSecondary}" AutomationProperties.LiveSetting="Polite"/>
    </StackPanel>
    <StackPanel Grid.Column="2">
-    <CheckBox x:Name="LibrarySyncBox" Content="提示词与模型库 · 含 API Key" Foreground="{DynamicResource AppTextPrimary}" Checked="LibrarySync_Changed" Unchecked="LibrarySync_Changed"/>
+    <CheckBox x:Name="LibrarySyncBox" Content="提示词与模型库 · 含 API Key" Style="{StaticResource ModernCheckBox}" Checked="LibrarySync_Changed" Unchecked="LibrarySync_Changed"/>
     <TextBlock x:Name="LibraryStatus" Text="未开启" TextWrapping="Wrap" Margin="22,6,0,0" Foreground="{DynamicResource AppTextSecondary}" AutomationProperties.LiveSetting="Polite"/>
    </StackPanel>
   </Grid>
   <Expander Header="同步规则" Margin="0,0,0,16">
-   <TextBlock Text="两端都需开启对应内容。剪贴板不补传离线记录；资料库首次合并，后续修改、删除双向同步，冲突保留副本。重启或断线后需重新配对。防火墙仅允许专用网络。" TextWrapping="Wrap" Margin="22,8,0,0" Foreground="{DynamicResource AppTextSecondary}"/>
+   <TextBlock Text="两端都需开启对应内容。剪贴板不补传离线记录；资料库首次合并，后续修改、删除双向同步，冲突保留副本。已记住的设备会自动重连；手动断开后暂停重连。防火墙仅允许专用网络。" TextWrapping="Wrap" Margin="22,8,0,0" Foreground="{DynamicResource AppTextSecondary}"/>
   </Expander>
+  <Button Content="查看同步记录与接收目录" Style="{StaticResource ProductSecondaryButton}" HorizontalAlignment="Left" Click="SyncHistory_Click" Margin="0,0,0,12"/>
   <Expander x:Name="FileTransferSection" Header="文件传输">
    <StackPanel Margin="0,12,0,0">
   <TextBlock Text="文件接收文件夹" FontWeight="SemiBold"/>
@@ -70,8 +74,8 @@
   </Grid>
   <Border x:Name="DropArea" AllowDrop="True" DragOver="Files_DragOver" Drop="Files_Drop" Background="{DynamicResource AppAccentSubtle}"
    BorderBrush="{DynamicResource AppBorder}" BorderThickness="1" CornerRadius="8" Padding="20" Margin="0,16,0,0">
-   <StackPanel HorizontalAlignment="Center"><TextBlock Text="将文件拖到这里，发送到已配对电脑" FontSize="16" FontWeight="SemiBold" TextAlignment="Center"/>
-    <TextBlock Text="支持多个文件；同名文件自动改名，保留已有文件。" Margin="0,8,0,12" Foreground="{DynamicResource AppTextSecondary}" TextAlignment="Center"/>
+   <StackPanel HorizontalAlignment="Center"><TextBlock Text="拖入文件或文件夹，发送到已配对电脑" FontSize="16" FontWeight="SemiBold" TextAlignment="Center"/>
+    <TextBlock Text="也可在剪贴板直接拖入；对方确认后选择保存目录。" Margin="0,8,0,12" Foreground="{DynamicResource AppTextSecondary}" TextAlignment="Center"/>
     <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
      <Button x:Name="ChooseFilesButton" Content="选择文件发送" Style="{StaticResource ProductButton}" Click="ChooseFiles_Click"/>
      <Button x:Name="CancelFilesButton" Content="取消传输" Style="{StaticResource ProductSecondaryButton}" Click="CancelFiles_Click" Margin="8,0,0,0" IsEnabled="False"/>
@@ -79,11 +83,14 @@
    </StackPanel>
   </Border>
   <TextBlock x:Name="TransferStatus" Margin="0,12,0,6" TextWrapping="Wrap" Text="配对后即可发送文件。" AutomationProperties.LiveSetting="Polite"/>
-  <ProgressBar x:Name="TransferProgress" Height="6" Minimum="0" Maximum="100"/>
-  <ListBox x:Name="TransferLog" MaxHeight="120" Margin="0,10,0,0" Background="Transparent" BorderThickness="0" ScrollViewer.HorizontalScrollBarVisibility="Disabled" AutomationProperties.Name="本次传输结果"/>
+  <ProgressBar x:Name="TransferProgress" Style="{StaticResource SlimProgressBar}" Minimum="0" Maximum="100"/>
+  <ListBox x:Name="TransferLog" MaxHeight="120" Margin="0,10,0,0" Background="Transparent" BorderThickness="0" ItemContainerStyle="{StaticResource ProductListItem}" VirtualizingPanel.ScrollUnit="Pixel" ScrollViewer.HorizontalScrollBarVisibility="Disabled" AutomationProperties.Name="本次传输结果">
+   <ListBox.ItemTemplate><DataTemplate><TextBlock Text="{Binding}" TextWrapping="Wrap"/></DataTemplate></ListBox.ItemTemplate>
+  </ListBox>
    </StackPanel>
   </Expander>
   <TextBlock Text="关闭窗口仍会同步 · 退出程序后停止" Margin="0,12,0,0" Foreground="{DynamicResource AppTextSecondary}" TextWrapping="Wrap"/>
  </StackPanel>
  </ScrollViewer>
+ </DockPanel>
 </Window>

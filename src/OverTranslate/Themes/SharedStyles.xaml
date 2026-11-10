@@ -762,6 +762,7 @@
     <!--  FLAT BUTTON                                -->
     <!-- ═══════════════════════════════════════════ -->
     <Style x:Key="FlatButton" TargetType="Button">
+        <Setter Property="FocusVisualStyle" Value="{DynamicResource ProductFocus}"/>
         <Setter Property="FontFamily"      Value="{DynamicResource AppFont}"/>
         <Setter Property="FontSize"        Value="{StaticResource AppFontSize}"/>
         <Setter Property="Foreground"      Value="{DynamicResource AppTextPrimary}"/>
@@ -805,6 +806,7 @@
     <!--  ACCENT BUTTON                              -->
     <!-- ═══════════════════════════════════════════ -->
     <Style x:Key="AccentButton" TargetType="Button">
+        <Setter Property="FocusVisualStyle" Value="{DynamicResource ProductFocus}"/>
         <Setter Property="FontFamily"      Value="{DynamicResource AppFont}"/>
         <Setter Property="FontSize"        Value="{StaticResource AppFontSize}"/>
         <Setter Property="Foreground"      Value="{DynamicResource AppAccentFg}"/>
@@ -2286,6 +2288,7 @@
     <!--  CHECKBOX                                   -->
     <!-- ═══════════════════════════════════════════ -->
     <Style x:Key="ModernCheckBox" TargetType="CheckBox">
+        <Setter Property="FocusVisualStyle" Value="{DynamicResource ProductFocus}"/>
         <Setter Property="FontFamily"              Value="{DynamicResource AppFont}"/>
         <Setter Property="FontSize"                Value="{StaticResource AppFontSize}"/>
         <Setter Property="Foreground"              Value="{DynamicResource AppTextPrimary}"/>
@@ -2318,6 +2321,9 @@
                             <Setter TargetName="Box" Property="Background"   Value="{DynamicResource AppAccent}"/>
                             <Setter TargetName="Box" Property="BorderBrush"  Value="{DynamicResource AppAccent}"/>
                             <Setter TargetName="Check" Property="Visibility" Value="Visible"/>
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter Property="Opacity" Value="0.45"/>
                         </Trigger>
                         <Trigger Property="IsMouseOver" Value="True">
                             <Setter TargetName="Box" Property="BorderBrush"  Value="{DynamicResource AppInputFocusBorder}"/>
@@ -2763,6 +2769,7 @@
     <!-- Circular close button for the modal overlay. E8BB rather than E711, which sits 0.34px up
          and left of centre; E8BB is exactly on it. 7.5 keeps E711's 7.6px of ink at 11. -->
     <Style x:Key="OverlayCloseButton" TargetType="Button">
+        <Setter Property="FocusVisualStyle" Value="{DynamicResource ProductFocus}"/>
         <Setter Property="FontFamily"  Value="Segoe Fluent Icons, Segoe MDL2 Assets"/>
         <Setter Property="FontSize"    Value="7.5"/>
         <Setter Property="Foreground"  Value="{DynamicResource AppTextSecondary}"/>

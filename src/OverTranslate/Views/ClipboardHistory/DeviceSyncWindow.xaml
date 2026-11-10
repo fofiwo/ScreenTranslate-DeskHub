@@ -1,0 +1,48 @@
+<Window x:Class="OverTranslate.Views.ClipboardHistory.DeviceSyncWindow"
+ xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+ xmlns:controls="clr-namespace:OverTranslate.Views.Controls"
+ Title="设备与同步" Width="760" Height="600" MinWidth="520" MinHeight="440" WindowStartupLocation="CenterScreen" Style="{StaticResource ProductToolWindow}"
+ Background="{DynamicResource AppWindowBg}" Foreground="{DynamicResource AppTextPrimary}" FontFamily="{DynamicResource AppFont}">
+ <DockPanel><controls:ToolWindowHeader DockPanel.Dock="Top"/>
+ <Border Padding="24" Background="{DynamicResource AppWindowBg}"><Grid>
+  <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+  <DockPanel><StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Top">
+   <Button Content="同步记录" Click="History_Click" Style="{StaticResource ProductLink}" Margin="0,0,8,0"/>
+   <Button Content="添加设备" Style="{StaticResource ProductButton}" Click="Add_Click"/>
+   </StackPanel>
+   <StackPanel><TextBlock Text="设备与同步" Style="{StaticResource ProductDialogTitle}"/><TextBlock x:Name="OnlineStatus" Margin="0,6,0,0" TextWrapping="Wrap" Foreground="{DynamicResource AppTextSecondary}"/></StackPanel>
+  </DockPanel>
+  <StackPanel Grid.Row="1" Margin="0,12,0,12">
+   <TextBlock Text="多台可同时在线 · 同步开关按设备生效 · 文件发送时单独选择接收方" Foreground="{DynamicResource AppTextSecondary}" TextWrapping="Wrap"/>
+   <TextBlock x:Name="WarningText" Style="{StaticResource ProductInlineError}" AutomationProperties.LiveSetting="Polite"/>
+  </StackPanel>
+  <Grid Grid.Row="2"><ListBox x:Name="DeviceList" SelectionChanged="Selection_Changed" Background="Transparent" Foreground="{DynamicResource AppTextPrimary}" BorderBrush="{DynamicResource AppBorder}" ItemContainerStyle="{StaticResource ProductListItem}" VirtualizingPanel.ScrollUnit="Pixel" ScrollViewer.HorizontalScrollBarVisibility="Disabled" AutomationProperties.Name="已保存与当前连接设备">
+   <ListBox.ItemTemplate><DataTemplate><StackPanel>
+    <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+     <TextBlock Text="{Binding Name}" FontSize="16" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,0,16,0"/>
+     <TextBlock Grid.Column="1" Text="{Binding Status}" MaxWidth="170" TextWrapping="Wrap" FontWeight="SemiBold" VerticalAlignment="Center">
+      <TextBlock.Style><Style TargetType="TextBlock"><Setter Property="Foreground" Value="{DynamicResource AppTextSecondary}"/>
+       <Style.Triggers><DataTrigger Binding="{Binding IsConnected}" Value="True"><Setter Property="Foreground" Value="{DynamicResource AppSuccess}"/></DataTrigger></Style.Triggers>
+      </Style></TextBlock.Style>
+     </TextBlock>
+    </Grid>
+    <TextBlock Text="{Binding Address}" Style="{StaticResource ProductHint}" Margin="0,2,0,0"/>
+    <WrapPanel Margin="0,10,0,0"><TextBlock Text="{Binding Sync}" TextWrapping="Wrap" Margin="0,0,16,0"/>
+     <TextBlock Text="{Binding ReconnectLabel}" Style="{StaticResource ProductHint}"/>
+    </WrapPanel>
+    <TextBlock Text="{Binding LastResult}" TextWrapping="Wrap" Margin="0,8,0,0"/>
+    <TextBlock Text="{Binding LastConnectedLabel}" Style="{StaticResource ProductHint}" Margin="0,2,0,0"/>
+   </StackPanel></DataTemplate></ListBox.ItemTemplate>
+  </ListBox><TextBlock x:Name="EmptyHint" Text="还没有设备，点击“添加设备”完成首次配对。" Style="{StaticResource ProductHint}" Margin="24" HorizontalAlignment="Center" VerticalAlignment="Center" IsHitTestVisible="False"/></Grid>
+  <StackPanel Grid.Row="3" Margin="0,16,0,0">
+   <TextBlock Text="启动后自动重连已记住的设备；手动断开会暂停重连。地址变化或信任失效时可重新配对。" TextWrapping="Wrap" Foreground="{DynamicResource AppTextSecondary}" Margin="0,0,0,10"/>
+   <WrapPanel>
+    <Button x:Name="SettingsButton" Content="连接与同步设置" Click="Settings_Click" IsEnabled="False" Style="{StaticResource ProductSecondaryButton}" Margin="0,0,8,8"/>
+    <Button x:Name="RetryButton" Content="重试连接" Click="Retry_Click" IsEnabled="False" Style="{StaticResource ProductSecondaryButton}" Margin="0,0,8,8"/>
+    <Button x:Name="DisconnectButton" Content="断开" Click="Disconnect_Click" IsEnabled="False" Style="{StaticResource ProductSecondaryButton}" Margin="0,0,8,8"/>
+    <Button x:Name="ForgetButton" Content="忘记设备" Click="Forget_Click" IsEnabled="False" Style="{StaticResource ProductLink}" Foreground="{DynamicResource AppTextSecondary}" Margin="0,0,0,8"/>
+   </WrapPanel>
+  </StackPanel>
+ </Grid></Border>
+ </DockPanel>
+</Window>

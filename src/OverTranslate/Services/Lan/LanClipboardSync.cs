@@ -102,6 +102,7 @@ internal sealed class LanClipboardSync : IDisposable
                 }
                 if (sequence != GetClipboardSequenceNumber()) { _dirty = true; continue; }
                 if (payload is null || !_loop.ShouldSend(payload, _node.ConnectionVersion)) continue;
+                payload = payload with { Sequence = sequence };
                 if (!Enabled || request.IsCancellationRequested) return;
                 Notice?.Invoke(this, payload.Kind == "text" ? "正在同步新复制的文本…" : "正在同步新复制的图片…");
                 if (await _node.SendClipboardAsync(payload, request.Token))
@@ -110,9 +111,10 @@ internal sealed class LanClipboardSync : IDisposable
             }
         }
         catch (OperationCanceledException) when (request.IsCancellationRequested) { _loop.Reset(); }
-        catch (Exception)
+        catch (Exception ex)
         {
             _loop.Reset();
+            if (!_disposed) _node.ReportPreparationFailure(SyncKind.Clipboard, ex);
             if (!_disposed) Notice?.Invoke(this, "剪贴板同步失败，请检查连接；本机复制不受影响。");
         }
         finally { _sending = false; _publishRequest = null; }

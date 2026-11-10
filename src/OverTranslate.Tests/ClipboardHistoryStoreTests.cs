@@ -6,6 +6,137 @@ namespace OverTranslate.Tests;
 
 public sealed class ClipboardHistoryStoreTests : IDisposable
 {
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void RawContentDeletionRemovesSavedContentAndItsRecoveryCopies(bool withImage)
+    {
+        var data = Path.Combine(_folder, "data");
+        var backup = Path.Combine(_folder, "backup");
+        var recovery = new InstalledDataRecovery(data, backup);
+        var folder = Path.Combine(data, "clipboard-history");
+        var store = new ClipboardHistoryStore(folder, recovery);
+        var record = store.Add(new() { Text = "remove content", Html = "<b>remove content</b>", Rtf = @"{\rtf1 remove content}" },
+            withImage ? [1, 2, 3] : null);
+
+        store.Delete(record.Id);
+
+        Assert.Empty(store.Read());
+        Assert.Empty(Directory.EnumerateFiles(folder));
+        Assert.Empty(Directory.EnumerateFiles(Path.Combine(backup, "clipboard-history")));
+        Directory.Delete(data, true);
+        recovery.Initialize(Path.Combine(_folder, "unused-legacy"));
+        Assert.Empty(new ClipboardHistoryStore(folder).Read());
+    }
+
+    [Fact]
+    public void LockedOrphanCleanupReportsFailureAndCanBeRetried()
+    {
+        var data = Path.Combine(_folder, "data");
+        var recovery = new InstalledDataRecovery(data, Path.Combine(_folder, "backup"));
+        var folder = Path.Combine(data, "clipboard-history");
+        var store = new ClipboardHistoryStore(folder, recovery);
+        var record = store.Add(new() { Text = "known orphan fixture" }, [1, 2, 3]);
+        var image = Path.Combine(folder, record.Id + ".png");
+        File.Delete(Path.Combine(folder, record.Id + ".clip"));
+        store = new ClipboardHistoryStore(folder, recovery);
+        using (new FileStream(image, FileMode.Open, FileAccess.Read, FileShare.None))
+        {
+            Assert.Equal((0, 1), store.DeleteUnpinned());
+            Assert.True(File.Exists(image));
+        }
+        Assert.Equal((0, 0), store.DeleteUnpinned());
+        Assert.False(File.Exists(image));
+    }
+
+    [Fact]
+    public void ClearingUnpinnedHistoryRemovesOrphansButKeepsPinnedUnreadableAndUnrelatedFiles()
+    {
+        var data = Path.Combine(_folder, "data");
+        var backup = Path.Combine(_folder, "backup");
+        var recovery = new InstalledDataRecovery(data, backup);
+        var folder = Path.Combine(data, "clipboard-history");
+        var backupFolder = Path.Combine(backup, "clipboard-history");
+        var store = new ClipboardHistoryStore(folder, recovery);
+        var pinned = store.Add(new() { Text = "keep pinned" }, [1, 2, 3]);
+        store.SetPinned(pinned.Id, true);
+        var orphan = store.Add(new() { Text = "orphan fixture" }, [4, 5, 6]);
+        File.Delete(Path.Combine(folder, orphan.Id + ".clip"));
+        var backupOnly = store.Add(new() { Text = "backup-only fixture" }, [7, 8, 9]);
+        File.Delete(Path.Combine(folder, backupOnly.Id + ".clip"));
+        File.Delete(Path.Combine(folder, backupOnly.Id + ".png"));
+        var unreadable = new string('a', 64);
+        File.WriteAllText(Path.Combine(folder, unreadable + ".clip"), "corrupt fixture");
+        File.WriteAllBytes(Path.Combine(folder, unreadable + ".png"), [10]);
+        var unrelated = Path.Combine(folder, "original.png");
+        File.WriteAllBytes(unrelated, [11]);
+        store = new ClipboardHistoryStore(folder, recovery);
+
+        Assert.Equal((0, 0), store.DeleteUnpinned());
+
+        Assert.Equal(pinned.Id, Assert.Single(store.Read()).Id);
+        foreach (var id in new[] { orphan.Id, backupOnly.Id })
+            foreach (var location in new[] { folder, backupFolder })
+                foreach (var extension in new[] { ".clip", ".png" })
+                    Assert.False(File.Exists(Path.Combine(location, id + extension)));
+        Assert.True(File.Exists(Path.Combine(folder, pinned.Id + ".png")));
+        Assert.True(File.Exists(Path.Combine(backupFolder, pinned.Id + ".png")));
+        Assert.True(File.Exists(Path.Combine(folder, unreadable + ".clip")));
+        Assert.True(File.Exists(Path.Combine(folder, unreadable + ".png")));
+        Assert.Equal(new byte[] { 11 }, File.ReadAllBytes(unrelated));
+    }
+
+    [Theory]
+    [InlineData(".clip")]
+    [InlineData(".png")]
+    public void ALockedRecoveryCopyKeepsTheWholeRecordAndDeletionCanBeRetried(string extension)
+    {
+        var data = Path.Combine(_folder, "data");
+        var backup = Path.Combine(_folder, "backup");
+        var recovery = new InstalledDataRecovery(data, backup);
+        var folder = Path.Combine(data, "clipboard-history");
+        var store = new ClipboardHistoryStore(folder, recovery);
+        var original = Path.Combine(_folder, "original.png");
+        Directory.CreateDirectory(_folder); File.WriteAllText(original, "keep original");
+        var originalFolder = Path.Combine(_folder, "original-folder");
+        Directory.CreateDirectory(originalFolder);
+        File.WriteAllText(Path.Combine(originalFolder, "note.txt"), "keep folder contents");
+        var record = store.Add(new() { Text = "recovery delete fixture", Files = [original, originalFolder] }, [1, 2, 3]);
+        var backupFolder = Path.Combine(backup, "clipboard-history");
+        using (new FileStream(Path.Combine(backupFolder, record.Id + extension), FileMode.Open, FileAccess.Read, FileShare.None))
+        {
+            Assert.Throws<IOException>(() => store.Delete(record.Id));
+            Assert.Single(store.Read());
+            Assert.Single(new ClipboardHistoryStore(folder).Read());
+            Assert.True(File.Exists(Path.Combine(folder, record.Id + ".png")));
+        }
+
+        store.Delete(record.Id);
+
+        Assert.Empty(store.Read());
+        Assert.Empty(Directory.EnumerateFiles(folder));
+        Assert.Empty(Directory.EnumerateFiles(backupFolder));
+        Assert.Equal("keep original", File.ReadAllText(original));
+        Assert.Equal("keep folder contents", File.ReadAllText(Path.Combine(originalFolder, "note.txt")));
+        Directory.Delete(data, true);
+        recovery.Initialize(Path.Combine(_folder, "unused-legacy"));
+        Assert.Empty(new ClipboardHistoryStore(folder).Read());
+    }
+
+    [Fact]
+    public void DeletingAPartiallyRemovedImageRecordCanBeRetried()
+    {
+        var store = new ClipboardHistoryStore(_folder);
+        var record = store.Add(new() { Text = "partial delete fixture" }, [1, 2, 3]);
+        File.Delete(Path.Combine(_folder, record.Id + ".clip"));
+
+        store.Delete(record.Id);
+
+        Assert.Empty(store.Read());
+        Assert.False(File.Exists(Path.Combine(_folder, record.Id + ".png")));
+        Assert.Empty(new ClipboardHistoryStore(_folder).Read());
+    }
+
     [Fact]
     public void RecopiedPinnedRecordLeadsPinnedGroupAndOrdinaryRecordLeadsOrdinaryGroup()
     {

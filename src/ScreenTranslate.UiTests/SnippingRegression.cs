@@ -15,6 +15,8 @@ public sealed partial class ScreenTranslateShellTests
 {
     private static void VerifySnippingTools()
     {
+        VerifySnipCopyResponsiveness();
+        VerifySnipCopyAdversarial();
         VerifySnipImeAndReadableHud();
         VerifySnipReviewCases();
         VerifySnipAdversarialInput();
@@ -168,9 +170,12 @@ public sealed partial class ScreenTranslateShellTests
 
             var cancelledAttempts = 0;
             var cancelled = capture.CopySnipAsync(_ => { cancelledAttempts++; throw new System.Runtime.InteropServices.ExternalException("clipboard busy fixture", unchecked((int)0x800401D0)); });
+            PumpUntil(() => Volatile.Read(ref cancelledAttempts) > 0);
             capture.RaiseEvent(new KeyEventArgs(Keyboard.PrimaryDevice, PresentationSource.FromVisual(capture), 0, Key.Escape) { RoutedEvent = Keyboard.KeyDownEvent });
+            // STA 后台线程可能在 Esc 前已重试；取消后不得再增加写入次数。
+            var attemptsAtCancellation = Volatile.Read(ref cancelledAttempts);
             PumpUntil(() => cancelled.IsCompleted); cancelled.GetAwaiter().GetResult();
-            Assert.Equal(1, cancelledAttempts);
+            Assert.Equal(attemptsAtCancellation, Volatile.Read(ref cancelledAttempts));
             capture.ApplySnipRecovery(true, IntPtr.Zero); // 延迟的恢复通知不能触碰已关闭窗口。
         }
         finally { capture.Close(); }

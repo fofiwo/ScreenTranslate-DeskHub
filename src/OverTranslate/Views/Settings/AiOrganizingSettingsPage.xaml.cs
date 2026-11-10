@@ -21,13 +21,15 @@ public partial class AiOrganizingSettingsPage : UserControl
         Reload();
     }
 
-    public void Reload()
+    public async void Reload()
     {
-        if (_dirty || _saving) return;
+        if (_dirty || _saving || _loading) return;
         _loading = true;
+        FormPanel.IsEnabled = SaveButton.IsEnabled = ReloadButton.IsEnabled = false;
+        Notice("正在读取 AI 整理设置…");
         try
         {
-            var ai = _storeFactory().Read().Ai;
+            var ai = await Task.Run(() => _storeFactory().Read().Ai);
             AiEndpoint.Text = _lastEndpoint = ai.Endpoint;
             AiModel.Text = ai.Model;
             AiKey.Clear();
@@ -45,7 +47,7 @@ public partial class AiOrganizingSettingsPage : UserControl
             FormPanel.IsEnabled = SaveButton.IsEnabled = false;
             Notice("读取 AI 整理设置失败，请检查资料库文件及目录权限，然后点击重新加载。", true);
         }
-        finally { _loading = false; }
+        finally { _loading = false; ReloadButton.IsEnabled = true; }
     }
 
     private void Input_Changed(object sender, RoutedEventArgs e)

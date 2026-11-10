@@ -9,8 +9,84 @@ namespace OverTranslate.Tests;
 
 public sealed partial class ScreenTranslateShellTests
 {
+    private static void VerifyClipboardRapidToggle()
+    {
+        var folder = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "clipboard-toggle-" + Guid.NewGuid());
+        var store = new ClipboardHistoryStore(folder);
+        var records = (Dictionary<string, ClipboardRecord>)typeof(ClipboardHistoryStore)
+            .GetField("_records", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(store)!;
+        for (var i = 0; i < 10000; i++)
+            records.Add(i.ToString("x64"), new() { Id = i.ToString("x64"), Text = "toggle fixture " + i });
+        var copies = 0;
+        var window = new ClipboardHistoryWindow(store, _ => { copies++; return Task.CompletedTask; },
+            settings: new(), saveSettings: () => true,
+            syncActivities: new OverTranslate.Services.Lan.SyncActivityStore(System.IO.Path.Combine(folder, "activity.json")))
+        { Left = -10000, Top = -10000, ShowActivated = false };
+        window.SetWindowPinned(true);
+        try
+        {
+            window.ShowPanel(); PumpUntil(() => !window.IsRefreshing); window.UpdateLayout();
+            var list = (ListBox)window.FindName("HistoryList");
+            var source = list.ItemsSource;
+            var notifications = 0;
+            foreach (ClipboardRecordView view in list.Items)
+                view.PropertyChanged += (_, e) => { if (e.PropertyName == nameof(ClipboardRecordView.TimeLabel)) notifications++; };
+            var watch = Stopwatch.StartNew();
+            for (var i = 0; i < 20; i++)
+            {
+                window.Dismiss(); window.ShowPanel(); window.UpdateLayout();
+                Assert.True(list.IsEnabled, "无变化的历史重新打开后应能立即浏览和复制");
+                Assert.Same(source, list.ItemsSource);
+            }
+            watch.Stop();
+            System.IO.Directory.CreateDirectory("artifacts");
+            System.IO.File.WriteAllText("artifacts/clipboard-toggle-performance.txt",
+                $"Synthetic records=10000; reopenCount=20; elapsed={watch.ElapsedMilliseconds}ms; notifications={notifications}");
+            Assert.InRange(notifications, 1, 999);
+            var copy = window.CopySelectedAsync();
+            Assert.Equal(1, copies);
+            PumpUntil(() => copy.IsCompleted); copy.GetAwaiter().GetResult();
+            window.ShowPanel(); PumpUntil(() => !window.IsRefreshing); window.UpdateLayout();
+            var scroll = Visuals<ScrollViewer>(list).First();
+            scroll.ScrollToVerticalOffset(50); window.UpdateLayout();
+            Assert.True(scroll.VerticalOffset > 0);
+            var gate = typeof(ClipboardHistoryStore).GetField("_gate", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(store)!;
+            using var entered = new ManualResetEventSlim();
+            using var release = new ManualResetEventSlim();
+            var writer = Task.Run(() => { lock (gate) { entered.Set(); release.Wait(TimeSpan.FromSeconds(5)); } });
+            Assert.True(entered.Wait(TimeSpan.FromSeconds(5)));
+            Task? firstCopy = null, secondCopy = null;
+            string? latestId = null;
+            try
+            {
+                firstCopy = window.CopySelectedAsync();
+                Assert.Equal(2, copies);
+                window.ShowPanel();
+                Assert.False(window.IsBusy, "复制成功后的历史写盘不能阻止再次打开并复制");
+                list.SelectedIndex = (list.SelectedIndex + 1) % list.Items.Count;
+                latestId = window.SelectedRecord!.Id;
+                secondCopy = window.CopySelectedAsync();
+                Assert.Equal(3, copies);
+            }
+            finally
+            {
+                release.Set(); writer.GetAwaiter().GetResult();
+                foreach (var pending in new[] { firstCopy, secondCopy }.OfType<Task>())
+                { PumpUntil(() => pending.IsCompleted); pending.GetAwaiter().GetResult(); }
+            }
+            window.ShowPanel(); PumpUntil(() => !window.IsRefreshing);
+            Assert.Equal(latestId, window.SelectedRecord!.Id);
+        }
+        finally
+        {
+            window.Close();
+            if (System.IO.Directory.Exists(folder)) System.IO.Directory.Delete(folder, true);
+        }
+    }
+
     private static void VerifyClipboardPerformance()
     {
+        VerifyClipboardRapidToggle();
         VerifyClipboardStoreOpenRecovery();
         VerifyBackgroundClipboardImageCapture();
         VerifySlowCaptureCoalescesAndDrainsLatest();

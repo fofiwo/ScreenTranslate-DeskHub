@@ -22,6 +22,7 @@ public sealed partial class ScreenTranslateShellTests
                 System.IO.FileAccess.ReadWrite, System.IO.FileShare.None))
             {
                 page = new AiOrganizingSettingsPage(() => store);
+                PumpUntil(() => ((Button)page.FindName("ReloadButton")).IsEnabled);
                 Assert.False(((Button)page.FindName("SaveButton")).IsEnabled);
                 Assert.Contains("读取", ((TextBlock)page.FindName("StatusText")).Text);
             }
@@ -32,7 +33,7 @@ public sealed partial class ScreenTranslateShellTests
                 PumpUntil(() => Field<Button>("SaveButton").IsEnabled);
             }
             Field<Button>("ReloadButton").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-            Assert.True(Field<Button>("SaveButton").IsEnabled);
+            PumpUntil(() => Field<Button>("SaveButton").IsEnabled);
             Field<TextBox>("AiEndpoint").Text = "";
             Field<TextBox>("AiModel").Text = "fixture-model";
             Field<PasswordBox>("AiKey").Password = "fixture-only";
@@ -88,6 +89,7 @@ public sealed partial class ScreenTranslateShellTests
                 var tabs = (TabControl)preferences.FindName("Tabs");
                 Assert.Equal("AI 与翻译", ((TabItem)tabs.SelectedItem).Header);
                 var ai = Assert.IsType<AiOrganizingSettingsPage>(((ContentControl)preferences.FindName("AiOrganizingHost")).Content);
+                PumpUntil(() => ((Button)ai.FindName("SaveButton")).IsEnabled);
                 ((TextBox)ai.FindName("AiModel")).Text = "unsaved-navigation-fixture";
                 shell.ShowOcrSettings();
                 shell.ShowAiSettings();

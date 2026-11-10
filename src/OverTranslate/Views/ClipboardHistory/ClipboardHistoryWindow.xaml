@@ -4,7 +4,8 @@
  Title="剪贴板历史" Width="560" Height="700" MinWidth="460" MinHeight="400"
  WindowStartupLocation="Manual" WindowStyle="None" ResizeMode="CanResizeWithGrip" ShowInTaskbar="False"
  Background="{DynamicResource AppWindowBg}" Foreground="{DynamicResource AppTextPrimary}"
- FontFamily="{DynamicResource AppFont}" FontSize="13" UseLayoutRounding="True" PreviewKeyDown="Window_KeyDown">
+ FontFamily="{DynamicResource AppFont}" FontSize="13" UseLayoutRounding="True" PreviewKeyDown="Window_KeyDown"
+ AllowDrop="True" PreviewDragOver="Sync_DragOver" PreviewDrop="Sync_Drop">
  <shell:WindowChrome.WindowChrome><shell:WindowChrome CaptionHeight="0" ResizeBorderThickness="6" CornerRadius="12" GlassFrameThickness="0"/></shell:WindowChrome.WindowChrome>
  <Window.Resources>
   <Style x:Key="ClipboardMenuItem" TargetType="MenuItem">
@@ -82,7 +83,7 @@
    <Grid MouseLeftButtonDown="Header_Drag"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
     <StackPanel Orientation="Horizontal" VerticalAlignment="Center"><TextBlock Text="剪贴板" FontSize="17" FontWeight="SemiBold"/><TextBlock x:Name="RecordingHint" Text="剪贴板历史" FontSize="11" Foreground="{DynamicResource AppTextSecondary}" Margin="10,3,0,0"/></StackPanel>
     <StackPanel Grid.Column="1" Orientation="Horizontal">
-     <Button x:Name="ClearUnpinnedButton" Style="{StaticResource IconButton}" Content="&#xE74D;" Click="ClearUnpinned_Click" ToolTip="一键清空全部未置顶记录（不受筛选影响，保留原文件）" AutomationProperties.Name="清空未置顶记录"/>
+     <Button x:Name="ClearUnpinnedButton" Style="{StaticResource IconButton}" Content="&#xE74D;" Click="ClearUnpinned_Click" ToolTip="清空未置顶历史及保存的内容（不受筛选影响，保留源文件和置顶记录）" AutomationProperties.Name="清空未置顶记录"/>
      <Button x:Name="WindowPinButton" Style="{StaticResource IconButton}" Content="&#xE718;" Click="WindowPin_Click" ToolTip="固定窗口：失焦后保持显示" AutomationProperties.Name="固定窗口"/>
      <Button x:Name="MenuButton" Style="{StaticResource IconButton}" Content="&#xE713;" Click="Menu_Click" ToolTip="剪贴板设置与同步" AutomationProperties.Name="剪贴板设置与同步">
       <Button.ContextMenu><ContextMenu Style="{StaticResource ClipboardMenu}" Placement="Bottom" HorizontalOffset="-244" VerticalOffset="6">
@@ -91,6 +92,8 @@
        <Separator/>
        <MenuItem x:Name="ImportMenuItem" Header="导入 Windows 系统历史" Click="Import_Click"/>
        <MenuItem Header="快捷键设置" Click="ShortcutSettings_Click"/>
+       <MenuItem Header="设备与同步…" Click="SyncSettings_Click"/>
+       <MenuItem Header="同步记录…" Click="SyncHistory_Click"/>
        <Separator/><MenuItem Header="恢复默认位置与大小" Click="ResetPlacement_Click"/><MenuItem Header="打开历史数据目录" Click="OpenFolder_Click"/>
       </ContextMenu></Button.ContextMenu>
      </Button>
@@ -117,13 +120,28 @@
     </Style></ListBox.ItemContainerStyle>
     <ListBoxItem Content="全部"/><ListBoxItem Content="文本"/><ListBoxItem Content="图片"/><ListBoxItem Content="链接"/><ListBoxItem Content="文件"/><ListBoxItem Content="代码"/><ListBoxItem Content="富文本"/>
    </ListBox>
-   <TextBlock x:Name="StatusText" Grid.Row="3" Margin="4,0,4,6" TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource AppTextSecondary}" AutomationProperties.LiveSetting="Polite"/>
+   <StackPanel Grid.Row="3">
+    <Border Background="{DynamicResource AppHeaderBg}" BorderBrush="{DynamicResource AppBorder}" BorderThickness="1" CornerRadius="8" Padding="8" Margin="0,0,0,6">
+     <StackPanel>
+      <DockPanel><Button x:Name="SendToDeviceButton" Content="发送文件" DockPanel.Dock="Right" Style="{StaticResource ProductButton}" Height="40" FontSize="13" Padding="14,0" Click="SendToDevice_Click" Margin="8,0,0,0" ToolTip="选择文件或文件夹，也可直接拖入此窗口"/>
+       <Button x:Name="SyncHistoryButton" Content="记录" DockPanel.Dock="Right" Style="{StaticResource ProductLink}" Click="SyncHistory_Click" Margin="8,0,0,0" ToolTip="查看进度、历史记录、重试与接收目录"/>
+       <Button x:Name="SyncDeviceStatusButton" Style="{StaticResource ProductLink}" Click="SyncSettings_Click" HorizontalContentAlignment="Left" HorizontalAlignment="Stretch" Height="Auto" MinHeight="40" Padding="4,4" ToolTip="查看设备连接、同步开关和自动重连状态">
+        <TextBlock x:Name="SyncConnectionText" Text="同步 · 设备未连接" TextWrapping="Wrap" FontSize="12"/>
+       </Button>
+      </DockPanel>
+      <TextBlock x:Name="SyncSummaryText" Margin="2,6,2,0" TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource AppTextSecondary}" AutomationProperties.LiveSetting="Polite"/>
+      <ProgressBar x:Name="SyncProgress" Height="4" Margin="2,6,2,0" Minimum="0" Maximum="100" Visibility="Collapsed"/>
+     </StackPanel>
+    </Border>
+    <TextBlock x:Name="StatusText" Margin="4,0,4,6" TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource AppTextSecondary}" AutomationProperties.LiveSetting="Polite"/>
+   </StackPanel>
    <Grid Grid.Row="4">
     <ListBox x:Name="HistoryList" Background="Transparent" BorderThickness="0" Padding="0" ScrollViewer.HorizontalScrollBarVisibility="Disabled"
      ScrollViewer.CanContentScroll="True" VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling"
      PreviewMouseLeftButtonUp="History_Click" AutomationProperties.Name="剪贴板历史记录">
      <ListBox.ContextMenu><ContextMenu Style="{StaticResource ClipboardMenu}" Opened="RecordMenu_Opened">
       <MenuItem Header="复制并收起" Click="CopyMenu_Click"/><MenuItem Header="粘贴到原应用" Click="Paste_Click"/>
+      <MenuItem x:Name="SendRecordMenuItem" Header="发送文件到设备…" Click="SendRecord_Click"/>
       <Separator/><MenuItem x:Name="PinMenuItem" Header="置顶 / 取消置顶" Click="PinMenu_Click"/><MenuItem Header="预览完整内容" Click="PreviewMenu_Click"/>
       <Separator/><MenuItem Header="删除这条记录" Click="DeleteMenu_Click"/>
      </ContextMenu></ListBox.ContextMenu>
@@ -140,23 +158,26 @@
       <StackPanel>
        <Grid Margin="0,0,0,3"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
         <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-         <TextBlock Text="{Binding Glyph}" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="12" Foreground="{DynamicResource AppTextSecondary}" Margin="0,0,5,0"/>
-         <TextBlock Text="{Binding Record.Header}" FontSize="11" Foreground="{DynamicResource AppTextSecondary}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" MaxWidth="150"/>
+         <TextBlock Text="{Binding FileKind}" FontSize="11" Foreground="{DynamicResource AppTextSecondary}" Margin="0,0,5,0"/>
+         <TextBlock Text="{Binding Record.Source}" FontSize="11" Foreground="{DynamicResource AppTextSecondary}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" MaxWidth="150"/>
         </StackPanel>
         <StackPanel Grid.Column="1" Orientation="Horizontal">
+         <Button Content="&#xE724;" Tag="send" Click="CardAction_Click" ToolTip="发送到设备" AutomationProperties.Name="发送文件到设备" Width="26" Height="24">
+          <Button.Style><Style TargetType="Button" BasedOn="{StaticResource IconButton}"><Setter Property="Visibility" Value="Collapsed"/><Style.Triggers><DataTrigger Binding="{Binding HasFiles}" Value="True"><Setter Property="Visibility" Value="Visible"/></DataTrigger></Style.Triggers></Style></Button.Style>
+         </Button>
          <Button Style="{StaticResource IconButton}" Content="&#xE890;" Tag="preview" Click="CardAction_Click" ToolTip="预览完整内容" AutomationProperties.Name="预览完整内容" Width="26" Height="24"/>
          <Button Style="{StaticResource RecordPinButton}" Content="&#xE718;" Tag="pin" Click="CardAction_Click" ToolTip="{Binding Record.PinLabel}" AutomationProperties.Name="{Binding Record.PinLabel}" Width="26" Height="24"/>
-         <Button Style="{StaticResource IconButton}" Content="&#xE8BB;" Tag="delete" Click="CardAction_Click" ToolTip="删除记录（保留原文件）" AutomationProperties.Name="删除记录" Width="26" Height="24"/>
+         <Button Style="{StaticResource IconButton}" Content="&#xE8BB;" Tag="delete" Click="CardAction_Click" ToolTip="{Binding DeleteHint}" AutomationProperties.Name="删除记录" Width="26" Height="24"/>
          <TextBlock Text="{Binding TimeLabel}" ToolTip="{Binding Record.ExactTime}" VerticalAlignment="Center" FontSize="10" Foreground="{DynamicResource AppTextSecondary}" Margin="6,0,0,0"/>
         </StackPanel>
        </Grid>
        <Border Background="{DynamicResource AppAccentSubtle}" CornerRadius="6" Padding="8,5" Margin="0,0,0,5" HorizontalAlignment="Left" ToolTip="{Binding FilePaths}">
         <Border.Style><Style TargetType="Border"><Setter Property="Visibility" Value="Collapsed"/>
-         <Style.Triggers><DataTrigger Binding="{Binding HasFiles}" Value="True"><Setter Property="Visibility" Value="Visible"/></DataTrigger></Style.Triggers>
+         <Style.Triggers><DataTrigger Binding="{Binding HasFolders}" Value="True"><Setter Property="Visibility" Value="Visible"/></DataTrigger></Style.Triggers>
         </Style></Border.Style>
         <StackPanel Orientation="Horizontal">
-         <TextBlock Text="{Binding FileGlyph}" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="20" Foreground="{DynamicResource AppAccent}" VerticalAlignment="Center" Margin="0,0,8,0"/>
-         <TextBlock Text="{Binding FileKind}" FontSize="11" FontWeight="SemiBold" Foreground="{DynamicResource AppAccent}" VerticalAlignment="Center"/>
+         <TextBlock Text="{Binding Glyph}" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="20" Foreground="{DynamicResource AppAccent}" VerticalAlignment="Center" Margin="0,0,8,0"/>
+         <TextBlock Text="{Binding FolderLabel}" FontSize="11" FontWeight="SemiBold" Foreground="{DynamicResource AppAccent}" VerticalAlignment="Center"/>
         </StackPanel>
        </Border>
        <TextBlock Text="{Binding Preview}" TextWrapping="Wrap" TextTrimming="CharacterEllipsis" MaxHeight="54" LineHeight="18"/>

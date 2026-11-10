@@ -331,6 +331,7 @@ public class SettingsService
         var tempPath = path + ".tmp";
         File.WriteAllText(tempPath, Serialize(settings));
         File.Move(tempPath, path, overwrite: true);
+        AppDataPaths.BackupFile(path);
     }
 
     /// <returns>The text of the first file that could be read, and which file that was.</returns>

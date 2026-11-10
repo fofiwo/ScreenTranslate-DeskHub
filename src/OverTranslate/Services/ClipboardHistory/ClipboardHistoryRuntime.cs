@@ -158,6 +158,7 @@ internal sealed class ClipboardHistoryRuntime : IDisposable
     private readonly HwndSource _source;
     private readonly DispatcherTimer _timer;
     private readonly ClipboardHistoryWriteQueue _writes;
+    private readonly Func<Task<ClipboardHistoryStore>> _openStore;
     private readonly HashSet<Task> _captures = [];
     private readonly Func<Task<CapturedClipboard?>> _capture;
     private readonly Func<uint> _sequence;
@@ -185,9 +186,10 @@ internal sealed class ClipboardHistoryRuntime : IDisposable
             : () => Clipboard.GetDataObject() is { } data ? ClipboardContent.CaptureAsync(data, ReadSource()) : Task.FromResult<CapturedClipboard?>(null));
         _sequence = sequence ?? GetClipboardSequenceNumber;
         _recordingEnabled = recordingEnabled ?? (() => true);
+        _openStore = openStoreAsync ?? (() => ready);
         _writes = new(async captured =>
         {
-            var store = await (openStoreAsync?.Invoke() ?? ready).ConfigureAwait(false);
+            var store = await _openStore().ConfigureAwait(false);
             await Task.Run(() => store.Add(captured.Record, captured.Png)).ConfigureAwait(false);
         }, error => LastError = error is null ? null : "有一条剪贴板内容未能保存，请检查数据目录可写及磁盘空间；已有记录不会自动清理。");
         _timer = new DispatcherTimer(TimeSpan.FromMilliseconds(80), DispatcherPriority.Background, OnTick, dispatcher);
@@ -260,6 +262,22 @@ internal sealed class ClipboardHistoryRuntime : IDisposable
             return process.ProcessName + ".exe";
         }
         catch (Exception) { return ""; }
+    }
+
+    internal static async Task DrainPendingAsync(ClipboardHistoryStore store)
+    {
+        if (_current is { } current && ReferenceEquals(await current._openStore(), store))
+            await current.DrainPendingAsync();
+    }
+
+    internal async Task DrainPendingAsync()
+    {
+        // 删除前提交已接受的捕获，防止旧快照在删除之后重新入库；后续新复制仍正常记录。
+        var captureLast = _timer.IsEnabled;
+        _timer.Stop();
+        if (captureLast) TrackCapture();
+        await Task.WhenAll(_captures.ToArray());
+        await _writes.DrainAsync();
     }
 
     public static async Task StopAsync()

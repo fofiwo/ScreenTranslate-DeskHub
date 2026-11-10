@@ -1,4 +1,4 @@
-﻿using System.Threading;
+using System.Threading;
 using System.Windows;
 using NLog;
 using OverTranslate.Services;
@@ -21,18 +21,12 @@ public partial class App
     [STAThread]
     private static void Main(string[] args)
     {
-        // Uninstalling takes everything the app wrote with it — settings, logs, models — and the
-        // sign-in entry. Runs in a process of its own that exits straight after; see UninstallCleanup.
+        // 卸载清理模型和系统注册；个人数据的恢复副本保留在安装目录之外。
         VelopackApp.Build()
             .SetAutoApplyOnStartup(false)
+            .OnAfterInstallFastCallback(_ => AppDataPaths.Initialize())
             .OnBeforeUninstallFastCallback(_ => UninstallCleanup.Run())
             .Run();
-
-        if (LogManager.Configuration is { } logging)
-        {
-            logging.Variables["dataRoot"] = AppDataPaths.Root;
-            LogManager.ReconfigExistingLoggers();
-        }
 
         var app = new App();
         app.InitializeComponent();
@@ -74,6 +68,20 @@ public partial class App
             _activateEvent.Dispose();
             Shutdown();
             return;
+        }
+
+        try { AppDataPaths.Initialize(); }
+        catch (Exception ex) when (ex is System.IO.IOException or UnauthorizedAccessException)
+        {
+            OverTranslate.Views.Controls.AppMessageWindow.ShowMessage($"无法准备数据目录，已停止启动以避免写入空资料。请保留原文件并检查目录权限和磁盘空间。\n{AppDataPaths.Root}",
+                "ScreenTranslate 数据保护", MessageBoxButton.OK, MessageBoxImage.Error);
+            Shutdown();
+            return;
+        }
+        if (LogManager.Configuration is { } logging)
+        {
+            logging.Variables["dataRoot"] = AppDataPaths.Root;
+            LogManager.ReconfigExistingLoggers();
         }
 
         // Background thread listens for activation signals from future launch attempts
@@ -120,6 +128,7 @@ public partial class App
         mainWindow.InitializeApp();
         OriginalApplicationPaste.Start();
         Services.ClipboardHistory.ClipboardHistoryRuntime.Start(Dispatcher);
+        Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Background, Views.ClipboardHistory.LanTransferWindow.RestoreConnections);
         ShellWindow.ShowOrActivate();
         Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Background, Services.Lan.SyncSetupPrompt.ShowIfNeeded);
         UpdateNotifier.StartPolling();

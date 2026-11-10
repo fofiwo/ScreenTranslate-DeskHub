@@ -26,15 +26,40 @@ public sealed partial class ScreenTranslateShellTests
                 var store = new ClipboardHistoryStore(folder);
                 var file = System.IO.Path.Combine(folder, "sample.txt");
                 System.IO.File.WriteAllText(file, "fixture");
-                foreach (var (path, kind) in new[] { (folder, "文件夹"), (file, "TXT 文件"), (file + ".missing", "文件 / 文件夹 · 路径不可用") })
+                var image = System.IO.Path.Combine(folder, "sample.PNG");
+                System.IO.File.WriteAllText(image, "invalid image fixture");
+                var imageNamedFolder = System.IO.Path.Combine(folder, "folder.png");
+                System.IO.Directory.CreateDirectory(imageNamedFolder);
+                var extensionless = System.IO.Path.Combine(folder, "README");
+                System.IO.File.WriteAllText(extensionless, "fixture");
+                foreach (var (path, kind) in new[] { (folder, "文件夹"), (imageNamedFolder, "文件夹"), (file, "文本文件"), (image, "图片文件"), (extensionless, "文件"), (file + ".missing", "文件") })
                 {
                     var view = new ClipboardRecordView(new ClipboardRecord { Files = [path] }, store);
+                    Assert.False(view.HasFolders);
                     _ = view.Thumbnail; PumpUntil(() => !view.IsThumbnailLoading);
                     Assert.True(view.HasFiles); Assert.Equal(kind, view.FileKind);
+                    Assert.Equal("移除历史记录，保留源文件", view.DeleteHint);
                     Assert.Equal(path, view.FilePaths);
-                    if (path == folder) Assert.Equal("\uE8B7", view.FileGlyph);
+                    Assert.Equal(kind == "文件夹", view.HasFolders);
+                    Assert.Equal(kind == "文件夹" ? "\uE8B7" : "", view.Glyph);
                 }
-                Assert.False(new ClipboardRecordView(new ClipboardRecord { Text = "text" }, store).HasFiles);
+                foreach (var record in new[] { new ClipboardRecord { Text = "text" }, new ClipboardRecord { HasImage = true },
+                    new ClipboardRecord { Text = "https://example.com" }, new ClipboardRecord { Html = "<b>fixture</b>" } })
+                {
+                    var view = new ClipboardRecordView(record, store);
+                    Assert.False(view.HasFiles); Assert.False(view.HasFolders);
+                    Assert.Equal("彻底删除此记录及保存的内容", view.DeleteHint);
+                    Assert.Equal(record.Category, view.FileKind); Assert.Equal("", view.Glyph);
+                }
+                foreach (var (paths, hasFolders, label) in new[] {
+                    (new[] { file, image }, false, "文件夹"),
+                    (new[] { folder, file }, true, "文件夹"),
+                    (new[] { folder, imageNamedFolder }, true, "2 个文件夹") })
+                {
+                    var view = new ClipboardRecordView(new ClipboardRecord { Files = paths }, store);
+                    _ = view.Thumbnail; PumpUntil(() => !view.IsThumbnailLoading);
+                    Assert.Equal(hasFolders, view.HasFolders); Assert.Equal(label, view.FolderLabel);
+                }
             }
             catch (Exception ex) { failure = ex; }
             finally { System.IO.Directory.Delete(folder, true); }
@@ -111,6 +136,7 @@ public sealed partial class ScreenTranslateShellTests
 
     private static void VerifySystemClipboardHistory()
     {
+        VerifyPendingCapturesCannotResurrectDeletedRecords();
         VerifyClipboardClickPaste();
         VerifySyncSetupDialog();
         VerifyClipboardPerformance();
@@ -136,6 +162,8 @@ public sealed partial class ScreenTranslateShellTests
         {
             window.Show(); window.UpdateLayout();
             VerifyWindowPinToggle(window);
+            // 存储回归固定后台窗口，避免工具提示的原生焦点事件提前收起浮窗。
+            window.SetWindowPinned(true);
             var list = (ListBox)window.FindName("HistoryList");
             var status = (TextBlock)window.FindName("StatusText");
             var query = (System.Windows.Controls.TextBox)window.FindName("SearchBox");
@@ -155,12 +183,14 @@ public sealed partial class ScreenTranslateShellTests
             var fileView = new ClipboardRecordView(new ClipboardRecord { Files = [imageFile] }, store);
             _ = fileView.Thumbnail; PumpUntil(() => !fileView.IsThumbnailLoading); Assert.NotNull(fileView.Thumbnail);
             Assert.NotNull(fileView.LoadImage(false));
-            Assert.Equal("PNG 文件", fileView.FileKind);
+            Assert.Equal("图片文件", fileView.FileKind);
+            Assert.False(fileView.HasFolders);
             var folderView = new ClipboardRecordView(new ClipboardRecord { Files = [folder] }, store);
             _ = folderView.Thumbnail; PumpUntil(() => !folderView.IsThumbnailLoading);
             Assert.True(folderView.HasFiles);
             Assert.Equal("文件夹", folderView.FileKind);
-            Assert.Equal("\uE8B7", folderView.FileGlyph);
+            Assert.True(folderView.HasFolders);
+            Assert.Equal("\uE8B7", folderView.Glyph);
             Assert.Null(folderView.Thumbnail);
             Assert.False(new ClipboardRecordView(new ClipboardRecord { Text = "普通文本" }, store).HasFiles);
             using (var unlocked = new System.IO.FileStream(imageFile, System.IO.FileMode.Open, System.IO.FileAccess.ReadWrite, System.IO.FileShare.None))
@@ -168,7 +198,8 @@ public sealed partial class ScreenTranslateShellTests
             var missingView = new ClipboardRecordView(new ClipboardRecord { Files = [imageFile + ".png"] }, store);
             _ = missingView.Thumbnail; PumpUntil(() => !missingView.IsThumbnailLoading); Assert.Null(missingView.Thumbnail);
             Assert.Contains("thumbnail.png.png", missingView.Preview);
-            Assert.Contains("路径不可用", missingView.FileKind);
+            Assert.Equal("文件", missingView.FileKind);
+            Assert.False(missingView.HasFolders);
             using (var stream = new System.IO.MemoryStream())
             {
                 var encoder = new TiffBitmapEncoder(); encoder.Frames.Add(BitmapFrame.Create(bitmap)); encoder.Frames.Add(BitmapFrame.Create(bitmap)); encoder.Save(stream);
@@ -251,8 +282,14 @@ public sealed partial class ScreenTranslateShellTests
             paste = window.PasteSelectedAsync(); PumpUntil(() => paste.IsCompleted);
             Assert.Equal(2, pasteCalls); Assert.False(window.IsVisible);
             window.Show(); window.RefreshViews(); PumpUntil(() => !window.IsRefreshing);
+            window.ShowPreview();
+            PumpUntil(() => ((TextBox)window.FindName("PreviewText")).Text.Length > 0);
             var delete = window.DeleteSelectedAsync(); PumpUntil(() => delete.IsCompleted); delete.GetAwaiter().GetResult();
             Assert.DoesNotContain(new ClipboardHistoryStore(folder).Read(), i => i.Id == text.Id);
+            Assert.Equal(Visibility.Collapsed, ((FrameworkElement)window.FindName("PreviewPanel")).Visibility);
+            Assert.Empty(((TextBox)window.FindName("PreviewText")).Text);
+            Assert.Null(((Image)window.FindName("PreviewImage")).Source);
+            Assert.Contains("已彻底删除", status.Text);
             Assert.True(window.IsVisible);
             var imported = new SystemClipboardEntry("system-fixture", DateTimeOffset.Now.AddDays(-1), "imported fixture", null, false, false);
             fake.Read = _ => { importReads++; return Task.FromResult(new SystemClipboardSnapshot(ClipboardHistoryItemsResultStatus.Success, [imported])); };
@@ -456,11 +493,67 @@ public sealed partial class ScreenTranslateShellTests
             ApplyTheme(System.Windows.Application.Current, "Light");
 
             window.Close(); Assert.False(window.IsVisible);
+            VerifySyncFeedbackAndFilePicker();
         }
         finally
         {
             var closing = window.ShutdownAsync(); PumpUntil(() => closing.IsCompleted);
             if (System.IO.Directory.Exists(root)) System.IO.Directory.Delete(root, true);
+        }
+    }
+
+    private static void VerifyPendingCapturesCannotResurrectDeletedRecords()
+    {
+        foreach (var clearAll in new[] { false, true })
+        foreach (var pending in new[] { "capturing", "debounced", "queued" })
+        {
+            var folder = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "clipboard-delete-capture-" + Guid.NewGuid());
+            var store = new ClipboardHistoryStore(folder);
+            var record = store.Add(new() { Text = "pending deletion fixture" });
+            var release = new TaskCompletionSource<CapturedClipboard?>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var writeReady = new TaskCompletionSource<ClipboardHistoryStore>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var opens = 0;
+            var subsequentCopy = false;
+            using var runtime = new ClipboardHistoryRuntime(System.Windows.Threading.Dispatcher.CurrentDispatcher,
+                Task.FromResult(store), sequence: () => 1, listen: false,
+                captureAsync: () => subsequentCopy ? Task.FromResult<CapturedClipboard?>(new(new() { Text = "new copy after deletion" }, null))
+                    : pending == "queued" ? Task.FromResult<CapturedClipboard?>(new(record, null)) : release.Task,
+                openStoreAsync: () => pending == "queued" && ++opens == 1 ? writeReady.Task : Task.FromResult(store));
+            var active = typeof(ClipboardHistoryRuntime).GetField("_current", System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic)!;
+            var previous = active.GetValue(null);
+            var window = new ClipboardHistoryWindow(store, _ => Task.CompletedTask, () => Task.FromResult(true),
+                new FixtureClipboardHistory(), settings: new OverTranslate.Models.AppSettings(), saveSettings: () => true)
+                { Left = -10000, Top = -10000, ShowActivated = false };
+            try
+            {
+                active.SetValue(null, runtime);
+                window.SetWindowPinned(true); window.Show();
+                PumpUntil(() => !window.IsRefreshing && window.SelectedRecord?.Id == record.Id);
+                if (pending == "debounced") runtime.NotifyClipboardChanged();
+                else runtime.TrackCapture();
+
+                var deleting = clearAll ? window.ClearUnpinnedAsync() : window.DeleteSelectedAsync();
+                var settled = Task.WhenAny(deleting, Task.Delay(500));
+                PumpUntil(() => settled.IsCompleted);
+                release.SetResult(new(record, null));
+                writeReady.SetResult(store);
+                PumpUntil(() => deleting.IsCompleted); deleting.GetAwaiter().GetResult();
+                var drained = runtime.DrainPendingAsync();
+                PumpUntil(() => drained.IsCompleted); drained.GetAwaiter().GetResult();
+
+                Assert.Empty(store.Read());
+                Assert.Empty(new ClipboardHistoryStore(folder).Read());
+                subsequentCopy = true; runtime.TrackCapture();
+                drained = runtime.StopAndDrainAsync();
+                PumpUntil(() => drained.IsCompleted); drained.GetAwaiter().GetResult();
+                Assert.Equal("new copy after deletion", Assert.Single(store.Read()).Text);
+            }
+            finally
+            {
+                release.TrySetResult(null); writeReady.TrySetResult(store); active.SetValue(null, previous); window.Close();
+                var drained = runtime.StopAndDrainAsync(); PumpUntil(() => drained.IsCompleted);
+                if (System.IO.Directory.Exists(folder)) System.IO.Directory.Delete(folder, true);
+            }
         }
     }
 

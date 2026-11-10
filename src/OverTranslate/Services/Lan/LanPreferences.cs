@@ -23,7 +23,12 @@ internal sealed record LanPreferences(string ReceiveFolder, bool AutoSync = true
         LanFiles.ValidateFolder(ReceiveFolder);
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
         var temporary = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
-        try { File.WriteAllText(temporary, JsonSerializer.Serialize(this)); File.Move(temporary, path, true); }
+        try
+        {
+            File.WriteAllText(temporary, JsonSerializer.Serialize(this));
+            File.Move(temporary, path, true);
+            AppDataPaths.BackupFile(path);
+        }
         finally { if (File.Exists(temporary)) File.Delete(temporary); }
     }
 }

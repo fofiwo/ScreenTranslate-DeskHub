@@ -89,7 +89,7 @@ public sealed partial class ScreenTranslateShellTests
             Assert.Equal(Visibility.Visible, ((FrameworkElement)window.FindName("EditorLayer")).Visibility);
             typeof(LibraryWindow).GetMethod("CancelEditor_Click", BindingFlags.Instance | BindingFlags.NonPublic)!
                 .Invoke(window, [window, new RoutedEventArgs()]);
-            Assert.Equal(3, ((ListBox)window.FindName("PromptList")).Items.Count);
+            PumpUntil(() => ((ListBox)window.FindName("PromptList")).Items.Count == 3);
         });
     }
 

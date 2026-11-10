@@ -21,7 +21,7 @@ public sealed class InstallationDataTests
             Directory.CreateDirectory(app);
             Assert.Equal(data, AppDataPaths.ResolveRoot(app, root, installed: true));
             Assert.Equal("preserved", File.ReadAllText(marker));
-            Assert.False(data.StartsWith(Path.Combine(root, "ScreenTranslate") + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase));
+            Assert.Equal(Path.Combine(root, "ScreenTranslate", "data"), data);
         }
         finally { if (Directory.Exists(root)) Directory.Delete(root, recursive: true); }
     }
@@ -68,7 +68,7 @@ public sealed class InstallationDataTests
         {
             Directory.CreateDirectory(root);
             File.WriteAllText(Path.Combine(root, "data-path.txt"), "   ");
-            Assert.Equal(Path.Combine(root, "ScreenTranslate-data"),
+            Assert.Equal(Path.Combine(root, "data"),
                 AppDataPaths.ResolveRoot(root, root, installed: true));
             Assert.Throws<InvalidDataException>(() => AppDataPaths.ResolveRoot(root, root, installed: false));
             File.WriteAllText(Path.Combine(root, "data-path.txt"), "../shared-data");

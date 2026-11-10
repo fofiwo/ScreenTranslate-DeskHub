@@ -77,6 +77,8 @@ public sealed partial class ScreenTranslateShellTests
             System.IO.File.WriteAllText(path, fixture);
 
             store.Update(s => { for (var i = 0; i < 40; i++) s.Connections.Add(new() { Id = "extra-" + i, Platform = "extra" }); });
+            var reload = window.ReloadViewsAsync();
+            PumpUntil(() => reload.IsCompleted); reload.GetAwaiter().GetResult();
             ((TextBox)window.FindName("ModelSearch")).Text = "extra";
             window.UpdateLayout();
             var scroll = Visuals<ScrollViewer>(list).First();
@@ -106,6 +108,8 @@ public sealed partial class ScreenTranslateShellTests
                     null, [payload, System.Windows.DragDropKeyStates.LeftMouseButton, DragDropEffects.Move, list, position], null)!;
                 args.RoutedEvent = routedEvent;
                 list.RaiseEvent(args);
+                if (routedEvent == System.Windows.DragDrop.DropEvent)
+                    PumpUntil(() => !(bool)Field(window, "_changingData")!);
                 window.UpdateLayout();
                 return args;
             }

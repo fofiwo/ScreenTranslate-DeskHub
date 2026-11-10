@@ -71,7 +71,11 @@ internal sealed class LanLibrarySync : IAsyncDisposable
                 else sent = null;
             }
             catch (OperationCanceledException) when (_stop.IsCancellationRequested) { break; }
-            catch (Exception) { StatusChanged?.Invoke("资料库同步未完成，请检查连接与资料大小；已有资料保留，将自动重试。"); }
+            catch (Exception ex)
+            {
+                _node.ReportPreparationFailure(SyncKind.Library, ex);
+                StatusChanged?.Invoke("资料库同步未完成，请检查连接与资料大小；已有资料保留，将自动重试。");
+            }
             try { await Task.Delay(_interval, _stop.Token).ConfigureAwait(false); }
             catch (OperationCanceledException) { break; }
         }

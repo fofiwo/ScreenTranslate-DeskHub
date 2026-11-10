@@ -4,7 +4,7 @@ Windows 桌面工具集：截图、标注、贴图、取色、截图 OCR 翻译�
 
 [下载最新安装包](https://github.com/fofiwo/ScreenTranslate-DeskHub/releases/latest) · [安装和同步说明](docs/ScreenTranslate-Install.md)
 
-支持 Windows 10/11 x64。运行 `ScreenTranslate-win-Setup.exe` 安装。安装版将个人数据独立保存在 `%LocalAppData%/ScreenTranslate-data`，升级保留该目录。发布内容不包含开发电脑的剪贴板、资料库、API Key 或用户设置。
+支持 Windows 10/11 x64。运行 `ScreenTranslate-win-Setup.exe` 安装。个人数据保存在安装根目录的 `data`，并在 `%UserProfile%/.ScreenTranslate/recovery` 同步保留重装恢复副本；旧用户目录数据首次启动时迁入并保留原件。详见 [安装与恢复说明](docs/ScreenTranslate-Install.md)。发布内容不包含开发电脑的剪贴板、资料库、API Key 或用户设置。
 
 软件启动后和运行期间每 30 分钟检查新版本。发现新版时，主窗口左下角显示版本和安装入口；也可从“关于”或托盘主动检查。点击更新窗口中的“立即更新”后下载、校验、安装并重启。下载失败可以重试，更新不要求手动替换程序文件。早期未启用在线更新的本地版需先手动安装一次本仓库的安装版。
 

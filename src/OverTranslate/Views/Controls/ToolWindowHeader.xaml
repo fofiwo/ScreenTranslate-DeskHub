@@ -1,0 +1,33 @@
+<UserControl x:Class="OverTranslate.Views.Controls.ToolWindowHeader"
+ xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+ xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+ Height="40" Loaded="Header_Loaded" Focusable="False">
+ <Grid Background="{DynamicResource AppWindowBg}">
+  <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="12,0,144,0">
+   <Image Source="{Binding Icon, RelativeSource={RelativeSource AncestorType=Window}}" Width="16" Height="16"/>
+   <TextBlock Text="ScreenTranslate" FontFamily="{DynamicResource AppFont}" FontSize="12"
+    Foreground="{DynamicResource AppTextSecondary}" Margin="8,0,0,0" VerticalAlignment="Center"/>
+  </StackPanel>
+  <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" WindowChrome.IsHitTestVisibleInChrome="True">
+   <Button x:Name="MinimizeButton" IsTabStop="False" Content="&#xE921;" Click="Minimize_Click" ToolTip="最小化" AutomationProperties.Name="最小化">
+    <Button.Style><Style TargetType="Button" BasedOn="{StaticResource WindowCaptionButton}">
+     <Setter Property="FocusVisualStyle" Value="{StaticResource ProductFocus}"/>
+     <Style.Triggers><DataTrigger Binding="{Binding ResizeMode, RelativeSource={RelativeSource AncestorType=Window}}" Value="NoResize"><Setter Property="Visibility" Value="Collapsed"/></DataTrigger></Style.Triggers>
+    </Style></Button.Style>
+   </Button>
+   <Button x:Name="MaximizeButton" IsTabStop="False" Click="Maximize_Click">
+    <Button.Style><Style TargetType="Button" BasedOn="{StaticResource WindowCaptionButton}">
+     <Setter Property="Content" Value="&#xE922;"/><Setter Property="ToolTip" Value="最大化"/><Setter Property="AutomationProperties.Name" Value="最大化"/>
+     <Setter Property="FocusVisualStyle" Value="{StaticResource ProductFocus}"/>
+     <Style.Triggers>
+      <DataTrigger Binding="{Binding WindowState, RelativeSource={RelativeSource AncestorType=Window}}" Value="Maximized"><Setter Property="Content" Value="&#xE923;"/><Setter Property="ToolTip" Value="还原"/><Setter Property="AutomationProperties.Name" Value="还原"/></DataTrigger>
+      <DataTrigger Binding="{Binding ResizeMode, RelativeSource={RelativeSource AncestorType=Window}}" Value="NoResize"><Setter Property="Visibility" Value="Collapsed"/></DataTrigger>
+      <DataTrigger Binding="{Binding ResizeMode, RelativeSource={RelativeSource AncestorType=Window}}" Value="CanMinimize"><Setter Property="Visibility" Value="Collapsed"/></DataTrigger>
+     </Style.Triggers>
+    </Style></Button.Style>
+   </Button>
+   <Button x:Name="CloseButton" IsTabStop="False" Content="&#xE8BB;" Style="{StaticResource WindowCloseButton}" FocusVisualStyle="{StaticResource ProductFocus}"
+    Click="Close_Click" ToolTip="关闭" AutomationProperties.Name="关闭"/>
+  </StackPanel>
+ </Grid>
+</UserControl>

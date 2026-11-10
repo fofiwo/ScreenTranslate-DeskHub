@@ -1,4 +1,4 @@
-﻿using System.ComponentModel;
+using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
 using System.Windows;
@@ -17,7 +17,7 @@ using Button = System.Windows.Controls.Button;
 using TextBox = System.Windows.Controls.TextBox;
 using ToolTip = System.Windows.Controls.ToolTip;
 using KeyEventArgs = System.Windows.Input.KeyEventArgs;
-using MessageBox = System.Windows.MessageBox;
+using OverTranslate.Views.Controls;
 using ButtonBase = System.Windows.Controls.Primitives.ButtonBase;
 using ScrollBar = System.Windows.Controls.Primitives.ScrollBar;
 using Brushes = System.Windows.Media.Brushes;
@@ -28,10 +28,13 @@ internal sealed class ClipboardRecordView(ClipboardRecord record, ClipboardHisto
 {
     public event PropertyChangedEventHandler? PropertyChanged;
     private static readonly SemaphoreSlim ImageReads = new(2);
+    private static readonly string[] ImageExtensions = [".png", ".jpg", ".jpeg", ".bmp", ".gif", ".tif", ".tiff", ".webp"];
     public ClipboardRecord Record { get; } = record;
     public bool HasFiles => Record.Files.Length > 0;
-    public string FileKind { get; private set; } = record.Files.Length > 1 ? $"{record.Files.Length} 个文件 / 文件夹" : "文件 / 文件夹";
-    public string FileGlyph { get; private set; } = "\uE8A5";
+    public string DeleteHint => HasFiles ? "移除历史记录，保留源文件" : "彻底删除此记录及保存的内容";
+    public string FileKind { get; private set; } = record.Category;
+    public bool HasFolders { get; private set; }
+    public string FolderLabel { get; private set; } = "文件夹";
     public string FilePaths => string.Join("\n", Record.Files);
     public string TimeLabel => Record.TimeLabel;
     internal void RefreshTime() => PropertyChanged?.Invoke(this, new(nameof(TimeLabel)));
@@ -39,7 +42,7 @@ internal sealed class ClipboardRecordView(ClipboardRecord record, ClipboardHisto
     {
         get { if (Record.HasImage && Record.Text.Length == 0) return ""; var text = Record.DisplayText; return text[..Math.Min(600, text.Length)]; }
     }
-    public string Glyph => Record.Category switch { "图片" => "\uEB9F", "链接" => "\uE71B", "文件" => "\uE8B7", "代码" => "\uE943", _ => "\uE8A5" };
+    public string Glyph => HasFolders ? "\uE8B7" : "";
     private WeakReference<ImageSource>? _thumbnail;
     private bool _imageRead;
     public ImageSource? Thumbnail
@@ -67,16 +70,19 @@ internal sealed class ClipboardRecordView(ClipboardRecord record, ClipboardHisto
             await ImageReads.WaitAsync().ConfigureAwait(false);
             try
             {
-                if (Record.Files.Length == 1)
+                var folders = Record.Files.Count(Directory.Exists);
+                HasFolders = folders > 0;
+                FolderLabel = folders > 1 ? $"{folders} 个文件夹" : "文件夹";
+                if (HasFolders && folders == Record.Files.Length) FileKind = "文件夹";
+                else if (Record.Files.Length == 1)
                 {
                     var path = Record.Files[0];
-                    if (Directory.Exists(path)) { FileKind = "文件夹"; FileGlyph = "\uE8B7"; }
-                    else if (File.Exists(path))
+                    if (File.Exists(path))
                     {
-                        var extension = Path.GetExtension(path).TrimStart('.').ToUpperInvariant();
-                        FileKind = extension.Length > 0 ? $"{extension} 文件" : "文件";
+                        var extension = Path.GetExtension(path).ToLowerInvariant();
+                        FileKind = ImageExtensions.Contains(extension) ? "图片文件"
+                            : extension is ".txt" or ".md" or ".log" or ".csv" ? "文本文件" : "文件";
                     }
-                    else FileKind = "文件 / 文件夹 · 路径不可用";
                 }
                 return LoadImage(true);
             }
@@ -88,7 +94,9 @@ internal sealed class ClipboardRecordView(ClipboardRecord record, ClipboardHisto
         _thumbnail = image is null ? null : new(image);
         IsThumbnailLoading = false;
         PropertyChanged?.Invoke(this, new(nameof(FileKind)));
-        PropertyChanged?.Invoke(this, new(nameof(FileGlyph)));
+        PropertyChanged?.Invoke(this, new(nameof(HasFolders)));
+        PropertyChanged?.Invoke(this, new(nameof(FolderLabel)));
+        PropertyChanged?.Invoke(this, new(nameof(Glyph)));
         PropertyChanged?.Invoke(this, new(nameof(Thumbnail)));
     }
 
@@ -97,7 +105,7 @@ internal sealed class ClipboardRecordView(ClipboardRecord record, ClipboardHisto
         if (Record.HasImage) return ClipboardContent.DecodeImage(store.ReadImage(Record.Id), thumbnail);
         var path = Record.Files.FirstOrDefault();
         if (path is null || !Path.IsPathFullyQualified(path) || path.StartsWith(@"\\")
-            || !new[] { ".png", ".jpg", ".jpeg", ".bmp", ".gif", ".tif", ".tiff", ".webp" }.Contains(Path.GetExtension(path).ToLowerInvariant())) return null;
+            || !ImageExtensions.Contains(Path.GetExtension(path).ToLowerInvariant())) return null;
         // 文件记录仍是引用；按需读取且立即释放句柄，不改变原文件或复制格式。
         using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
         if (stream.Length > 64 * 1024 * 1024) return null;
@@ -140,6 +148,7 @@ public partial class ClipboardHistoryWindow : Window
     private bool _closed;
     private bool _shutdown;
     private bool _busy;
+    private int _copyVersion;
     private bool _importing;
     private bool _rememberPlacement;
     private readonly bool _managePosition;
@@ -151,7 +160,8 @@ public partial class ClipboardHistoryWindow : Window
 
     internal ClipboardHistoryWindow(ClipboardHistoryStore store, Func<ClipboardRecord, Task>? copy = null,
         Func<Task<bool>>? paste = null, ISystemClipboardHistory? systemHistory = null, bool managePosition = false,
-        OverTranslate.Models.AppSettings? settings = null, Func<bool>? saveSettings = null)
+        OverTranslate.Models.AppSettings? settings = null, Func<bool>? saveSettings = null,
+        OverTranslate.Services.Lan.SyncActivityStore? syncActivities = null)
     {
         _store = store;
         _copy = copy ?? (record => ClipboardContent.CopyAsync(record, store));
@@ -161,6 +171,7 @@ public partial class ClipboardHistoryWindow : Window
         _systemHistory = systemHistory ?? new SystemClipboardHistory();
         _managePosition = managePosition;
         InitializeComponent();
+        InitializeSyncFeedback(syncActivities ?? OverTranslate.Services.Lan.SyncActivityStore.Default);
         RefreshBehaviorSettings();
         SourceInitialized += (_, _) =>
         {
@@ -170,14 +181,11 @@ public partial class ClipboardHistoryWindow : Window
         };
         Icon = AppIconService.CreateCompactIcon();
         _store.Changed += Store_Changed;
-        _timeTimer.Tick += (_, _) =>
-        {
-            foreach (var view in _views.Values) view.RefreshTime();
-        };
-        Loaded += (_, _) => { RefreshViews(); SearchBox.Focus(); };
+        _timeTimer.Tick += (_, _) => RefreshVisibleTimes(HistoryList);
+        Loaded += (_, _) => SearchBox.Focus();
         IsVisibleChanged += (_, _) =>
         {
-            if (IsVisible) { _timeTimer.Start(); foreach (var view in _views.Values) view.RefreshTime(); RefreshViews(); }
+            if (IsVisible) { _timeTimer.Start(); RefreshVisibleTimes(HistoryList); RefreshViews(); }
             else { ++_previewVersion; _timeTimer.Stop(); PreviewPanel.Visibility = Visibility.Collapsed; PreviewImage.Source = null; PreviewText.Clear(); }
         };
         Activated += (_, _) =>
@@ -210,7 +218,7 @@ public partial class ClipboardHistoryWindow : Window
             _current ??= new ClipboardHistoryWindow(store, managePosition: true);
             _current.ShowPanel();
         }
-        catch (Exception) { MessageBox.Show("剪贴板历史暂时无法打开，请检查数据目录权限与磁盘空间。", "剪贴板", MessageBoxButton.OK, MessageBoxImage.Warning); }
+        catch (Exception) { AppMessageWindow.ShowMessage("剪贴板历史暂时无法打开，请检查数据目录权限与磁盘空间。", "剪贴板", MessageBoxButton.OK, MessageBoxImage.Warning); }
         finally { if (version == _openVersion) _opening = false; }
     }
 
@@ -273,6 +281,17 @@ public partial class ClipboardHistoryWindow : Window
         if (!_closed && IsVisible && !IsActive && !WindowPinned && !_busy
             && !MenuButton.ContextMenu.IsOpen && !HistoryList.ContextMenu.IsOpen) Dismiss();
     });
+
+    private static void RefreshVisibleTimes(DependencyObject parent)
+    {
+        // 只通知已实现的卡片，避免每次唤起或计时都遍历全部历史。
+        for (var i = 0; i < VisualTreeHelper.GetChildrenCount(parent); i++)
+        {
+            var child = VisualTreeHelper.GetChild(parent, i);
+            if (child is ListBoxItem { DataContext: ClipboardRecordView view }) view.RefreshTime();
+            else RefreshVisibleTimes(child);
+        }
+    }
 
     internal void RefreshViews()
     {
@@ -371,28 +390,31 @@ public partial class ClipboardHistoryWindow : Window
     {
         if (_busy || _filterPending || SelectedRecord is not { } record) return;
         var pasteTarget = _pasteTarget;
+        var version = ++_copyVersion;
+        DateTimeOffset copiedAt;
         _busy = true;
         try
         {
             await _copy(record);
             if (_closed) return;
-            var copiedAt = DateTimeOffset.UtcNow;
+            copiedAt = DateTimeOffset.UtcNow;
             if (paste)
             {
                 if (await _paste(pasteTarget)) { StatusText.Text = "已向原应用发送粘贴快捷键。"; Dismiss(); }
                 else { Show(); Activate(); StatusText.Text = "内容已复制，但无法自动粘贴。请切换到原应用按 Ctrl + V。"; }
             }
             else { StatusText.Text = "已复制。"; Dismiss(); }
-            try
-            {
-                await Task.Run(() => _store.MarkCopied(record.Id, copiedAt));
-                if (!_closed) { _revealCopiedId = record.Id; if (IsVisible) RefreshViews(); }
-            }
-            catch (Exception) { if (!_closed) StatusText.Text += " 复制时间未能保存，请检查目录权限或磁盘空间。"; }
         }
-        catch (IOException) { if (!_closed) StatusText.Text = record.Files.Length > 0 ? "原文件已移动、删除或无法访问，未完成复制。" : "图片附件无法读取，未完成复制。"; }
-        catch (Exception) { if (!_closed) StatusText.Text = "复制失败，请稍后重试；窗口已保留。"; }
+        catch (IOException) { if (!_closed) StatusText.Text = record.Files.Length > 0 ? "原文件已移动、删除或无法访问，未完成复制。" : "图片附件无法读取，未完成复制。"; return; }
+        catch (Exception) { if (!_closed) StatusText.Text = "复制失败，请稍后重试；窗口已保留。"; return; }
         finally { _busy = false; }
+        // 剪贴板操作已结束；历史写盘不应阻止用户再次唤起并复制。
+        try
+        {
+            await Task.Run(() => _store.MarkCopied(record.Id, copiedAt));
+            if (!_closed && version == _copyVersion) { _revealCopiedId = record.Id; if (IsVisible) RefreshViews(); }
+        }
+        catch (Exception) { if (!_closed && version == _copyVersion) StatusText.Text += " 复制时间未能保存，请检查目录权限或磁盘空间。"; }
     }
 
     internal Task PasteSelectedAsync() => CopySelectedAsync(true);
@@ -423,6 +445,7 @@ public partial class ClipboardHistoryWindow : Window
         var record = SelectedRecord;
         foreach (var menu in HistoryList.ContextMenu.Items.OfType<MenuItem>()) menu.IsEnabled = record is not null && !_busy;
         PinMenuItem.Header = record?.PinLabel ?? "置顶记录";
+        SendRecordMenuItem.IsEnabled = record?.Files.Length > 0 && !_busy;
     }
 
     private async void CardAction_Click(object sender, RoutedEventArgs e)
@@ -435,6 +458,7 @@ public partial class ClipboardHistoryWindow : Window
             case "pin": await TogglePinAsync(); break;
             case "delete": await DeleteSelectedAsync(); break;
             case "preview": ShowPreview(); break;
+            case "send": await SendPathsAsync(view.Record.Files); break;
         }
     }
 
@@ -446,9 +470,17 @@ public partial class ClipboardHistoryWindow : Window
     }
     internal async Task DeleteSelectedAsync()
     {
-        if (_busy || _filterPending || SelectedRecord is not { } record) return;
-        try { await Task.Run(() => _store.Delete(record.Id)); RefreshViews(); }
-        catch (Exception) { StatusText.Text = "记录未能完整删除，请检查数据目录权限。原文件不会被删除。"; RefreshViews(); }
+        if (_busy || _importing || _filterPending || SelectedRecord is not { } record) return;
+        _busy = true;
+        ClosePreview();
+        try
+        {
+            await ClipboardHistoryRuntime.DrainPendingAsync(_store);
+            await Task.Run(() => _store.Delete(record.Id));
+            if (!_closed) StatusText.Text = record.Files.Length > 0 ? "已移除历史记录，源文件已保留。" : "已彻底删除记录及保存的内容。";
+        }
+        catch (Exception) { if (!_closed) StatusText.Text = "删除未完成，请解除文件占用、只读属性或检查数据目录权限后重试。"; }
+        finally { _busy = false; if (!_closed) RefreshViews(); }
     }
     private async void PinMenu_Click(object sender, RoutedEventArgs e) => await TogglePinAsync();
     private async void ClearUnpinned_Click(object sender, RoutedEventArgs e) => await ClearUnpinnedAsync();
@@ -460,11 +492,12 @@ public partial class ClipboardHistoryWindow : Window
         ClosePreview();
         try
         {
+            await ClipboardHistoryRuntime.DrainPendingAsync(_store);
             var result = await Task.Run(() => _store.DeleteUnpinned());
             if (_closed) return;
             RefreshViews();
             StatusText.Text = $"已删除 {result.Deleted} 条未置顶记录，置顶内容已保留。"
-                + (result.Failed > 0 ? $"{result.Failed} 条删除失败，请检查文件占用或权限后重试。" : "")
+                + (result.Failed > 0 ? $"{result.Failed} 项内容未清理，请检查占用、只读属性、权限或文件归属后重试。" : "可确认归属的未引用附件与恢复副本已清理。")
                 + (_store.UnreadableCount > 0 ? "无法读取的历史文件已保留。" : "");
         }
         catch (Exception) { if (!_closed) { RefreshViews(); StatusText.Text = "清空未完成，请检查文件占用或权限后重试。"; } }
@@ -642,7 +675,7 @@ public partial class ClipboardHistoryWindow : Window
     private async void Import_Click(object sender, RoutedEventArgs e) => await ImportSystemHistoryAsync();
     internal async Task ImportSystemHistoryAsync()
     {
-        if (_importing || _closed) return;
+        if (_busy || _importing || _closed) return;
         _importing = true; ImportMenuItem.IsEnabled = false;
         var count = 0; var failed = 0;
         try

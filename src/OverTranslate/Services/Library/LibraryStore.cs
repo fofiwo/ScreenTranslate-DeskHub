@@ -159,7 +159,12 @@ internal sealed partial class LibraryStore
                 var next = Clone(_state);
                 change(next);
                 if (track && _state.Sync is not null) LibrarySyncMerge.Track(_state, next);
-                if (shouldPersist is not null && !shouldPersist()) return;
+                if (shouldPersist is not null && !shouldPersist())
+                {
+                    // 上次已提交主文件但恢复副本失败时，同步重试仍需补齐副本。
+                    AppDataPaths.BackupFile(_path);
+                    return;
+                }
                 LibrarySyncMerge.ValidateMetadata(next);
                 Directory.CreateDirectory(Path.GetDirectoryName(_path)!);
                 var temporary = _path + "." + Guid.NewGuid().ToString("N") + ".tmp";
@@ -175,6 +180,7 @@ internal sealed partial class LibraryStore
                     else File.Move(temporary, _path);
                     _state = next;
                     _persisted = true;
+                    AppDataPaths.BackupFile(_path);
                 }
                 finally { if (File.Exists(temporary)) File.Delete(temporary); }
             }

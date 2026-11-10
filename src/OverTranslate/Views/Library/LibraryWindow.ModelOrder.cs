@@ -91,7 +91,7 @@ public partial class LibraryWindow
 
     private void ModelList_DragLeave(object sender, DragEventArgs e) => ClearModelInsertion();
 
-    private void ModelList_Drop(object sender, DragEventArgs e)
+    private async void ModelList_Drop(object sender, DragEventArgs e)
     {
         e.Handled = true;
         e.Effects = DragDropEffects.None;
@@ -99,8 +99,9 @@ public partial class LibraryWindow
         if (!IsModelDrag(e) || ModelDropTarget(e.GetPosition(ModelList)) is not { } target ||
             target.Connection.Id == _draggedConnection!.Id) return;
         var id = _draggedConnection.Id;
-        if (!Run(() => _store.MoveConnection(id, target.Connection.Id, target.After))) return;
-        RefreshViews();
+        if (_changingData) return;
+        e.Effects = DragDropEffects.Move;
+        if (!await ChangeDataAsync(() => _store.MoveConnection(id, target.Connection.Id, target.After))) { e.Effects = DragDropEffects.None; return; }
         ModelList.SelectedItem = ModelList.Items.Cast<LibraryConnection>().FirstOrDefault(c => c.Id == id);
         if (ModelList.SelectedItem is { } selected) ModelList.ScrollIntoView(selected);
         Notice("模型资料顺序已保存。");

@@ -4,7 +4,11 @@
 
 ## 安装
 
-运行 `ScreenTranslate-win-Setup.exe`。两台电脑均应安装本版。安装版将个人数据保存在 `%LocalAppData%/ScreenTranslate-data`，升级程序不会清空该目录。旧便携版的数据不会自动导入安装版。
+运行 `ScreenTranslate-win-Setup.exe`。两台电脑均应安装本版。安装版将个人数据保存在安装根目录的 `data` 中，例如 `D:\Software\ScreenTranslate\data`，不放在更新时替换的 `current` 目录内。首次启动会将旧 `%LocalAppData%/ScreenTranslate-data` 原样复制到新目录，保留旧文件；已有的新目录优先，不自动覆盖或混合其他资料。
+
+Velopack 的覆盖安装和卸载会删除整个安装根目录。为保证重装后仍可恢复，应用在 `%UserProfile%/.ScreenTranslate/recovery` 保存按安装位置区分的恢复副本，设置、资料库及剪贴板历史每次成功保存或删除后同步更新；首次迁移也建立完整副本。恢复目录避开 MSIX 宿主对 LocalAppData 的重定向，确保从桌面或 Codex 启动时使用同一位置。重装后新目录不存在时自动恢复，重新选择安装位置时可从上次登记的资料恢复。目录准备失败会停止启动，备份失败会报告保存失败，避免误报成功。`%UserProfile%/.ScreenTranslate/profile.txt` 只登记本机当前资料位置，供重装和本地预览复用。
+
+恢复副本不包含可重新下载的模型资源、日志或诊断包。不要手动删除恢复副本来更新软件；文件加密仍绑定原 Windows 用户，本机制不代替跨电脑同步或独立备份。旧便携版的其他目录不会自动导入。
 
 ## 首次同步
 

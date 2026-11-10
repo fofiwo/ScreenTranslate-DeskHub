@@ -9,9 +9,9 @@ namespace OverTranslate.Services;
 /// entry pointing at the executable that is about to go.
 /// </summary>
 /// <remarks>
-/// <para>Settings and logs under <see cref="AppDataPaths.Root"/> are left alone: a reinstall picks
-/// them up again, and they are a few kilobytes. The downloads are hundreds of megabytes that nothing
-/// else will ever use.</para>
+/// <para>Velopack removes the install root, including its data directory. Personal data is already
+/// mirrored outside that root by InstalledDataRecovery and is restored on reinstall. This cleanup
+/// never touches the recovery copy. Logs and downloaded assets are not backed up.</para>
 ///
 /// <para>The notification registration goes too (<see cref="NotificationIdentityService"/>): it
 /// names an icon inside the folder being removed.</para>

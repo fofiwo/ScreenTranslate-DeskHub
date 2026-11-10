@@ -95,7 +95,7 @@ public sealed partial class ScreenTranslateShellTests
                 Content = body,
                 Tags = Enumerable.Range(1, 12).Select(i => $"第{i}个用于检查换行的长标签").ToList()
             });
-            typeof(LibraryWindow).GetMethod("RefreshViews", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.Invoke(window, null);
+            ReloadLibrary(window);
             tabs.SelectedIndex = 0;
             ((ListBox)window.FindName("PromptList")).SelectedItem = ((ListBox)window.FindName("PromptList")).Items.Cast<LibraryPrompt>().Single(p => p.Id == crowded.Id);
             Render(window, "type-review-crowded-prompts-minimum", 880, 580);
@@ -106,7 +106,7 @@ public sealed partial class ScreenTranslateShellTests
             crowdedPreview.ScrollToEnd(); window.UpdateLayout();
             Assert.InRange(crowdedPreview.GetRectFromCharacterIndex(body.Length - 1).Bottom, 0, crowdedPreview.ActualHeight);
             var another = store.SavePrompt(new() { Title = crowded.Title + "另一条", Description = crowded.Description, Content = body, Tags = crowded.Tags });
-            typeof(LibraryWindow).GetMethod("RefreshViews", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.Invoke(window, null);
+            ReloadLibrary(window);
             var prompts = (ListBox)window.FindName("PromptList");
             prompts.SelectedItem = prompts.Items.Cast<LibraryPrompt>().Single(p => p.Id == crowded.Id);
             window.UpdateLayout();

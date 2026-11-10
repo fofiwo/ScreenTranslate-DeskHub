@@ -17,6 +17,7 @@ internal static class SyncSetupPrompt
         {
             File.WriteAllText(temporary, JsonSerializer.Serialize(new Choice(enabled)));
             File.Move(temporary, path, true);
+            AppDataPaths.BackupFile(path);
         }
         finally { if (File.Exists(temporary)) File.Delete(temporary); }
     }
