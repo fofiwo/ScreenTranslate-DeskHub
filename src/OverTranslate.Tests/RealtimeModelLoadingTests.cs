@@ -276,7 +276,7 @@ public sealed class RealtimeModelLoadingTests : IDisposable
 
     private sealed class Held
     {
-        private readonly SemaphoreSlim _go = new(0);
+        private readonly ManualResetEventSlim _go = new(false);
         private readonly SemaphoreSlim _started = new(0);
         private int _loads;
 
@@ -292,7 +292,7 @@ public sealed class RealtimeModelLoadingTests : IDisposable
 
         internal void WaitStarted() => Assert.True(_started.Wait(Patience), "the load never started");
 
-        internal void Finish() => _go.Release();
+        internal void Finish() => _go.Set();
     }
 
     [Fact]
@@ -654,13 +654,15 @@ public sealed class RealtimeModelLoadingTests : IDisposable
 
         var log = await SessionLog(async () =>
         {
+            // 会话启动时已有预加载，固定原先偶发的重叠加载顺序。
+            var preload = ocr.Manga!.PreloadAsync();
+            held.WaitStarted();
             session.Start([Block(0, RealtimeTextOrientation.Vertical)], "JA", "ZH-HANT",
                 Models.TranslationProvider.Google, new StillPicture(), readAtOnce: true);
-            held.WaitStarted();
             await Task.Delay(1000);
             session.Stop(releaseRecogniser: true);
             held.Finish();
-            await session.ModelsLoading.WaitAsync(Patience);
+            await Task.WhenAll(preload, session.ModelsLoading).WaitAsync(TimeSpan.FromSeconds(10));
         });
 
         Assert.Contains(log, line => line.StartsWith("Debug|") && line.Contains("models still loading"));
