@@ -201,7 +201,9 @@ public sealed partial class ScreenTranslateShellTests
             var missingView = new ClipboardRecordView(new ClipboardRecord { Files = [imageFile + ".png"] }, store);
             _ = missingView.Thumbnail; PumpUntil(() => !missingView.IsThumbnailLoading); Assert.Null(missingView.Thumbnail);
             Assert.Contains("thumbnail.png.png", missingView.Preview);
-            Assert.Equal("文件", missingView.FileKind);
+            Assert.Equal("图片", missingView.FileKind);
+            Assert.True(missingView.Record.Matches("图片", ""));
+            Assert.False(missingView.Record.Matches("文件", ""));
             Assert.False(missingView.HasFolders);
             using (var stream = new System.IO.MemoryStream())
             {

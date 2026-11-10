@@ -36,7 +36,11 @@ public sealed partial class ScreenTranslateShellTests
                 new FixtureClipboardHistory(), settings: new AppSettings(), saveSettings: () => true,
                 syncActivities: new SyncActivityStore(Path.Combine(root, "activity.json")))
                 { Left = -10000, Top = -10000, ShowActivated = false };
+            window.SetWindowPinned(true);
             window.Show(); window.UpdateLayout();
+            // 模拟 CI 中的焦点切换，来源展示检查必须在失焦后仍可执行。
+            SendMessage(new System.Windows.Interop.WindowInteropHelper(window).Handle, 0x0006, IntPtr.Zero, IntPtr.Zero);
+            window.Dispatcher.Invoke(() => { }, System.Windows.Threading.DispatcherPriority.Background);
             var list = (ListBox)window.FindName("HistoryList");
             PumpUntil(() => list.Items.Count == 1 && Visuals<TextBlock>(list).Any(t => t.Text == captured.Record.Source));
             var source = Visuals<TextBlock>(list).Single(t => t.Text == captured.Record.Source);
