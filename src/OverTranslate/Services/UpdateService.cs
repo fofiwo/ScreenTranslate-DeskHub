@@ -22,8 +22,8 @@ public sealed record UpdateFeedSource(
     bool SeesPrerelease);
 
 /// <summary>
-/// Velopack's UpdateManager, with two changes to how its download treats the deltas: it says out
-/// loud when it gives up on them, and an unfinished download no longer throws away what they need.
+/// Velopack's UpdateManager with explicit delta fallback, base-package retention on unfinished
+/// downloads, and cleanup of installed update packages after a successful startup.
 /// </summary>
 /// <remarks>
 /// Velopack catches a failed delta, logs a warning and starts the full package with nothing raised.
@@ -44,6 +44,33 @@ public sealed class DeltaAwareUpdateManager(IUpdateSource source, UpdateOptions?
 
     // The installed version's full package, for the length of one download; see CleanPackagesExcept.
     private string? _basePackage;
+
+    internal async Task CleanupInstalledPackageAsync()
+    {
+        if (AppId != "ScreenTranslate" || !IsInstalled || IsPortable || Locator.PackagesDir is not { } directory
+            || !Directory.Exists(directory) || File.GetAttributes(directory).HasFlag(FileAttributes.ReparsePoint)) return;
+
+        using var updateLock = await AcquireUpdateLock().ConfigureAwait(false);
+        var packages = Locator.GetLocalPackages().ToArray();
+        // 其他版本或下载残片可能仍待安装，连同重试所需的基础包一起保留。
+        if (packages.Any(p => p.PackageId == AppId && p.Version != CurrentVersion)
+            || Directory.EnumerateFiles(directory, "*.partial").Any()) return;
+
+        foreach (var package in packages.Where(p => p.PackageId == AppId && p.Version == CurrentVersion
+            && p.Type == VelopackAssetType.Full))
+        {
+            if (Path.GetFileName(package.FileName) != package.FileName) continue;
+            var path = Path.Combine(directory, package.FileName);
+            try
+            {
+                if (File.GetAttributes(path).HasFlag(FileAttributes.ReparsePoint)) continue;
+                File.Delete(path);
+                Log.Log(VelopackLogLevel.Information, "Removed installed update package: " + package.FileName, null);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            { Log.Log(VelopackLogLevel.Warning, "Installed update package retained; cleanup will retry next startup.", ex); }
+        }
+    }
 
     public override async Task DownloadUpdatesAsync(
         VelopackUpdateInfo updates, Action<int>? progress = null, CancellationToken cancelToken = default)

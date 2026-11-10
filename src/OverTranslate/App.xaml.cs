@@ -130,6 +130,11 @@ public partial class App
         Services.ClipboardHistory.ClipboardHistoryRuntime.Start(Dispatcher);
         Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Background, Views.ClipboardHistory.LanTransferWindow.RestoreConnections);
         ShellWindow.ShowOrActivate();
+        _ = Task.Run(async () =>
+        {
+            try { await UpdateService.CreateManager().CleanupInstalledPackageAsync(); }
+            catch (Exception ex) { Log.Warn(ex, "Update package cleanup failed; retrying next startup."); }
+        });
         Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Background, Services.Lan.SyncSetupPrompt.ShowIfNeeded);
         UpdateNotifier.StartPolling();
         _ = UpdateNotifier.CheckAsync();
