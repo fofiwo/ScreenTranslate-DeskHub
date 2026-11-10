@@ -169,7 +169,10 @@ public sealed partial class ScreenTranslateShellTests
             var query = (System.Windows.Controls.TextBox)window.FindName("SearchBox");
             var filter = (ListBox)window.FindName("TypeFilter");
             Assert.Empty(list.Items); Assert.Equal(0, importReads);
-            Assert.Equal(7, filter.Items.Count);
+            Assert.Equal(new[] { "全部", "文本", "图片", "链接", "文件", "代码", "富文本", "设备与同步" },
+                filter.Items.Cast<ListBoxItem>().Select(item => item.Content));
+            Assert.Equal(0, filter.SelectedIndex);
+            Assert.False(((Button)window.FindName("SendToDeviceButton")).IsVisible);
             var bitmap = BitmapSource.Create(1, 1, 96, 96, PixelFormats.Bgra32, null, new byte[] { 0, 0, 255, 255 }, 4);
             bitmap.Freeze();
             byte[] png;
