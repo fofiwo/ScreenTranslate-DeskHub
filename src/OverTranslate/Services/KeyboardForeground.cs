@@ -32,6 +32,18 @@ internal static class KeyboardForeground
 
         WindowStyles.SetNoActivate(window, enabled: false);
         TypingWindows.Add(hwnd);
+        Activate(window);
+
+        return previous;
+    }
+
+    // 普通浮窗只激活，不改变输入钩子注册或窗口样式。
+    public static void Activate(Window window)
+    {
+        var hwnd = new WindowInteropHelper(window).Handle;
+        if (hwnd == IntPtr.Zero) return;
+        var foreground = GetForegroundWindow();
+        if (foreground == hwnd) { window.Activate(); return; }
 
         var owner = GetWindowThreadProcessId(foreground, out _);
         var self = GetCurrentThreadId();
@@ -46,8 +58,6 @@ internal static class KeyboardForeground
         {
             if (attached) AttachThreadInput(self, owner, false);
         }
-
-        return previous;
     }
 
     /// <summary>

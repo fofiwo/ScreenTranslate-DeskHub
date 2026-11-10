@@ -90,10 +90,12 @@ public sealed partial class ScreenTranslateShellTests
         finally { window.Close(); Directory.Delete(folder, true); }
         VerifyClipboardFirstWake(click: false);
         VerifyClipboardFirstWake(click: true);
+        VerifyClipboardFirstWake(click: false, slow: true);
         VerifyClipboardFirstWake(click: false, cancel: true);
+        VerifyClipboardPointerActivation();
     }
 
-    private static void VerifyClipboardFirstWake(bool click, bool cancel = false)
+    private static void VerifyClipboardFirstWake(bool click, bool cancel = false, bool slow = false)
     {
         var folder = Path.Combine(Path.GetTempPath(), "clipboard-first-wake-" + Guid.NewGuid().ToString("N"));
         var store = new ClipboardHistoryStore(folder);
@@ -102,6 +104,11 @@ public sealed partial class ScreenTranslateShellTests
         var pastes = 0;
         var saved = 0;
         store.Changed += (_, _) => Interlocked.Exchange(ref saved, 1);
+        using var entered = new ManualResetEventSlim();
+        using var release = new ManualResetEventSlim();
+        var gate = typeof(ClipboardHistoryStore).GetField("_gate", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.GetValue(store)!;
+        var holding = slow ? Task.Run(() => { lock (gate) { entered.Set(); release.Wait(TimeSpan.FromSeconds(15)); } }) : Task.CompletedTask;
+        if (slow) Assert.True(entered.Wait(TimeSpan.FromSeconds(5)));
         var window = new ClipboardHistoryWindow(store, _ => { copies++; return Task.CompletedTask; },
             () => { pastes++; return Task.FromResult(true); }, settings: new AppSettings(), saveSettings: () => true,
             syncActivities: new OverTranslate.Services.Lan.SyncActivityStore(Path.Combine(folder, "activity.json")))
@@ -117,29 +124,23 @@ public sealed partial class ScreenTranslateShellTests
         var query = (TextBox)window.FindName("SearchBox");
         var list = (ListBox)window.FindName("HistoryList");
         var shown = false;
-        window.ContentRendered += (_, _) =>
-        {
-            shown = true;
-            window.Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Input, () =>
-            {
-                if (click)
-                {
-                    list.UpdateLayout();
-                    if (list.ItemContainerGenerator.ContainerFromIndex(0) is not ListBoxItem item) return;
-                    var body = Visuals<TextBlock>(item).First(t => t.Text == "首次唤醒测试");
-                    body.RaiseEvent(new MouseButtonEventArgs(Mouse.PrimaryDevice, 0, MouseButton.Left)
-                        { RoutedEvent = Mouse.PreviewMouseUpEvent });
-                }
-                else query.RaiseEvent(new KeyEventArgs(Keyboard.PrimaryDevice, PresentationSource.FromVisual(window), 0, Key.Enter)
-                    { RoutedEvent = Keyboard.PreviewKeyDownEvent });
-            });
-        };
+        window.ContentRendered += (_, _) => shown = true;
         try
         {
             ClipboardHistoryWindow.Open();
+            if (slow)
+            {
+                PumpUntil(() => shown);
+                Assert.True(window.IsVisible);
+                Assert.True(window.IsRefreshing);
+                Assert.Null(window.SelectedRecord);
+                Assert.Contains("加载", ((TextBlock)window.FindName("EmptyTitle")).Text);
+                query.Text = "首次";
+                Assert.Equal("首次", query.Text);
+                release.Set(); holding.GetAwaiter().GetResult();
+            }
             if (cancel)
             {
-                Assert.False(window.IsVisible);
                 ClipboardHistoryWindow.Toggle();
                 PumpUntil(() => !window.IsRefreshing);
                 Assert.False(window.IsVisible);
@@ -147,6 +148,17 @@ public sealed partial class ScreenTranslateShellTests
                 ClipboardHistoryWindow.Open();
             }
             PumpUntil(() => shown && !window.IsRefreshing && !window.IsBusy);
+            window.UpdateLayout();
+            if (click)
+            {
+                var item = (ListBoxItem)list.ItemContainerGenerator.ContainerFromIndex(0);
+                var body = Visuals<TextBlock>(item).First(t => t.Text == "首次唤醒测试");
+                body.RaiseEvent(new MouseButtonEventArgs(Mouse.PrimaryDevice, 0, MouseButton.Left)
+                    { RoutedEvent = Mouse.PreviewMouseUpEvent });
+            }
+            else query.RaiseEvent(new KeyEventArgs(Keyboard.PrimaryDevice, PresentationSource.FromVisual(window), 0, Key.Enter)
+                { RoutedEvent = Keyboard.PreviewKeyDownEvent });
+            PumpUntil(() => !window.IsBusy);
             Assert.Equal(1, copies);
             Assert.Equal(1, pastes);
             Assert.False(window.IsVisible);
@@ -154,7 +166,8 @@ public sealed partial class ScreenTranslateShellTests
         }
         finally
         {
-            window.Close();
+            release.Set(); holding.GetAwaiter().GetResult();
+            ClipboardHistoryWindow.Shutdown();
             pending.SetValue(loader, previousStore); Directory.Delete(folder, true);
         }
     }

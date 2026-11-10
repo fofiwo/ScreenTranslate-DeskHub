@@ -139,7 +139,7 @@ public partial class ClipboardHistoryWindow : Window
     private int _previewVersion;
     private bool _filterPending;
     private bool _refreshing;
-    private Task _refreshTask = Task.CompletedTask;
+    private bool _debounceRefresh;
     private int _refreshVersion;
     private int _changeQueued;
     private IReadOnlyList<ClipboardRecord>? _shownSnapshot;
@@ -184,6 +184,10 @@ public partial class ClipboardHistoryWindow : Window
         _store.Changed += Store_Changed;
         _timeTimer.Tick += (_, _) => RefreshVisibleTimes(HistoryList);
         Loaded += (_, _) => SearchBox.Focus();
+        MouseEnter += (_, _) => Dispatcher.BeginInvoke(DispatcherPriority.Input, () =>
+        {
+            if (!_closed && IsVisible && IsEnabled && IsMouseOver) KeyboardForeground.Activate(this);
+        });
         IsVisibleChanged += (_, _) =>
         {
             if (IsVisible) { _timeTimer.Start(); RefreshVisibleTimes(HistoryList); RefreshViews(); }
@@ -191,7 +195,6 @@ public partial class ClipboardHistoryWindow : Window
         };
         Activated += (_, _) =>
         {
-            _pasteTarget = OriginalApplicationPaste.CaptureTarget();
             if (ClipboardHistoryRuntime.LastError is { } error) StatusText.Text = error;
         };
         Deactivated += (_, _) => ScheduleDismiss();
@@ -216,11 +219,8 @@ public partial class ClipboardHistoryWindow : Window
         {
             var store = await ClipboardHistoryRuntime.StoreAsync;
             if (version != _openVersion) return;
-            var window = _current ??= new ClipboardHistoryWindow(store, managePosition: true);
-            // 首次显示前准备好列表与默认选中项，避免首个点击／Enter 被加载过程吞掉。
-            if (window._shownSnapshot is null) await window._refreshTask;
-            if (version != _openVersion) return;
-            window.ShowPanel();
+            _current ??= new ClipboardHistoryWindow(store, managePosition: true);
+            _current.ShowPanel();
         }
         catch (Exception) { AppMessageWindow.ShowMessage("剪贴板历史暂时无法打开，请检查数据目录权限与磁盘空间。", "剪贴板", MessageBoxButton.OK, MessageBoxImage.Warning); }
         finally { if (version == _openVersion) _opening = false; }
@@ -238,10 +238,11 @@ public partial class ClipboardHistoryWindow : Window
         _pasteTarget = OriginalApplicationPaste.CaptureTarget();
         RefreshBehaviorSettings();
         SearchBox.Clear(); TypeFilter.SelectedIndex = 0;
+        RefreshViews();
         if (!IsVisible) Show();
         if (WindowState == WindowState.Minimized) WindowState = WindowState.Normal;
         if (_managePosition) PositionWindow();
-        Activate(); SearchBox.Focus();
+        KeyboardForeground.Activate(this); SearchBox.Focus();
     }
 
     internal void ToggleVisibility()
@@ -297,12 +298,13 @@ public partial class ClipboardHistoryWindow : Window
         }
     }
 
-    internal void RefreshViews()
+    internal void RefreshViews(bool debounce = false)
     {
         if (_closed || HistoryList is null || TypeFilter is null || SearchBox is null || EmptyState is null) return;
         SearchPlaceholder.Visibility = SearchBox.Text.Length == 0 ? Visibility.Visible : Visibility.Collapsed;
         ++_refreshVersion;
-        if (!_refreshing) _refreshTask = RefreshLoopAsync();
+        _debounceRefresh = debounce;
+        if (!_refreshing) _ = RefreshLoopAsync();
     }
 
     private async Task RefreshLoopAsync()
@@ -313,8 +315,8 @@ public partial class ClipboardHistoryWindow : Window
             while (!_closed)
             {
                 var version = _refreshVersion;
-                // 合并一轮唤起事件、连续复制通知及快速输入；旧查询不覆盖新条件。
-                await Task.Delay(100, _lifetime.Token);
+                // 只有连续搜索输入需要防抖；唤醒和数据刷新立即处理。
+                if (_debounceRefresh) await Task.Delay(100, _lifetime.Token);
                 if (version != _refreshVersion) continue;
                 var category = (TypeFilter.SelectedItem as ListBoxItem)?.Content as string ?? "全部";
                 var query = SearchBox.Text.Trim();
@@ -355,7 +357,18 @@ public partial class ClipboardHistoryWindow : Window
             }
         }
         catch (OperationCanceledException) when (_closed) { }
-        catch (Exception) { if (!_closed) StatusText.Text = "历史加载失败，请重试。"; }
+        catch (Exception)
+        {
+            if (!_closed)
+            {
+                StatusText.Text = "历史加载失败，请重试。";
+                if (_shownSnapshot is null)
+                {
+                    EmptyTitle.Text = "历史加载失败";
+                    EmptyHint.Text = "请重新打开面板重试，已有记录不会被删除。";
+                }
+            }
+        }
         finally { _refreshing = false; }
     }
 
@@ -392,7 +405,7 @@ public partial class ClipboardHistoryWindow : Window
             if (syncing) { ClosePreview(); RefreshSendRecipients(); return; }
         }
         if (HistoryList is not null) { _filterPending = true; HistoryList.IsEnabled = false; }
-        RefreshViews();
+        RefreshViews(debounce: ReferenceEquals(sender, SearchBox));
     }
     private void ClearSearch_Click(object sender, RoutedEventArgs e) { SearchBox.Clear(); SearchBox.Focus(); }
     private void Hide_Click(object sender, RoutedEventArgs e) => Dismiss();

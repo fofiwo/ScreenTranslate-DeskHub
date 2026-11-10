@@ -129,6 +129,11 @@ public sealed partial class ScreenTranslateShellTests
                     VerifyUpdateEntries();
                     return;
                 }
+                if (Environment.GetEnvironmentVariable("SCREEN_TRANSLATE_CLIPBOARD_HOVER_ONLY") == "1")
+                {
+                    VerifyClipboardPointerActivation();
+                    return;
+                }
                 if (Environment.GetEnvironmentVariable("SCREEN_TRANSLATE_CLIPBOARD_INTERACTION_ONLY") == "1")
                 {
                     VerifyClipboardClickPaste();
