@@ -32,7 +32,8 @@ public sealed partial class ScreenTranslateShellTests
             window.Show(); window.UpdateLayout();
             PumpUntil(() => !window.IsRefreshing);
             var tabs = (ListBox)window.FindName("TypeFilter");
-            var send = (Button)window.FindName("SendToDeviceButton");
+            var send = (Button)window.FindName("SendFilesButton");
+            Assert.Null(window.FindName("SendToDeviceButton"));
             var records = (ListBox)window.FindName("HistoryList");
             var search = (TextBox)window.FindName("SearchBox");
             Assert.Equal("全部", ((ListBoxItem)tabs.SelectedItem).Content);
@@ -68,15 +69,59 @@ public sealed partial class ScreenTranslateShellTests
             Assert.Contains("剪贴板：已完成", summary.Text);
             Assert.Contains("资料库：未被接收", summary.Text);
             Assert.Contains("文件：等待对方接收", summary.Text);
-            Assert.True(((Button)window.FindName("SendToDeviceButton")).IsEnabled);
+            Assert.False(((Button)window.FindName("SendFilesButton")).IsEnabled);
+            var sources = Assert.IsType<ListBox>(window.FindName("SendSourceList"));
+            var recipient = Assert.IsType<ComboBox>(window.FindName("SendRecipientBox"));
+            Assert.True(sources.IsVisible); Assert.True(recipient.IsVisible);
+            var droppedFolder = System.IO.Path.Combine(root, "dropped-folder");
+            System.IO.Directory.CreateDirectory(droppedFolder);
+            var payload = new System.Windows.DataObject(System.Windows.DataFormats.FileDrop, new[] { droppedFolder });
+            System.Windows.DragEventArgs RaiseDrop(RoutedEvent routedEvent)
+            {
+                var args = (System.Windows.DragEventArgs)Activator.CreateInstance(typeof(System.Windows.DragEventArgs),
+                    System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic, null,
+                    [payload, System.Windows.DragDropKeyStates.LeftMouseButton, System.Windows.DragDropEffects.Copy,
+                        sources, new Point(10, 10)], null)!;
+                args.RoutedEvent = routedEvent; sources.RaiseEvent(args); return args;
+            }
+            Assert.Equal(System.Windows.DragDropEffects.Copy, RaiseDrop(System.Windows.DragDrop.PreviewDragOverEvent).Effects);
+            Assert.True(RaiseDrop(System.Windows.DragDrop.PreviewDropEvent).Handled);
+            Assert.Equal(droppedFolder, Assert.Single(sources.Items.Cast<string>()));
+            RaiseDrop(System.Windows.DragDrop.PreviewDropEvent);
+            Assert.Single(sources.Items);
+            payload.SetData(System.Windows.DataFormats.FileDrop, new[] { System.IO.Path.Combine(root, "missing") });
+            RaiseDrop(System.Windows.DragDrop.PreviewDropEvent);
+            Assert.Single(sources.Items);
+            Assert.Contains("无法访问", ((TextBlock)window.FindName("SendSelectionHint")).Text);
+            payload.SetData(System.Windows.DataFormats.FileDrop, Enumerable.Range(0, 101)
+                .Select(i => System.IO.Path.Combine(root, "too-many-" + i)).ToArray());
+            RaiseDrop(System.Windows.DragDrop.PreviewDropEvent);
+            Assert.Single(sources.Items);
+            Assert.Contains("最多 100 项", ((TextBlock)window.FindName("SendSelectionHint")).Text);
+            var standalone = System.IO.Path.Combine(root, "standalone.txt");
+            System.IO.File.WriteAllText(standalone, "standalone fixture");
+            payload.SetData(System.Windows.DataFormats.FileDrop, new[] { standalone });
+            RaiseDrop(System.Windows.DragDrop.PreviewDropEvent);
+            Assert.Equal(2, sources.Items.Count);
+            Assert.False(send.IsEnabled);
+            var emptyFolder = System.IO.Path.Combine(droppedFolder, "empty");
+            System.IO.Directory.CreateDirectory(emptyFolder);
+            System.IO.File.WriteAllText(System.IO.Path.Combine(droppedFolder, "fixture.txt"), "inline folder fixture");
+            VerifyInlineFolderDelivery(window, root, send);
+            ((Button)window.FindName("ClearSendSourcesButton")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Assert.Empty(sources.Items);
             Assert.True(window.AllowDrop);
             Assert.Equal(Visibility.Visible, ((ProgressBar)window.FindName("SyncProgress")).Visibility);
             Render(window, "clipboard-sync-status-light", 560, 700);
             ApplyTheme(System.Windows.Application.Current, "Dark");
             window.Width = 460; window.Height = 400; window.UpdateLayout();
             Render(window, "clipboard-sync-status-dark-minimum", 460, 400);
+            var scroll = (ScrollViewer)window.FindName("SendPageScroll");
+            scroll.ScrollToEnd(); window.UpdateLayout();
+            Render(window, "clipboard-inline-drop-dark-minimum", 460, 400);
+            AssertInside(window, (Button)window.FindName("SendFilesButton"));
             foreach (var tab in tabs.Items.Cast<ListBoxItem>()) AssertInside(tabs, tab);
-            Assert.True(((Button)window.FindName("SendToDeviceButton")).ActualWidth > 60);
+            Assert.True(((Button)window.FindName("SendFilesButton")).ActualWidth > 60);
             Assert.True(((TextBlock)window.FindName("SyncConnectionText")).ActualWidth < 350);
             ApplyTheme(System.Windows.Application.Current, "Light");
             journal.Update(new("files", SyncKind.Files, false, "另一台电脑", SyncState.Rejected));
@@ -151,15 +196,120 @@ public sealed partial class ScreenTranslateShellTests
             window.ShowPanel();
             PumpUntil(() => !window.IsRefreshing);
             Assert.NotNull(window.SelectedRecord);
+            var previousCopiedAt = clipboard.Read().Single().CopiedAt;
             window.RaiseEvent(new KeyEventArgs(Keyboard.PrimaryDevice, PresentationSource.FromVisual(window), 0, Key.Enter)
                 { RoutedEvent = Keyboard.PreviewKeyDownEvent });
             PumpUntil(() => !window.IsBusy);
             Assert.Equal(1, copies);
+            PumpUntil(() => clipboard.Read().Single().CopiedAt > previousCopiedAt);
         }
         finally
         {
             window.Close();
             System.IO.Directory.Delete(root, true);
         }
+    }
+
+    private static void VerifyInlineFolderDelivery(ClipboardHistoryWindow window, string root, Button send)
+    {
+        var receive = System.IO.Path.Combine(root, "received");
+        System.IO.Directory.CreateDirectory(receive);
+        var host = new LanNode("fixture-receiver", () => receive);
+        var client = new LanTransferWindow(System.IO.Path.Combine(root, "send-prefs.json"));
+        var connections = (List<LanTransferWindow>)typeof(LanTransferWindow).GetField("Connections",
+            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!.GetValue(null)!;
+        var node = (LanNode)Field(client, "_node")!;
+        void Complete(Task task) { PumpUntil(() => task.IsCompleted); task.GetAwaiter().GetResult(); }
+        try
+        {
+            host.ConfirmPairAsync = (_, _) => Task.FromResult(true);
+            host.ConfirmFilesAsync = (_, _) => Task.FromResult<string?>(receive);
+            Complete(host.ListenAsync(System.Net.IPAddress.Loopback, 0));
+            connections.Add(client);
+            Complete(node.ConnectAsync(System.Net.IPAddress.Loopback, host.Port, host.PairCode));
+            PumpUntil(() => send.IsEnabled);
+            Render(window, "clipboard-inline-folder-ready", 560, 700);
+            send.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Assert.True(window.IsBusy); Assert.False(send.IsEnabled);
+            PumpUntil(() => !window.IsBusy);
+            Assert.Contains("已全部送达", ((TextBlock)window.FindName("SendSelectionHint")).Text);
+            var batch = Assert.Single(System.IO.Directory.GetDirectories(receive));
+            Assert.Equal("inline folder fixture", System.IO.File.ReadAllText(System.IO.Path.Combine(batch, "dropped-folder", "fixture.txt")));
+            Assert.True(System.IO.Directory.Exists(System.IO.Path.Combine(batch, "dropped-folder", "empty")));
+            Assert.Equal("standalone fixture", System.IO.File.ReadAllText(System.IO.Path.Combine(batch, "standalone.txt")));
+            host.ConfirmFilesAsync = (_, _) => Task.FromResult<string?>(null);
+            send.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            PumpUntil(() => !window.IsBusy);
+            Assert.Contains("未接收", ((TextBlock)window.FindName("SendSelectionHint")).Text);
+            Assert.Single(System.IO.Directory.GetDirectories(receive));
+            var stale = Assert.Single(LanTransferWindow.ConnectedChoices());
+            VerifyDisconnectedRecipientIsNotReplaced(window, root, send, node, stale.Id, Complete);
+            Complete(node.StopAsync());
+            var result = LanTransferWindow.SendToDeviceAsync(stale, [System.IO.Path.Combine(root, "dropped-folder")]);
+            Complete(result); Assert.Contains("连接已变化", result.Result);
+            host.ConfirmFilesAsync = async (_, token) =>
+            {
+                await Task.Delay(Timeout.InfiniteTimeSpan, token); return receive;
+            };
+            Complete(node.ConnectAsync(System.Net.IPAddress.Loopback, host.Port, host.PairCode));
+            PumpUntil(() => send.IsEnabled);
+            send.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            PumpUntil(() => window.IsBusy);
+            var openedHistory = false;
+            window.Dispatcher.BeginInvoke(() =>
+            {
+                var history = System.Windows.Application.Current.Windows.OfType<SyncActivityWindow>().SingleOrDefault();
+                if (history is not null) { openedHistory = true; history.Close(); }
+            });
+            ((Button)window.FindName("SyncHistoryButton")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Assert.True(openedHistory); Assert.True(window.IsBusy);
+            var cancel = Assert.IsType<Button>(window.FindName("CancelInlineSendButton"));
+            Assert.True(cancel.IsVisible); Assert.True(cancel.IsEnabled);
+            Assert.False(((Button)window.FindName("ClearSendSourcesButton")).IsEnabled);
+            Assert.False(((ComboBox)window.FindName("SendRecipientBox")).IsEnabled);
+            window.Width = 460; window.Height = 400; window.UpdateLayout();
+            Render(window, "clipboard-inline-cancel-minimum", 460, 400);
+            AssertInside(window, cancel);
+            window.Width = 560; window.Height = 700; window.UpdateLayout();
+            cancel.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            PumpUntil(() => !window.IsBusy);
+            Assert.Contains("取消", ((TextBlock)window.FindName("SendSelectionHint")).Text);
+            Assert.False(cancel.IsVisible);
+            Assert.Single(System.IO.Directory.GetDirectories(receive));
+        }
+        finally { Complete(client.ShutdownAsync()); Complete(host.DisposeAsync().AsTask()); }
+    }
+
+    private static void VerifyDisconnectedRecipientIsNotReplaced(ClipboardHistoryWindow window, string root,
+        Button send, LanNode original, string originalId, Action<Task> complete)
+    {
+        var backupFolder = System.IO.Path.Combine(root, "backup-received");
+        System.IO.Directory.CreateDirectory(backupFolder);
+        var host = new LanNode("backup-fixture", () => backupFolder);
+        var client = new LanTransferWindow(System.IO.Path.Combine(root, "backup-prefs.json"));
+        var connections = (List<LanTransferWindow>)typeof(LanTransferWindow).GetField("Connections",
+            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!.GetValue(null)!;
+        var node = (LanNode)Field(client, "_node")!;
+        try
+        {
+            host.ConfirmPairAsync = (_, _) => Task.FromResult(true);
+            host.ConfirmFilesAsync = (_, _) => Task.FromResult<string?>(backupFolder);
+            complete(host.ListenAsync(System.Net.IPAddress.Loopback, 0)); connections.Add(client);
+            complete(node.ConnectAsync(System.Net.IPAddress.Loopback, host.Port, host.PairCode));
+            var recipient = (ComboBox)window.FindName("SendRecipientBox");
+            PumpUntil(() => recipient.Items.Count == 2);
+            recipient.SelectedItem = recipient.Items.Cast<LanDeviceChoice>().Single(p => p.Id == originalId);
+            complete(original.StopAsync());
+            PumpUntil(() => recipient.Items.Count == 1);
+            Assert.Null(recipient.SelectedItem);
+            Assert.False(send.IsEnabled);
+            ((ListBox)window.FindName("TypeFilter")).SelectedIndex = 0;
+            ((ListBoxItem)window.FindName("SyncTab")).IsSelected = true;
+            Assert.Null(recipient.SelectedItem);
+            Assert.False(send.IsEnabled);
+            send.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Assert.Empty(System.IO.Directory.GetFileSystemEntries(backupFolder));
+        }
+        finally { complete(client.ShutdownAsync()); complete(host.DisposeAsync().AsTask()); }
     }
 }

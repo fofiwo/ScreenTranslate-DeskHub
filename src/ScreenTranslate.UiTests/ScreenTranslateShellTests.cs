@@ -47,6 +47,18 @@ public sealed partial class ScreenTranslateShellTests
                     Source = new Uri("pack://application:,,,/ScreenTranslate;component/Resources/Strings.zh-Hans.xaml", UriKind.Absolute)
                 };
                 ApplyTheme(app, "Light");
+                if (Environment.GetEnvironmentVariable("SCREEN_TRANSLATE_REFRESH_AUDIT_ONLY") == "1")
+                {
+                    VerifyRealtimeReloadPerformance();
+                    VerifyIndependentLibrarySearchPerformance();
+                    VerifyCompactLibrary(libraryDirectory);
+                    return;
+                }
+                if (Environment.GetEnvironmentVariable("SCREEN_TRANSLATE_TASKBAR_ONLY") == "1")
+                {
+                    VerifyTaskbarRestorePerformance();
+                    return;
+                }
                 if (Environment.GetEnvironmentVariable("SCREEN_TRANSLATE_FRONTEND_PERFORMANCE_ONLY") == "1")
                 {
                     VerifyLibraryReadPerformance();
@@ -66,6 +78,12 @@ public sealed partial class ScreenTranslateShellTests
                     VerifyLibraryWindow();
                     VerifyDeletedPromptEditorKeepsInput();
                     VerifyAiSettingsPage();
+                    return;
+                }
+                if (Environment.GetEnvironmentVariable("SCREEN_TRANSLATE_COPY_SYNC_ONLY") == "1")
+                {
+                    VerifyPromptCopyAdversarial(libraryDirectory);
+                    VerifySyncedCountRefresh(libraryDirectory);
                     return;
                 }
                 if (Environment.GetEnvironmentVariable("SCREEN_TRANSLATE_CLIPBOARD_TOGGLE_ONLY") == "1")

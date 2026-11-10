@@ -80,7 +80,7 @@ public sealed class LibrarySyncTests : IDisposable
     }
 
     [Fact]
-    public void CopyCountsAndLocalSettingsStayLocalAndDoNotCreateSyncRevisions()
+    public void CopyCountsSyncWithoutContentRevisionsWhileLocalSettingsStayLocal()
     {
         var a = Store("a"); var b = Store("b");
         var p = a.SavePrompt(new() { Content = "initial" }); Exchange(a, b);
@@ -88,8 +88,125 @@ public sealed class LibrarySyncTests : IDisposable
         a.RememberCopiedPrompt(p.Id); a.Update(s => { s.SelectedTab = 1; s.Ai.Model = "local-ai"; });
         Exchange(a, b);
         Assert.Equal(revision, a.ExportSync().Items.Single().Version.Revision);
-        Assert.Equal(1, a.Read().Prompts.Single().CopyCount); Assert.Equal(0, b.Read().Prompts.Single().CopyCount);
+        Assert.Equal(1, a.Read().Prompts.Single().CopyCount); Assert.Equal(1, b.Read().Prompts.Single().CopyCount);
         Assert.Equal("", b.Read().Ai.Model); Assert.Equal(0, b.Read().SelectedTab);
+    }
+
+    [Fact]
+    public void OfflineCopiesAccumulateAcrossDevicesAndReplayDoesNotCountTwice()
+    {
+        var a = Store("a"); var b = Store("b"); var c = Store("c");
+        var p = a.SavePrompt(new() { Content = "count fixture" }); Exchange(a, b); Exchange(a, c);
+        a.RememberCopiedPrompt(p.Id); a.RememberCopiedPrompt(p.Id);
+        b.RememberCopiedPrompt(p.Id); c.RememberCopiedPrompt(p.Id);
+        var stale = a.ExportSync();
+        for (var i = 0; i < 3; i++) { Exchange(a, b); Exchange(b, c); Exchange(c, a); }
+        foreach (var store in new[] { Store("a"), Store("b"), Store("c") })
+        {
+            store.MergeSync(stale);
+            Assert.Equal(4, Assert.Single(store.Read().Prompts).CopyCount);
+        }
+        b.RememberCopiedPrompt(p.Id); Exchange(a, b); Exchange(a, c);
+        Assert.Equal(5, Assert.Single(c.Read().Prompts).CopyCount);
+        Assert.Single(a.Read().Prompts);
+        Assert.Equal(JsonSerializer.Serialize(a.ExportSync()), JsonSerializer.Serialize(c.ExportSync()));
+    }
+
+    [Fact]
+    public void HistoricalCountsSurviveFirstSyncEditingAndStaleDeletionReplay()
+    {
+        var a = Store("a"); var b = Store("b");
+        var p = new LibraryPrompt { Content = "historical fixture", CopyCount = 7 };
+        a.Update(s => s.Prompts.Add(p)); Exchange(a, b);
+        Assert.Equal(7, Assert.Single(b.Read().Prompts).CopyCount);
+        var draft = b.Read().Prompts.Single();
+        a.RememberCopiedPrompt(p.Id); b.RememberCopiedPrompt(p.Id);
+        draft.Content = "edited fixture"; b.SavePrompt(draft);
+        Exchange(a, b);
+        Assert.Equal(9, Assert.Single(a.Read().Prompts).CopyCount);
+        var stale = b.ExportSync(); a.Update(s => s.Prompts.Clear());
+        Exchange(a, b); a.MergeSync(stale);
+        Assert.Empty(a.Read().Prompts); Assert.Empty(b.Read().Prompts);
+    }
+
+    [Fact]
+    public void FirstPairAddsHistoricalLocalCountsFromBothDevices()
+    {
+        var a = Store("a"); var b = Store("b");
+        a.Update(s => s.Prompts.Add(new() { Id = "shared", Content = "fixture", CopyCount = 7 }));
+        b.Update(s => s.Prompts.Add(new() { Id = "shared", Content = "fixture", CopyCount = 3 }));
+        Exchange(a, b); Exchange(a, b);
+        Assert.Equal(10, Assert.Single(a.Read().Prompts).CopyCount);
+        Assert.Equal(10, Assert.Single(b.Read().Prompts).CopyCount);
+    }
+
+    [Fact]
+    public void MovingLegacyMetadataDoesNotAttributeOldCopiesToTheNewDeviceAgain()
+    {
+        var a = Store("a"); var b = Store("b");
+        a.Update(s => s.Prompts.Add(new() { Id = "shared", Content = "fixture", CopyCount = 7 }));
+        a.ExportSync();
+        var legacy = a.Read();
+        legacy.Prompts.Single().CopyCounts.Clear();
+        legacy.Sync!.DeviceBindingProtected = "synthetic-unreadable-device-marker";
+        Directory.CreateDirectory(Path.Combine(_directory, "b"));
+        File.WriteAllText(Path.Combine(_directory, "b", "library.json"), JsonSerializer.Serialize(legacy));
+        b.RememberCopiedPrompt("shared");
+        Exchange(a, b);
+        Assert.Equal(8, Assert.Single(a.Read().Prompts).CopyCount);
+        Assert.Equal(8, Assert.Single(b.Read().Prompts).CopyCount);
+    }
+
+    [Fact]
+    public void LegacyCountAttributionIsPersistedWhenSyncStarts()
+    {
+        var a = Store("a");
+        a.Update(s => s.Prompts.Add(new() { Content = "fixture", CopyCount = 7 }));
+        a.ExportSync();
+        Assert.Equal(7, Assert.Single(Assert.Single(Store("a").Read().Prompts).CopyCounts).Value);
+    }
+
+    [Fact]
+    public void OldPeerWithoutCounterFieldsCannotEraseCountsOnContentUpdate()
+    {
+        var a = Store("a"); var b = Store("b");
+        var p = a.SavePrompt(new() { Content = "fixture" }); a.RememberCopiedPrompt(p.Id); Exchange(a, b);
+        var draft = b.Read().Prompts.Single(); draft.Content = "old peer edit"; b.SavePrompt(draft);
+        var oldPeer = b.ExportSync();
+        foreach (var item in oldPeer.Items) if (item.Prompt is { } prompt) prompt.CopyCounts.Clear();
+        a.MergeSync(oldPeer);
+        Assert.Equal(1, Assert.Single(a.Read().Prompts).CopyCount);
+        Assert.Equal("old peer edit", a.Read().Prompts.Single().Content);
+    }
+
+    [Fact]
+    public void CombinedCounterOverflowRollsBackTheWholeIncomingBatch()
+    {
+        var a = Store("a"); var b = Store("b");
+        a.Update(s => s.Prompts.Add(new() { Id = "shared", Content = "fixture", CopyCount = long.MaxValue }));
+        b.Update(s => s.Prompts.Add(new() { Id = "shared", Content = "fixture", CopyCount = 1 }));
+        b.SavePrompt(new() { Content = "must not partially merge" });
+        var before = File.ReadAllBytes(Path.Combine(_directory, "a", "library.json"));
+        // 初始化也在同一提交中；失败不得保存此前已经处理的项目或元数据。
+        Assert.Throws<OverflowException>(() => a.MergeSync(b.ExportSync()));
+        Assert.Equal(before, File.ReadAllBytes(Path.Combine(_directory, "a", "library.json")));
+        Assert.Equal(long.MaxValue, Assert.Single(Store("a").Read().Prompts).CopyCount);
+        Assert.Throws<OverflowException>(() => a.RememberCopiedPrompt("shared"));
+        Assert.Equal(before, File.ReadAllBytes(Path.Combine(_directory, "a", "library.json")));
+    }
+
+    [Fact]
+    public void InvalidOrOverflowingCountersCannotPartiallyCommit()
+    {
+        var a = Store("a"); var b = Store("b");
+        var p = a.SavePrompt(new() { Content = "fixture" }); a.RememberCopiedPrompt(p.Id);
+        foreach (var counters in new Dictionary<string, long>[] {
+            new() { [Guid.NewGuid().ToString("N")] = -1 }, new() { ["not-an-actor"] = 1 },
+            new() { [Guid.NewGuid().ToString("N")] = long.MaxValue, [Guid.NewGuid().ToString("N")] = 1 } })
+        {
+            var snapshot = a.ExportSync(); snapshot.Items.Single().Prompt!.CopyCounts = counters;
+            Assert.Throws<InvalidDataException>(() => b.MergeSync(snapshot)); Assert.Empty(b.Read().Prompts);
+        }
     }
 
     [Fact]

@@ -80,7 +80,7 @@ internal sealed class ClipboardRecordView(ClipboardRecord record, ClipboardHisto
                     if (File.Exists(path))
                     {
                         var extension = Path.GetExtension(path).ToLowerInvariant();
-                        FileKind = ImageExtensions.Contains(extension) ? "图片文件"
+                        FileKind = ClipboardRecord.IsImageFile(path) ? "图片文件"
                             : extension is ".txt" or ".md" or ".log" or ".csv" ? "文本文件" : "文件";
                     }
                 }
@@ -385,7 +385,7 @@ public partial class ClipboardHistoryWindow : Window
             var syncing = SyncTab.IsSelected;
             SyncPanel.Visibility = syncing ? Visibility.Visible : Visibility.Collapsed;
             SearchPanel.Visibility = HistoryPanel.Visibility = HistoryFooter.Visibility = syncing ? Visibility.Collapsed : Visibility.Visible;
-            if (syncing) { ClosePreview(); return; }
+            if (syncing) { ClosePreview(); RefreshSendRecipients(); return; }
         }
         if (HistoryList is not null) { _filterPending = true; HistoryList.IsEnabled = false; }
         RefreshViews();

@@ -122,9 +122,11 @@
     <ListBoxItem x:Name="SyncTab" Content="设备与同步"/>
    </ListBox>
    <TextBlock x:Name="StatusText" Grid.Row="3" Margin="4,0,4,6" TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource AppTextSecondary}" AutomationProperties.LiveSetting="Polite"/>
-    <Border x:Name="SyncPanel" Grid.Row="4" Visibility="Collapsed" VerticalAlignment="Top" Background="{DynamicResource AppHeaderBg}" BorderBrush="{DynamicResource AppBorder}" BorderThickness="1" CornerRadius="8" Padding="8" Margin="0,0,0,6">
-     <StackPanel>
-      <DockPanel><Button x:Name="SendToDeviceButton" Content="发送文件" DockPanel.Dock="Right" Style="{StaticResource ProductButton}" Height="40" FontSize="13" Padding="14,0" Click="SendToDevice_Click" Margin="8,0,0,0" ToolTip="选择文件或文件夹，也可直接拖入此窗口"/>
+    <Grid x:Name="SyncPanel" Grid.Row="4" Visibility="Collapsed" Background="Transparent" Margin="4,4,4,0">
+     <Grid.RowDefinitions><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+     <ScrollViewer x:Name="SendPageScroll" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Margin="0,0,0,8">
+     <StackPanel><StackPanel>
+      <DockPanel>
        <Button x:Name="SyncHistoryButton" Content="记录" DockPanel.Dock="Right" Style="{StaticResource ProductLink}" Click="SyncHistory_Click" Margin="8,0,0,0" ToolTip="查看进度、历史记录、重试与接收目录"/>
        <Button x:Name="SyncDeviceStatusButton" Style="{StaticResource ProductLink}" Click="SyncSettings_Click" HorizontalContentAlignment="Left" HorizontalAlignment="Stretch" Height="Auto" MinHeight="40" Padding="4,4" ToolTip="查看设备连接、同步开关和自动重连状态">
         <TextBlock x:Name="SyncConnectionText" Text="同步 · 设备未连接" TextWrapping="Wrap" FontSize="12"/>
@@ -133,7 +135,46 @@
       <TextBlock x:Name="SyncSummaryText" Margin="2,6,2,0" TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource AppTextSecondary}" AutomationProperties.LiveSetting="Polite"/>
       <ProgressBar x:Name="SyncProgress" Height="4" Margin="2,6,2,0" Minimum="0" Maximum="100" Visibility="Collapsed"/>
      </StackPanel>
-    </Border>
+      <Grid Margin="0,16,0,0"><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+       <TextBlock Text="发送文件或文件夹" FontSize="17" FontWeight="SemiBold" Margin="0,0,0,12"/>
+       <StackPanel Grid.Row="1">
+        <TextBlock Text="接收设备" Margin="0,0,0,6"/>
+        <Grid>
+         <ComboBox x:Name="SendRecipientBox" Style="{StaticResource ModernComboBox}" MinHeight="40" SelectionChanged="SendRecipient_Changed" AutomationProperties.Name="选择接收设备">
+          <ComboBox.ItemTemplate><DataTemplate><TextBlock Text="{Binding Display}" TextTrimming="CharacterEllipsis" ToolTip="{Binding Display}"/></DataTemplate></ComboBox.ItemTemplate>
+         </ComboBox>
+         <TextBlock x:Name="SendRecipientEmpty" Text="暂无在线设备" Foreground="{DynamicResource AppTextSecondary}" Margin="12,0,32,0" VerticalAlignment="Center" IsHitTestVisible="False"/>
+        </Grid>
+       </StackPanel>
+       <TextBlock x:Name="SendConnectionHint" Grid.Row="2" Style="{StaticResource ProductHint}" Margin="0,6,0,12" AutomationProperties.LiveSetting="Polite"/>
+       <WrapPanel Grid.Row="3" Margin="0,0,0,8">
+        <Button x:Name="AddSendFilesButton" Content="添加文件" Style="{StaticResource ProductSecondaryButton}" Click="AddSendFiles_Click"/>
+        <Button x:Name="AddSendFoldersButton" Content="添加文件夹" Style="{StaticResource ProductSecondaryButton}" Click="AddSendFolders_Click" Margin="8,0,0,0"/>
+        <Button x:Name="ClearSendSourcesButton" Content="清空" Style="{StaticResource ProductLink}" Click="ClearSendSources_Click" Margin="8,0,0,0" ToolTip="清空待发送列表，保留源文件"/>
+       </WrapPanel>
+       <Border Grid.Row="4" MinHeight="140" Background="{DynamicResource AppHeaderBg}" BorderBrush="{DynamicResource AppBorder}" BorderThickness="1" CornerRadius="8">
+        <Grid>
+         <ListBox x:Name="SendSourceList" Background="Transparent" Foreground="{DynamicResource AppTextPrimary}" BorderThickness="0" Padding="8" MaxHeight="240" ItemContainerStyle="{StaticResource ProductListItem}" ScrollViewer.HorizontalScrollBarVisibility="Disabled" VirtualizingPanel.ScrollUnit="Pixel" AutomationProperties.Name="待发送文件和文件夹">
+          <ListBox.ItemTemplate><DataTemplate><TextBlock Text="{Binding}" TextWrapping="Wrap"/></DataTemplate></ListBox.ItemTemplate>
+         </ListBox>
+         <StackPanel x:Name="SendDropHint" VerticalAlignment="Center" HorizontalAlignment="Center" Margin="20" IsHitTestVisible="False">
+          <TextBlock Text="拖入文件或文件夹" FontSize="15" FontWeight="SemiBold" TextAlignment="Center"/>
+          <TextBlock Text="保留文件夹结构与空文件夹" Style="{StaticResource ProductHint}" Margin="0,8,0,0" TextAlignment="Center"/>
+         </StackPanel>
+        </Grid>
+       </Border>
+      </Grid>
+     </StackPanel>
+     </ScrollViewer>
+     <StackPanel Grid.Row="1">
+      <TextBlock x:Name="SendSelectionHint" Text="可拖入到此页任意位置，也可点击添加。" Style="{StaticResource ProductHint}" Margin="0,0,0,8" AutomationProperties.LiveSetting="Polite"/>
+      <DockPanel>
+       <Button x:Name="SendFilesButton" DockPanel.Dock="Right" Content="发送" Style="{StaticResource ProductButton}" Click="SendToDevice_Click" MinWidth="96" Margin="12,0,0,0"/>
+       <Button x:Name="CancelInlineSendButton" DockPanel.Dock="Right" Content="取消传输" Style="{StaticResource ProductSecondaryButton}" Click="CancelInlineSend_Click" Visibility="Collapsed" Margin="8,0,0,0"/>
+       <TextBlock Text="对方确认并选择保存目录后传输" Style="{StaticResource ProductHint}" VerticalAlignment="Center"/>
+      </DockPanel>
+     </StackPanel>
+    </Grid>
    <Grid x:Name="HistoryPanel" Grid.Row="4">
     <ListBox x:Name="HistoryList" Background="Transparent" BorderThickness="0" Padding="0" ScrollViewer.HorizontalScrollBarVisibility="Disabled"
      ScrollViewer.CanContentScroll="True" VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling"

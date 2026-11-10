@@ -38,6 +38,16 @@ public partial class LanTransferWindow
         else if (picker.OpenSetup) Open();
     }
 
+    internal static async Task<string> SendToDeviceAsync(LanDeviceChoice peer, string[] paths)
+    {
+        var window = Connections.FirstOrDefault(w => w._deviceId == peer.Id);
+        if (window is null || !window._node.IsConnected || !window._node.SupportsFileOffers
+            || window._node.ConnectionVersion != peer.ConnectionVersion)
+            return "连接已变化，请重新选择接收设备。";
+        await window.SendFilesAsync(paths);
+        return window.TransferStatus.Text;
+    }
+
     private async Task<string?> ConfirmFilesAsync(LanHeader header, CancellationToken token)
     {
         return await Dispatcher.InvokeAsync(() =>

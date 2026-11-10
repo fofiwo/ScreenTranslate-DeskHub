@@ -51,7 +51,7 @@ internal static class LibrarySyncMerge
         var result = new Dictionary<string, string>(StringComparer.Ordinal);
         foreach (var p in state.Prompts)
         {
-            var value = Copy(p); value.CopyCount = 0;
+            var value = Copy(p); value.CopyCount = 0; value.CopyCounts = [];
             result.Add("p:" + p.Id, JsonSerializer.Serialize(value));
         }
         foreach (var c in state.Connections)
@@ -65,6 +65,9 @@ internal static class LibrarySyncMerge
 
     internal static void ValidateMetadata(LibraryState state)
     {
+        if (state.Prompts.Any(p => p.CopyCount < 0 || !ValidCounts(p.CopyCounts)
+            || p.CopyCounts.Count > 0 && p.CopyCounts.Values.Aggregate(0m, (sum, count) => sum + count) != p.CopyCount))
+            throw new InvalidDataException("提示词复制次数记录无效，未覆盖资料文件。");
         var meta = state.Sync;
         if (meta is null) return;
         if (!Guid.TryParseExact(meta.DeviceId, "N", out _) || meta.Machine is null || meta.DeviceBindingProtected is null || meta.Versions is null
@@ -95,9 +98,12 @@ internal static class LibrarySyncMerge
             }
     }
 
-    public static void Track(LibraryState before, LibraryState after)
+    internal static void EnsureDevice(LibraryState state)
     {
-        var meta = after.Sync ?? throw new InvalidDataException("同步元数据缺失。");
+        var meta = state.Sync ??= new();
+        // 先记录旧次数的原设备归属，换机后仅新增复制归入新设备。
+        foreach (var prompt in state.Prompts.Where(p => p.CopyCount > 0 && p.CopyCounts.Count == 0))
+            prompt.CopyCounts = PromptCounts(prompt, meta.DeviceId);
         var moved = meta.Machine != Environment.MachineName;
         if (meta.DeviceBindingProtected.Length > 0)
         {
@@ -108,6 +114,22 @@ internal static class LibrarySyncMerge
         { meta.DeviceId = Guid.NewGuid().ToString("N"); meta.Machine = Environment.MachineName; }
         if (moved || meta.DeviceBindingProtected.Length == 0)
             meta.DeviceBindingProtected = LocalSecretStore.Protect("ScreenTranslate.LibrarySync.Device");
+    }
+
+    // 历史本机次数归入本机分量；各设备只累加自己的分量，按最大值合并以免重放重复计数。
+    internal static Dictionary<string, long> PromptCounts(LibraryPrompt prompt, string deviceId) =>
+        prompt.CopyCounts.Count == 0 && prompt.CopyCount > 0
+            ? new() { [deviceId] = prompt.CopyCount }
+            : prompt.CopyCounts.OrderBy(v => v.Key, StringComparer.Ordinal).ToDictionary(v => v.Key, v => v.Value);
+
+    private static bool ValidCounts(Dictionary<string, long>? counts) => counts is not null && counts.Count <= 128
+        && counts.All(v => Guid.TryParseExact(v.Key, "N", out _) && v.Value >= 0)
+        && counts.Values.Aggregate(0m, (sum, count) => sum + count) <= long.MaxValue;
+
+    public static void Track(LibraryState before, LibraryState after)
+    {
+        EnsureDevice(after);
+        var meta = after.Sync!;
         var old = LocalRecords(before); var current = LocalRecords(after);
         foreach (var id in old.Keys.Union(current.Keys, StringComparer.Ordinal))
         {
@@ -129,7 +151,10 @@ internal static class LibrarySyncMerge
         item.Version.Clock = item.Version.Clock.OrderBy(v => v.Key, StringComparer.Ordinal).ToDictionary(v => v.Key, v => v.Value);
         if (version.Deleted) return item;
         if (id.StartsWith("p:", StringComparison.Ordinal))
-        { item.Prompt = Copy(prompts is null ? state.Prompts.Single(p => p.Id == id[2..]) : prompts[id[2..]]); item.Prompt.CopyCount = 0; }
+        {
+            item.Prompt = Copy(prompts is null ? state.Prompts.Single(p => p.Id == id[2..]) : prompts[id[2..]]);
+            item.Prompt.CopyCounts = PromptCounts(item.Prompt, state.Sync!.DeviceId); item.Prompt.CopyCount = 0;
+        }
         else
         {
             item.Connection = Copy(connections is null ? state.Connections.Single(c => c.Id == id[2..]) : connections[id[2..]]);
@@ -219,7 +244,8 @@ internal static class LibrarySyncMerge
                 var p = item.Prompt;
                 if (item.Connection is not null || item.ApiKey.Length != 0 || p is null || p.Id != item.Id[2..]
                     || p.Title is null || p.Description is null || string.IsNullOrWhiteSpace(p.Content)
-                    || p.Tags is null || p.Tags.Count > 128 || p.Tags.Any(t => t is null) || p.CopyCount != 0)
+                    || p.Tags is null || p.Tags.Count > 128 || p.Tags.Any(t => t is null) || p.CopyCount != 0
+                    || !ValidCounts(p.CopyCounts))
                     throw new InvalidDataException("同步提示词格式无效。");
             }
             else
@@ -257,7 +283,9 @@ internal static class LibrarySyncMerge
                     var first = group.First();
                     if (group.Any(h => !SameContent(first, h) || !EqualClock(first.Version.Clock, h.Version.Clock)))
                         throw new InvalidDataException("同一同步版本携带不同内容或因果记录，未合并。");
-                    return Copy(first);
+                    var head = Copy(first);
+                    if (head.Prompt is { } p) p.CopyCounts = [];
+                    return head;
                 }).ToList();
             var heads = candidates.Where(head => !candidates.Any(other => Dominates(other.Version.Clock, head.Version.Clock)
                 && !Dominates(head.Version.Clock, other.Version.Clock))).OrderBy(h => h.Version.Revision, StringComparer.Ordinal).ToList();
@@ -275,6 +303,8 @@ internal static class LibrarySyncMerge
             var retainBranches = heads.Count > 1 || !EqualClock(winner.Version.Clock, joined);
             winner.Alternatives = retainBranches ? heads : [];
             winner.Version.Clock = joined;
+            if (winner.Prompt is { } prompt)
+                prompt.CopyCounts = Join(local?.Prompt?.CopyCounts ?? [], remote.Prompt?.CopyCounts ?? []);
             if (local is null || Canonical(local) != Canonical(winner))
             { Apply(state, winner); changed = true; }
         }
@@ -298,7 +328,11 @@ internal static class LibrarySyncMerge
         var first = Copy(a); var second = Copy(b);
         first.Version = new() { Revision = "" }; second.Version = new() { Revision = "" };
         first.Alternatives = []; second.Alternatives = [];
-        if (first.Prompt is { } p) { p.CreatedAt = p.UpdatedAt = 0; second.Prompt!.CreatedAt = second.Prompt.UpdatedAt = 0; }
+        if (first.Prompt is { } p)
+        {
+            p.CreatedAt = p.UpdatedAt = 0; second.Prompt!.CreatedAt = second.Prompt.UpdatedAt = 0;
+            p.CopyCounts = []; second.Prompt.CopyCounts = [];
+        }
         if (first.Connection is { } c) { c.CreatedAt = c.UpdatedAt = 0; second.Connection!.CreatedAt = second.Connection.UpdatedAt = 0; }
         return JsonSerializer.Serialize(first) == JsonSerializer.Serialize(second);
     }
@@ -313,7 +347,7 @@ internal static class LibrarySyncMerge
             else
             {
                 var prompt = Copy(item.Prompt!);
-                prompt.CopyCount = index >= 0 ? state.Prompts[index].CopyCount : 0;
+                prompt.CopyCount = prompt.CopyCounts.Values.Aggregate(0L, (sum, count) => checked(sum + count));
                 if (index < 0) state.Prompts.Insert(0, prompt); else state.Prompts[index] = prompt;
             }
         }
@@ -361,8 +395,12 @@ internal sealed partial class LibraryStore
     private LibraryState LoadSyncState()
     {
         var current = Load();
-        if (current.Sync is not null) return current;
-        UpdateCore(s => { if (s.Sync is null) { s.Sync = new(); LibrarySyncMerge.Track(new LibraryState(), s); } }, false);
+        if (current.Sync is not null && !current.Prompts.Any(p => p.CopyCount > 0 && p.CopyCounts.Count == 0)) return current;
+        UpdateCore(s =>
+        {
+            if (s.Sync is null) { s.Sync = new(); LibrarySyncMerge.Track(new LibraryState(), s); }
+            else LibrarySyncMerge.EnsureDevice(s);
+        }, false);
         return Load();
     }
 
@@ -379,7 +417,9 @@ internal sealed partial class LibraryStore
             {
                 _syncState = null;
                 var current = LoadSyncState();
-                _syncVersions = current.Sync!.Versions.ToDictionary(v => v.Key, v => LibrarySyncMerge.VersionStamp(v.Value), StringComparer.Ordinal);
+                var prompts = current.Prompts.ToDictionary(p => "p:" + p.Id, StringComparer.Ordinal);
+                _syncVersions = current.Sync!.Versions.ToDictionary(v => v.Key, v => LibrarySyncMerge.VersionStamp(v.Value)
+                    + (prompts.TryGetValue(v.Key, out var prompt) ? JsonSerializer.Serialize(LibrarySyncMerge.PromptCounts(prompt, current.Sync.DeviceId)) : ""), StringComparer.Ordinal);
                 _syncState = current; _syncFileStamp = stamp;
                 _syncReadAt = System.Diagnostics.Stopwatch.GetTimestamp();
             }

@@ -375,10 +375,8 @@ public partial class ScreenCaptureWindow
             await SnipClipboard.RunStaAsync(async () => {
                 cancellationToken.ThrowIfCancellationRequested();
                 var image = document.Marks.Count == 0 ? source : document.Render(source);
-                await SnipClipboard.WriteAsync(() => {
-                    if (write is not null) write(image);
-                    else { var data = new DataObject(); data.SetImage(image); System.Windows.Clipboard.SetDataObject(data, true); }
-                }, cancellationToken);
+                if (write is not null) await SnipClipboard.WriteAsync(() => write(image), cancellationToken);
+                else await SnipClipboard.WriteImageAsync(image, cancellationToken);
             });
             if (!_snipClosed) Close();
         }
@@ -448,6 +446,54 @@ internal static class SnipClipboard
     // 已进入 OLE 的写入无法中断；后续截图、色值和贴图复制须等它结束。
     private static readonly SemaphoreSlim Writer = new(1, 1);
 
+    internal static Task WriteImageAsync(BitmapSource image, CancellationToken cancellationToken,
+        Action? write = null, Func<BitmapSource?>? read = null) => WriteCoreAsync(async () =>
+    {
+        if (write is not null) write();
+        else
+        {
+            var data = new DataObject(); data.SetImage(image);
+            System.Windows.Clipboard.SetDataObject(data, true);
+        }
+        // OLE 发布与持久化之间可被其他进程替换；调用返回不代表剪贴板仍是本次截图。
+        for (var attempt = 0; ; attempt++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            try
+            {
+                var actual = read is not null ? read() : System.Windows.Clipboard.GetImage();
+                if (!SameImage(image, actual))
+                    throw new ExternalException("剪贴板图片已被替换或无法读取。", unchecked((int)0x800401D3));
+                return;
+            }
+            catch (ExternalException ex) when (ex.ErrorCode == unchecked((int)0x800401D0))
+            {
+                // 读回被占用时只重读，避免重新发布通知再次触发剪贴板监听程序。
+                if (attempt >= 4) throw new InvalidOperationException("截图已写入，但暂时无法核对剪贴板。", ex);
+                await Task.Delay(40 * (attempt + 1), cancellationToken);
+            }
+        }
+    }, cancellationToken);
+
+    private static bool SameImage(BitmapSource expected, BitmapSource? actual)
+    {
+        if (actual is null || expected.PixelWidth != actual.PixelWidth || expected.PixelHeight != actual.PixelHeight) return false;
+        // 系统位图可能丢弃 alpha；截图核对可见 RGB，并分块比较以避免再分配整张大图。
+        BitmapSource Rgb(BitmapSource source) => source.Format == PixelFormats.Bgr24
+            ? source : new FormatConvertedBitmap(source, PixelFormats.Bgr24, null, 0);
+        var first = Rgb(expected); var second = Rgb(actual);
+        var stride = checked(expected.PixelWidth * 3);
+        var rows = Math.Min(64, expected.PixelHeight);
+        var left = new byte[checked(stride * rows)]; var right = new byte[left.Length];
+        for (var y = 0; y < expected.PixelHeight; y += rows)
+        {
+            var rect = new Int32Rect(0, y, expected.PixelWidth, Math.Min(rows, expected.PixelHeight - y));
+            first.CopyPixels(rect, left, stride, 0); second.CopyPixels(rect, right, stride, 0);
+            if (!left.AsSpan(0, stride * rect.Height).SequenceEqual(right.AsSpan(0, stride * rect.Height))) return false;
+        }
+        return true;
+    }
+
     // WPF 图片与 OLE 剪贴板需要 STA；重试后的 continuation 也必须回到同一线程。
     internal static async Task RunStaAsync(Func<Task> write)
     {
@@ -458,7 +504,10 @@ internal static class SnipClipboard
         finally { await Task.Run(thread.Dispose); }
     }
 
-    internal static async Task WriteAsync(Action write, CancellationToken cancellationToken)
+    internal static Task WriteAsync(Action write, CancellationToken cancellationToken) =>
+        WriteCoreAsync(() => { write(); return Task.CompletedTask; }, cancellationToken);
+
+    private static async Task WriteCoreAsync(Func<Task> write, CancellationToken cancellationToken)
     {
         await Writer.WaitAsync(cancellationToken);
         try
@@ -466,8 +515,9 @@ internal static class SnipClipboard
             for (var attempt = 0; ; attempt++)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                try { write(); return; }
-                catch (ExternalException ex) when (ex.ErrorCode == unchecked((int)0x800401D0) && attempt < 4)
+                try { await write(); return; }
+                catch (ExternalException ex) when (attempt < 4 &&
+                    ex.ErrorCode is unchecked((int)0x800401D0) or unchecked((int)0x800401D3))
                 { await Task.Delay(40 * (attempt + 1), cancellationToken); }
             }
         }

@@ -6,7 +6,7 @@ using OverTranslate.Services.Lan;
 
 namespace OverTranslate.Views.ClipboardHistory;
 
-internal sealed record LanDeviceChoice(string Id, string Display, bool Supported);
+internal sealed record LanDeviceChoice(string Id, string Display, bool Supported, long ConnectionVersion = 0);
 internal sealed record LanDeviceRow(string Id, string Name, string Address, string Status, string Sync, string LastResult, bool AutoReconnect,
     bool IsConnected = false, DateTimeOffset LastConnected = default)
 {
@@ -54,7 +54,7 @@ public partial class LanTransferWindow
             w._trusted?.AutoReconnect == true, w._node.IsConnected, w._trusted?.LastConnected ?? default);
     }).ToArray();
     internal static IReadOnlyList<LanDeviceChoice> ConnectedChoices() => Connections.Where(w => w._node.IsConnected)
-        .Select(w => new LanDeviceChoice(w._deviceId, $"{w._node.PeerName} · {w._node.PeerAddress}", w._node.SupportsFileOffers)).ToArray();
+        .Select(w => new LanDeviceChoice(w._deviceId, $"{w._node.PeerName} · {w._node.PeerAddress}", w._node.SupportsFileOffers, w._node.ConnectionVersion)).ToArray();
     internal static void OpenPairing(string? id = null)
     {
         RestoreConnections();

@@ -13,6 +13,7 @@ public partial class HomePage : UserControl
     private bool _loading = true;
     private readonly Settings.SettingsPage _captureOptions;
     private readonly OcrSourcePicker _sourcePicker;
+    private string? _pickerLanguage;
 
     public HomePage()
     {
@@ -32,9 +33,17 @@ public partial class HomePage : UserControl
         {
             _captureOptions.Reload();
             var settings = SettingsService.Instance.Current;
-            LocalizationService.BindLocalizedItems(SourceBox, LanguageData.OcrSourceLanguages);
-            LocalizationService.BindLocalizedItems(TargetBox, LanguageData.TargetLanguages);
-            ProviderPicker.Bind(ProviderBox, ProviderVisibility.MenuItems(settings, settings.Provider));
+            // 任务栏还原也会刷新本页；列表未变时保留容器，避免在系统动画期间重建布局。
+            var languageChanged = _pickerLanguage != LocalizationService.Current;
+            if (languageChanged)
+            {
+                LocalizationService.BindLocalizedItems(SourceBox, LanguageData.OcrSourceLanguages);
+                LocalizationService.BindLocalizedItems(TargetBox, LanguageData.TargetLanguages);
+                _pickerLanguage = LocalizationService.Current;
+            }
+            var providers = ProviderVisibility.MenuItems(settings, settings.Provider);
+            if (languageChanged || !ProviderBox.Items.OfType<ProviderItem>().SequenceEqual(providers))
+                ProviderPicker.Bind(ProviderBox, providers);
             SourceBox.SelectedValue = LanguageData.GetValidOcrSourceCode(settings.SourceLanguage);
             TargetBox.SelectedValue = LanguageData.GetValidTargetCode(settings.TargetLanguage);
             ProviderBox.SelectedValue = settings.Provider;

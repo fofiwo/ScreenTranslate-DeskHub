@@ -17,6 +17,30 @@ public sealed partial class ScreenTranslateShellTests
         VerifyCopyHistoryDrainedOnExit(directory);
     }
 
+    private static void VerifySyncedCountRefresh(string directory)
+    {
+        var sender = new LibraryStore(System.IO.Path.Combine(directory, "count-sync-a", "library.json"));
+        var receiver = new LibraryStore(System.IO.Path.Combine(directory, "count-sync-b", "library.json"));
+        var prompt = sender.SavePrompt(new() { Title = "synced", Content = "synced count fixture" });
+        sender.SavePrompt(new() { Title = "uncopied", Content = "uncopied fixture" });
+        receiver.MergeSync(sender.ExportSync());
+        var window = new LibraryWindow(receiver, copy: _ => { })
+        { Left = -10000, Top = -10000, ShowActivated = false, WindowStartupLocation = WindowStartupLocation.Manual };
+        try
+        {
+            window.Show(); window.UpdateLayout();
+            sender.RememberCopiedPrompt(prompt.Id); sender.RememberCopiedPrompt(prompt.Id);
+            receiver.MergeSync(sender.ExportSync());
+            LibrarySyncNotifications.NotifyChanged();
+            var list = (ListBox)window.FindName("PromptList");
+            PumpUntil(() => list.Items.Cast<LibraryPrompt>().Any(p => p.Id == prompt.Id && p.CopyCount == 2));
+            Assert.Equal(prompt.Id, ((LibraryPrompt)list.Items[0]).Id);
+            window.UpdateLayout();
+            Assert.Contains(Visuals<TextBlock>(list), text => text.Text.Contains("2 次"));
+        }
+        finally { window.CloseForTests(); }
+    }
+
     private static void VerifyCopyCountAfterViewRefresh(string directory)
     {
         var store = new LibraryStore(System.IO.Path.Combine(directory, "count-view-refresh", "library.json"));

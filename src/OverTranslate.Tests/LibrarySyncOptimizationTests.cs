@@ -37,7 +37,7 @@ public sealed class LibrarySyncOptimizationTests : IDisposable
         using (new FileStream(path, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
             Assert.Empty(store.ExportSyncChanges(known, out _).Items);
         store.RememberCopiedPrompt(prompt.Id);
-        Assert.Empty(store.ExportSyncChanges(known, out _).Items);
+        Assert.Equal(prompt.Id, Assert.Single(store.ExportSyncChanges(known, out _).Items).Prompt!.Id);
         var external = new LibraryStore(path);
         prompt.Content = "external fixture edit"; external.SavePrompt(prompt);
         Assert.Equal("external fixture edit", Assert.Single(store.ExportSyncChanges(known, out _).Items).Prompt!.Content);
@@ -143,6 +143,28 @@ public sealed class LibrarySyncOptimizationTests : IDisposable
             if (received.TryDequeue(out var snapshot)) return snapshot;
             await Task.Delay(15, timeout.Token);
         }
+    }
+
+    [Fact]
+    public async Task CopyCountsPropagateOverTheLiveLibraryChannelAfterInitialSync()
+    {
+        var a = new LibraryStore(Path.Combine(_root, "count-a.json"));
+        var b = new LibraryStore(Path.Combine(_root, "count-b.json"));
+        var prompt = a.SavePrompt(new() { Content = "live copy fixture" });
+        await using var host = new LanNode("count-host", () => _root) { LibraryEnabled = true };
+        await using var client = new LanNode("count-client", () => _root) { LibraryEnabled = true };
+        host.ConfirmPairAsync = (_, _) => Task.FromResult(true);
+        await using var hostSync = new LanLibrarySync(host, () => b, TimeSpan.FromMilliseconds(30));
+        await using var clientSync = new LanLibrarySync(client, () => a, TimeSpan.FromMilliseconds(30));
+        await host.ListenAsync(IPAddress.Loopback, 0);
+        await client.ConnectAsync(IPAddress.Loopback, host.Port, host.PairCode);
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        while (b.Read().Prompts.Count == 0) await Task.Delay(15, timeout.Token);
+        a.RememberCopiedPrompt(prompt.Id);
+        while (b.Read().Prompts.Single().CopyCount != 1) await Task.Delay(15, timeout.Token);
+        b.RememberCopiedPrompt(prompt.Id);
+        while (a.Read().Prompts.Single().CopyCount != 2) await Task.Delay(15, timeout.Token);
+        Assert.Single(a.Read().Prompts); Assert.Single(b.Read().Prompts);
     }
 
     public void Dispose() { if (Directory.Exists(_root)) Directory.Delete(_root, true); }

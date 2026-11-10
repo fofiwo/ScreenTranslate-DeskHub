@@ -419,6 +419,12 @@ public partial class LibraryWindow : Window
 
     private void RefreshViews()
     {
+        RefreshPromptViews();
+        RefreshModelViews();
+    }
+
+    private void RefreshPromptViews()
+    {
         if (!_ready) return;
         _loading = true;
         try
@@ -428,7 +434,6 @@ public partial class LibraryWindow : Window
             _promptOrder = state.Prompts.Select((p, index) => (p.Id, index))
                 .GroupBy(p => p.Id).ToDictionary(g => g.Key, g => g.First().index);
             var promptId = (PromptList.SelectedItem as LibraryPrompt)?.Id;
-            var connectionId = (ModelList.SelectedItem as LibraryConnection)?.Id;
             var tags = state.Prompts.SelectMany(p => p.Tags).Distinct().Order(StringComparer.CurrentCulture).ToList();
             _selectedTags.IntersectWith(tags);
             TagFilters.ItemsSource = tags.Where(t => t.Contains(TagSearch.Text, StringComparison.OrdinalIgnoreCase)).ToList();
@@ -441,35 +446,42 @@ public partial class LibraryWindow : Window
             PromptCount.Text = $"{filtered.Count} / {state.Prompts.Count} 条提示词";
             PromptEmpty.Visibility = filtered.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
             PromptEmpty.Text = state.Prompts.Count == 0 ? "还没有提示词，点击右上角新建。" : "没有匹配的提示词，请调整搜索或标签。";
-            var query = ModelSearch.Text.Trim();
-            var connections = state.Connections.Where(c => string.Join(' ', c.Platform, c.Endpoint, c.Model, c.ModelIdToCopy, c.Note)
-                .Contains(query, StringComparison.OrdinalIgnoreCase)).ToList();
-            ModelList.ItemsSource = connections;
-            ModelList.SelectedItem = connections.FirstOrDefault(c => c.Id == connectionId) ?? connections.FirstOrDefault();
-            ModelEmpty.Visibility = connections.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
-            ModelEmpty.Text = state.Connections.Count == 0 ? "还没有连接资料，点击右上角新增。" : "没有匹配的连接，请调整搜索。";
-            ModelCount.Text = $"{connections.Count} / {state.Connections.Count} 条连接资料";
         }
         finally { _loading = false; _appendPrompts = false; }
     }
 
-    private void PromptSearch_Changed(object sender, TextChangedEventArgs e) { _visiblePrompts = 30; RefreshViews(); }
-    private void ModelSearch_Changed(object sender, TextChangedEventArgs e) => RefreshViews();
-    private void TagSearch_Changed(object sender, TextChangedEventArgs e) => RefreshViews();
+    private void RefreshModelViews()
+    {
+        if (!_ready) return;
+        var state = _viewState;
+        var connectionId = (ModelList.SelectedItem as LibraryConnection)?.Id;
+        var query = ModelSearch.Text.Trim();
+        var connections = state.Connections.Where(c => string.Join(' ', c.Platform, c.Endpoint, c.Model, c.ModelIdToCopy, c.Note)
+            .Contains(query, StringComparison.OrdinalIgnoreCase)).ToList();
+        ModelList.ItemsSource = connections;
+        ModelList.SelectedItem = connections.FirstOrDefault(c => c.Id == connectionId) ?? connections.FirstOrDefault();
+        ModelEmpty.Visibility = connections.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+        ModelEmpty.Text = state.Connections.Count == 0 ? "还没有连接资料，点击右上角新增。" : "没有匹配的连接，请调整搜索。";
+        ModelCount.Text = $"{connections.Count} / {state.Connections.Count} 条连接资料";
+    }
+
+    private void PromptSearch_Changed(object sender, TextChangedEventArgs e) { _visiblePrompts = 30; RefreshPromptViews(); }
+    private void ModelSearch_Changed(object sender, TextChangedEventArgs e) => RefreshModelViews();
+    private void TagSearch_Changed(object sender, TextChangedEventArgs e) => RefreshPromptViews();
     private void TagFilters_Changed(object sender, SelectionChangedEventArgs e)
     {
         if (!_ready || _loading) return;
         foreach (string t in e.RemovedItems) _selectedTags.Remove(t);
         foreach (string t in e.AddedItems) _selectedTags.Add(t);
-        _visiblePrompts = 30; RefreshViews();
+        _visiblePrompts = 30; RefreshPromptViews();
     }
-    private void ClearTags_Click(object sender, RoutedEventArgs e) { _selectedTags.Clear(); _visiblePrompts = 30; RefreshViews(); }
+    private void ClearTags_Click(object sender, RoutedEventArgs e) { _selectedTags.Clear(); _visiblePrompts = 30; RefreshPromptViews(); }
     private void Prompts_ScrollChanged(object sender, ScrollChangedEventArgs e)
     {
         if (!_ready || _loading || e.VerticalChange <= 0
             || e.ExtentHeight - e.VerticalOffset - e.ViewportHeight > Math.Max(1, e.ViewportHeight / 2)) return;
         if (PromptList.Items.Count < _visiblePrompts) return;
-        _visiblePrompts += 30; _appendPrompts = true; RefreshViews();
+        _visiblePrompts += 30; _appendPrompts = true; RefreshPromptViews();
     }
 
     private void CopyPrompt_Click(object sender, RoutedEventArgs e)

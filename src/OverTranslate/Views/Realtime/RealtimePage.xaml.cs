@@ -105,6 +105,7 @@ public partial class RealtimePage : UserControl
     private const TranslationProvider DefaultProvider = TranslationProvider.Microsoft;
 
     private bool _windowsLoaded;
+    private string? _pickerLanguage;
 
     // True while this page is filling the capture pickers from stored values rather than the user
     // choosing. Without it, restoring a monitor that has since been unplugged would write the
@@ -292,16 +293,21 @@ public partial class RealtimePage : UserControl
         var target   = TgtLangBox.SelectedValue;
         var provider = ProviderBox.SelectedValue;
 
-        // The same list the running capsule's source menu offers — see RealtimeLanguageMenuItems.
-        LocalizationService.BindLocalizedItems(SrcLangBox, RealtimeLanguageMenuItems.SourceLanguages.ToList());
-        LocalizationService.BindLocalizedItems(TgtLangBox,  LanguageData.TargetLanguages);
+        // 切回页面时保留未变化的列表，避免重建容器并触发重复保存。
+        var languageChanged = _pickerLanguage != LocalizationService.Current;
+        if (languageChanged)
+        {
+            LocalizationService.BindLocalizedItems(SrcLangBox, RealtimeLanguageMenuItems.SourceLanguages);
+            LocalizationService.BindLocalizedItems(TgtLangBox, LanguageData.TargetLanguages);
+            _pickerLanguage = LocalizationService.Current;
+        }
         // Also where a change to which services are offered lands, on the way back from the settings
         // page. A running session has this box locked, and keeps its own choice in the list anyway.
         var settings = SettingsService.Instance.Current;
-        OverTranslate.Controls.ProviderPicker.Bind(
-            ProviderBox,
-            ProviderVisibility.MenuItems(
-                settings, provider as TranslationProvider? ?? settings.Realtime.Provider));
+        var providers = ProviderVisibility.MenuItems(
+            settings, provider as TranslationProvider? ?? settings.Realtime.Provider);
+        if (languageChanged || !ProviderBox.Items.OfType<ProviderItem>().SequenceEqual(providers))
+            OverTranslate.Controls.ProviderPicker.Bind(ProviderBox, providers);
 
         SrcLangBox.SelectedValue  = source;
         TgtLangBox.SelectedValue  = target;
@@ -319,6 +325,8 @@ public partial class RealtimePage : UserControl
         SyncScrimOpacity();
         SyncFixedFontSize();
         RenderColours();
+        RenderProviderHint();
+        RenderMangaHint();
         RenderPauseHint();
         RenderState();
     }
@@ -364,7 +372,8 @@ public partial class RealtimePage : UserControl
 
     private void ProviderBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
-        if (ProviderBox.SelectedValue is TranslationProvider provider)
+        if (ProviderBox.SelectedValue is TranslationProvider provider
+            && SettingsService.Instance.Current.Realtime.Provider != provider)
             SaveTranslationPreference(settings => settings.Realtime.Provider = provider);
         RenderProviderHint();
     }
@@ -380,7 +389,8 @@ public partial class RealtimePage : UserControl
     {
         if (_sourcePicker.Intercept(e)) return;
 
-        if (SrcLangBox.SelectedValue is string sourceLanguage)
+        if (SrcLangBox.SelectedValue is string sourceLanguage
+            && SettingsService.Instance.Current.Realtime.SourceLanguage != LanguageData.GetValidOcrSourceCode(sourceLanguage))
             SaveTranslationPreference(settings =>
                 settings.Realtime.SourceLanguage = LanguageData.GetValidOcrSourceCode(sourceLanguage));
 
@@ -396,6 +406,7 @@ public partial class RealtimePage : UserControl
     private void TgtLangBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         if (TgtLangBox.SelectedValue is not string targetLanguage) return;
+        if (SettingsService.Instance.Current.Realtime.TargetLanguage == LanguageData.GetValidTargetCode(targetLanguage)) return;
         SaveTranslationPreference(settings =>
             settings.Realtime.TargetLanguage = LanguageData.GetValidTargetCode(targetLanguage));
     }
@@ -631,7 +642,8 @@ public partial class RealtimePage : UserControl
                 screen.Primary))
             .ToList();
 
-        ScreenBox.ItemsSource = items;
+        if (!ScreenBox.Items.OfType<ScreenItem>().SequenceEqual(items))
+            ScreenBox.ItemsSource = items;
 
         // Three cases, and they want different answers. The pick still being there is the easy one.
         // A stored monitor that is not attached any more falls back to the primary: the user did
@@ -1101,8 +1113,7 @@ public partial class RealtimePage : UserControl
     /// <summary>
     /// The running capsule changed the pair (#345): the pickers follow at once, locked as they are,
     /// so the page says what the session is running with — and, after 結束, what the next one starts
-    /// on. The settings file already holds it, so the save the pickers' own handlers make on the way
-    /// past writes back the same values.
+    /// on. The settings file already holds it, so reflecting it here needs no second save.
     /// </summary>
     private void OnSessionLanguagesChanged(object? sender, EventArgs e) =>
         Dispatcher.BeginInvoke(() =>

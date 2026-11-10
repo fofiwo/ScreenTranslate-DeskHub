@@ -21,6 +21,7 @@ internal sealed class LibraryPrompt : INotifyPropertyChanged
         get => _copyCount;
         set { if (_copyCount == value) return; _copyCount = value; PropertyChanged?.Invoke(this, new(nameof(CopyCount))); }
     }
+    public Dictionary<string, long> CopyCounts { get; set; } = [];
     public List<string> Tags { get; set; } = [];
     public long CreatedAt { get; set; } = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
     public long UpdatedAt { get; set; } = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
@@ -201,8 +202,8 @@ internal sealed partial class LibraryStore
             var index = s.Prompts.FindIndex(p => p.Id == item.Id);
             if (expected is not null && (index < 0 || !SamePromptContent(s.Prompts[index], expected)))
                 throw new InvalidOperationException("这条提示词已被其他设备或窗口修改／删除。输入已保留，请复制输入内容，取消后核对最新资料。");
-            if (index < 0) { item.CopyCount = 0; s.Prompts.Insert(0, item); }
-            else { item.CopyCount = s.Prompts[index].CopyCount; s.Prompts[index] = item; }
+            if (index < 0) { item.CopyCount = 0; item.CopyCounts = []; s.Prompts.Insert(0, item); }
+            else { item.CopyCount = s.Prompts[index].CopyCount; item.CopyCounts = s.Prompts[index].CopyCounts; s.Prompts[index] = item; }
         });
         return Clone(item);
     }
@@ -214,6 +215,11 @@ internal sealed partial class LibraryStore
         {
             var item = s.Prompts.FirstOrDefault(p => p.Id == id)
                 ?? throw new InvalidOperationException("提示词已删除，未保存本次复制次数。");
+            if (s.Sync is null) { s.Sync = new(); LibrarySyncMerge.Track(new LibraryState(), s); }
+            else LibrarySyncMerge.EnsureDevice(s);
+            item.CopyCounts = LibrarySyncMerge.PromptCounts(item, s.Sync!.DeviceId);
+            var actor = s.Sync!.DeviceId;
+            item.CopyCounts[actor] = checked(item.CopyCounts.GetValueOrDefault(actor) + 1);
             count = item.CopyCount = checked(item.CopyCount + 1);
         });
         return count;
@@ -306,8 +312,9 @@ internal sealed partial class LibraryStore
     public static IEnumerable<LibraryPrompt> FilterPrompts(LibraryState state, string query, IEnumerable<string> tags)
     {
         var selected = tags.ToHashSet();
+        var search = query.Trim();
         return state.Prompts.Where(p => (selected.Count == 0 || p.Tags.Any(selected.Contains)) &&
-            string.Join(' ', new[] { p.Title, p.Description, p.Content }.Concat(p.Tags)).Contains(query.Trim(), StringComparison.OrdinalIgnoreCase))
+            (search.Length == 0 || string.Join(' ', new[] { p.Title, p.Description, p.Content }.Concat(p.Tags)).Contains(search, StringComparison.OrdinalIgnoreCase)))
             .OrderByDescending(p => p.CopyCount);
     }
 }

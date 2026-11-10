@@ -24,7 +24,7 @@ internal sealed record ClipboardRecord
     public DateTimeOffset? PinnedAt { get; init; }
     [JsonIgnore] public bool IsPinned => PinnedAt is not null;
     [JsonIgnore] public string PinLabel => IsPinned ? "取消置顶" : "置顶记录";
-    [JsonIgnore] public string Category => Files.Length > 0 ? "文件" : HasImage ? "图片"
+    [JsonIgnore] public string Category => Files.Length > 0 ? (Files.All(IsImageFile) ? "图片" : "文件") : HasImage ? "图片"
         : Html.Length > 0 || Rtf.Length > 0 ? "富文本"
         : Uri.TryCreate(Text.Trim(), UriKind.Absolute, out var uri) && uri.Scheme is "http" or "https" or "ftp" ? "链接"
         : LooksLikeCode(Text) ? "代码" : "文本";
@@ -49,6 +49,11 @@ internal sealed record ClipboardRecord
         && (query.Length == 0 || Text.Contains(query, StringComparison.OrdinalIgnoreCase)
             || Html.Contains(query, StringComparison.OrdinalIgnoreCase) || Source.Contains(query, StringComparison.OrdinalIgnoreCase)
             || Files.Any(f => f.Contains(query, StringComparison.OrdinalIgnoreCase)));
+
+    internal static bool IsImageFile(string path) => Path.GetExtension(path).ToLowerInvariant() is
+        ".png" or ".jpg" or ".jpeg" or ".bmp" or ".gif" or ".tif" or ".tiff" or ".webp"
+        or ".avif" or ".heic" or ".heif" or ".svg" or ".ico"
+        && !Directory.Exists(path);
 
     private static bool LooksLikeCode(string text)
     {
