@@ -8,7 +8,7 @@ internal static class UpdateUi
 {
     private static bool _checking;
     internal static string ButtonLabel => UpdateNotifier.Available is { } info
-        ? $"发现新版 v{info.LatestVersion}" : "检查更新";
+        ? info.VelopackInfo.IsDowngrade ? $"同步 GitHub 正式版 v{info.LatestVersion}" : $"发现新版 v{info.LatestVersion}" : "检查更新";
 
     internal static async Task CheckAndShowAsync(System.Windows.Controls.Button? button = null, Action<string>? reportStatus = null)
     {
@@ -25,12 +25,12 @@ internal static class UpdateUi
             var info = await UpdateNotifier.CheckAsync().WaitAsync(TimeSpan.FromSeconds(30));
             if (info is not null)
             {
-                reportStatus?.Invoke($"发现新版 v{info.LatestVersion}");
+                reportStatus?.Invoke($"GitHub 最新正式版 v{info.LatestVersion}");
                 UpdateWindow.ShowOrActivate(info);
                 return;
             }
             ShowResult(UpdateService.LastCheckError ?? (UpdateService.IsInstalledBuild
-                ? "当前已是最新版本。以后发现新版时，会在主窗口左下角提示安装。"
+                ? "当前已与 GitHub 最新正式版一致。以后发布新版本时，会在主窗口左下角提示安装。"
                 : "当前为便携版或开发版。请先安装正式安装版，之后可在应用内自动检测并安装更新。"));
         }
         catch (TimeoutException)

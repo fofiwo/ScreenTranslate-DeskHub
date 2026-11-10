@@ -134,12 +134,11 @@ public static class UpdateNotifier
             return false;
         }
 
-        return info.VelopackInfo.TargetFullRelease.Version <= skippedVersion;
+        return info.VelopackInfo.TargetFullRelease.Version == skippedVersion;
     }
 
     /// <summary>
-    /// Records that the startup dialog should stay quiet until something newer than
-    /// <paramref name="info"/> is released.
+    /// Records that the startup dialog should stay quiet for this release only.
     /// </summary>
     public static void Skip(UpdateInfo info)
     {

@@ -589,9 +589,9 @@ public partial class ShellWindow : Window
     private void RefreshUpdateButton()
     {
         UpdateButton.Visibility = UpdateNotifier.Available is null ? Visibility.Collapsed : Visibility.Visible;
-        UpdateButton.Content = "安装新版";
-        UpdateButton.ToolTip = UpdateNotifier.Available is { } available
-            ? $"发现新版 v{available.LatestVersion}，下载并安装，个人数据保留" : "在关于页面检查更新";
+        UpdateButton.Content = UpdateNotifier.Available?.VelopackInfo.IsDowngrade == true ? "同步正式版" : "安装新版";
+        UpdateButton.ToolTip = UpdateNotifier.Available is not null
+            ? $"{UpdateUi.ButtonLabel}，下载并安装，个人数据保留" : "在关于页面检查更新";
         UpdateButton.FontWeight = UpdateNotifier.Available is null ? FontWeights.Normal : FontWeights.SemiBold;
     }
     private async void UpdateButton_Click(object sender, RoutedEventArgs e)

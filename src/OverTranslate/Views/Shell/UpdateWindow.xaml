@@ -97,7 +97,7 @@
                 <Button x:Name="RefreshButton" Grid.Column="2" Content="刷新版本"
                         Style="{StaticResource FlatButton}" Height="30" Padding="10,0"
                         Margin="8,0,0,0" VerticalAlignment="Top" Click="RefreshButton_Click"
-                        ToolTip="重新检查最新版本，可直接升级到当前最新版" AutomationProperties.Name="刷新最新版本"/>
+                        ToolTip="重新检查 GitHub 最新正式版，可同步到该版本" AutomationProperties.Name="刷新最新版本"/>
                 <Border x:Name="HeadingMark"
                         Width="40" Height="40"
                         CornerRadius="20"

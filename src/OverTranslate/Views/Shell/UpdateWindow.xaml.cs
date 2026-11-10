@@ -75,7 +75,7 @@ public partial class UpdateWindow : Window
     private bool IsHistory => _updateInfo is null;
 
     private bool CanReplaceWith(UpdateInfo? info) => _phase == Phase.Offering && info is not null
-        && (IsHistory || info.VelopackInfo.TargetFullRelease.Version > _updateInfo!.VelopackInfo.TargetFullRelease.Version);
+        && (IsHistory || info.VelopackInfo.TargetFullRelease.Version != _updateInfo!.VelopackInfo.TargetFullRelease.Version);
 
     private static async void Open(Task<ReleaseNotesFeed?> notes, UpdateInfo? info)
     {
@@ -87,7 +87,7 @@ public partial class UpdateWindow : Window
         }
 
         if (_opening && (info is null || _openingInfo is not null
-            && info.VelopackInfo.TargetFullRelease.Version <= _openingInfo.VelopackInfo.TargetFullRelease.Version)) return;
+            && info.VelopackInfo.TargetFullRelease.Version == _openingInfo.VelopackInfo.TargetFullRelease.Version)) return;
         _opening = true;
         _openingInfo = info;
         var request = ++_openRequest;
@@ -255,6 +255,13 @@ public partial class UpdateWindow : Window
         {
             CurrentVersionText.Text = current;
             LatestVersionText.Text = $"v{_updateInfo!.LatestVersion}";
+        }
+
+        if (_updateInfo?.VelopackInfo.IsDowngrade == true)
+        {
+            if (_phase == Phase.Offering) HeadingText.Text = "同步 GitHub 正式版";
+            ExplanationText.Text = $"GitHub 最新正式版为 v{_updateInfo.LatestVersion}，版本号低于当前安装版。确认更新后将安装该正式版并重启。";
+            ExplanationText.Visibility = _phase == Phase.Offering ? Visibility.Visible : Visibility.Collapsed;
         }
 
         if (_feed is null) return;
@@ -488,10 +495,12 @@ public partial class UpdateWindow : Window
             Phase.Downloading => "S.Update.HeadingDownloading",
             _ => "S.Update.HeadingInstalling",
         });
+        if (phase == Phase.Offering && _updateInfo?.VelopackInfo.IsDowngrade == true)
+            HeadingText.Text = "同步 GitHub 正式版";
 
         // The progress card takes the explanation's place: by now it has been acted on. A failure
         // takes it back out again, once its message is up.
-        if (_feed is not null)
+        if (_feed is not null || _updateInfo?.VelopackInfo.IsDowngrade == true)
             ExplanationText.Visibility = phase == Phase.Offering ? Visibility.Visible : Visibility.Collapsed;
 
         if (phase == Phase.Offering) CloseBtn.ToolTip = null;

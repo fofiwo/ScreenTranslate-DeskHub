@@ -22,12 +22,11 @@ try
     }
     var from = args.FirstOrDefault(a => a.StartsWith("--from="))?[7..] ?? "0.2.3";
     var locator = new TestVelopackLocator("ScreenTranslate", from, root, null, root, null);
-    var manager = new DeltaAwareUpdateManager(new DeskHubReleaseSource(),
-        new UpdateOptions { ExplicitChannel = "win" }, locator);
+    var manager = UpdateService.CreateManager(locator: locator);
     var update = await manager.CheckForUpdatesAsync();
     if (update is null)
     {
-        if (!args.Contains("--expect-current")) throw new InvalidOperationException("No newer public package was detected");
+        if (!args.Contains("--expect-current")) throw new InvalidOperationException("No different public package was detected");
         Console.WriteLine(JsonSerializer.Serialize(new { repository = UpdateService.GitHubRepoUrl, from,
             noNewerVersion = true, applied = false, personalDataAccessed = false }));
         return;
@@ -103,6 +102,7 @@ try
         repository = UpdateService.GitHubRepoUrl,
         from,
         latest = update.TargetFullRelease.Version.ToString(),
+        downgrade = update.IsDowngrade,
         package = update.TargetFullRelease.FileName,
         packageId = update.TargetFullRelease.PackageId,
         explicitUpdateProxy = proxy is not null,

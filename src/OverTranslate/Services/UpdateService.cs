@@ -346,12 +346,14 @@ public static class UpdateService
     /// invents a version with no package behind it: enough to drive the notification UI, never
     /// enough to download.
     /// </remarks>
-    private static DeltaAwareUpdateManager CreateManager()
+    internal static DeltaAwareUpdateManager CreateManager(IUpdateSource? updateSource = null, IVelopackLocator? locator = null)
     {
         var source = ResolveFeedSource();
-        var options = new UpdateOptions { ExplicitChannel = source.Channel };
+        // 正式版以 GitHub 发布为准，本机自行打包的较高版本号不能阻止同步。
+        var options = new UpdateOptions { ExplicitChannel = source.Channel,
+            AllowVersionDowngrade = source.RepositoryUrl == GitHubRepoUrl && source.Channel == StableChannel && !source.SeesPrerelease };
 
-        return new DeltaAwareUpdateManager(CreateUpdateSource(source), options);
+        return new DeltaAwareUpdateManager(updateSource ?? CreateUpdateSource(source), options, locator);
     }
 
     internal static IUpdateSource CreateUpdateSource(UpdateFeedSource source)

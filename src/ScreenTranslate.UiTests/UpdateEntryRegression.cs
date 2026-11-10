@@ -133,13 +133,14 @@ public sealed partial class ScreenTranslateShellTests
         var previous = state.GetValue(null);
         var previousPending = pendingField.GetValue(null);
         var folder = System.IO.Directory.CreateTempSubdirectory("update-refresh-").FullName;
-        OverTranslate.Services.UpdateInfo Offer(string version) => new(version,
+        OverTranslate.Services.UpdateInfo Offer(string version, bool downgrade = false) => new(version,
             new DeltaAwareUpdateManager(new DeskHubReleaseSource(), new UpdateOptions(),
                 new TestVelopackLocator("ScreenTranslate", "0.3.5", folder, null, folder, null)),
             new Velopack.UpdateInfo(new VelopackAsset { PackageId = "ScreenTranslate", Version = SemanticVersion.Parse(version),
-                Type = VelopackAssetType.Full, FileName = $"ScreenTranslate-{version}-full.nupkg" }, false, null!, []));
+                Type = VelopackAssetType.Full, FileName = $"ScreenTranslate-{version}-full.nupkg" }, downgrade, null!, []));
         var older = Offer("9.9.10-test");
         var newer = Offer("9.9.11-test");
+        var skipped = SettingsService.Instance.Current.SkippedUpdateVersion;
         try
         {
             state.SetValue(null, older);
@@ -194,7 +195,19 @@ public sealed partial class ScreenTranslateShellTests
             Assert.Contains("检查更新失败", ((TextBlock)current.FindName("ErrorText")).Text);
             Assert.Equal("v9.9.12-test", ((TextBlock)current.FindName("LatestVersionText")).Text);
 
-            // A newer offer must never replace a download which is already in progress.
+            var higher = current;
+            UpdateWindow.ShowOrActivate(Offer("9.9.10-test", downgrade: true));
+            PumpUntil(() => !higher.IsVisible);
+            current = Application.Current.Windows.OfType<UpdateWindow>().Single();
+            Assert.Equal("v9.9.10-test", ((TextBlock)current.FindName("LatestVersionText")).Text);
+            Assert.Contains("GitHub", ((TextBlock)current.FindName("ExplanationText")).Text);
+            Assert.Equal(Visibility.Visible, ((TextBlock)current.FindName("ExplanationText")).Visibility);
+            SettingsService.Instance.Current.SkippedUpdateVersion = "9.9.12-test";
+            Assert.False(UpdateNotifier.IsSkipped(Offer("9.9.10-test", downgrade: true)));
+            Assert.True(UpdateNotifier.IsSkipped(Offer("9.9.12-test")));
+            refresh = Assert.IsType<Button>(current.FindName("RefreshButton"));
+
+            // A different offer must never replace a download which is already in progress.
             var phase = typeof(UpdateWindow).GetNestedType("Phase", BindingFlags.NonPublic)!;
             var setPhase = typeof(UpdateWindow).GetMethod("SetPhase", BindingFlags.Instance | BindingFlags.NonPublic)!;
             setPhase.Invoke(current, [Enum.Parse(phase, "Downloading")]);
@@ -213,6 +226,7 @@ public sealed partial class ScreenTranslateShellTests
                 window.Close();
             }
             state.SetValue(null, previous); pendingField.SetValue(null, previousPending);
+            SettingsService.Instance.Current.SkippedUpdateVersion = skipped;
             System.IO.Directory.Delete(folder, true);
         }
     }
