@@ -36,6 +36,8 @@ internal sealed class ClipboardLoopGuard
 internal sealed class LanClipboardSync : IDisposable
 {
     internal const string OriginFormat = "ScreenTranslate.LanOrigin.v1";
+    internal static string DescribeOrigin(object? value) => value is string { Length: > 0 and <= 80 } device
+        && device != "received" && !string.IsNullOrWhiteSpace(device) && !device.Any(char.IsControl) ? "来自 " + device : "局域网";
     private readonly Dispatcher _dispatcher;
     private readonly LanNode _node;
     private readonly ClipboardLoopGuard _loop = new();
@@ -150,7 +152,7 @@ internal sealed class LanClipboardSync : IDisposable
         await _dispatcher.InvokeAsync(async () =>
         {
             var data = new DataObject();
-            data.SetData(OriginFormat, "received");
+            data.SetData(OriginFormat, payload.Origin.Length == 0 ? _node.PeerName : payload.Origin);
             if (payload.Kind == "text") data.SetText(new UTF8Encoding(false, true).GetString(payload.Bytes));
             else if (payload.Kind == "image")
             {

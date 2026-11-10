@@ -18,6 +18,8 @@ public partial class LanTransferWindow
 {
     private static readonly List<LanTransferWindow> Connections = [];
     private static readonly LanClipboardRelay ClipboardRelay = new();
+    private static readonly Lazy<OverTranslate.Services.Library.LibraryStore> SyncLibrary = new(
+        () => new(OverTranslate.Services.Library.LibraryStore.DefaultPath), LazyThreadSafetyMode.PublicationOnly);
     private static readonly Lazy<LanTrustedDevices> TrustStore = new(() => new(Path.Combine(AppDataPaths.Root, "trusted-devices.dat")));
     private static bool _restored;
     private readonly string _deviceId = Guid.NewGuid().ToString("N");

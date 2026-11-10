@@ -379,9 +379,10 @@ internal sealed class LanNode : IAsyncDisposable
                         else if (ClipboardEnabled && (AcceptClipboardMessage?.Invoke(header.Id) ?? true))
                         {
                             if (ApplyClipboardAsync is not { } apply) throw new InvalidOperationException("剪贴板接收尚未启用。");
-                            await apply(new(header.Kind, bytes), receiveTimeout.Token).ConfigureAwait(false);
-                            ClipboardReceived?.Invoke(new(header.Id, new(header.Kind, bytes)));
-                            ClipboardNotice?.Invoke(this, header.Kind == "text" ? "已同步对方新复制的文本。" : "已同步对方新复制的图片。");
+                            var payload = new LanClipboardPayload(header.Kind, bytes, Origin: header.Origin.Length == 0 ? name : header.Origin);
+                            await apply(payload, receiveTimeout.Token).ConfigureAwait(false);
+                            ClipboardReceived?.Invoke(new(header.Id, payload));
+                            ClipboardNotice?.Invoke(this, $"已接收来自 {payload.Origin} 的{(header.Kind == "text" ? "文本" : "图片")}。");
                         }
                         else if (!ClipboardEnabled)
                         {
@@ -434,7 +435,8 @@ internal sealed class LanNode : IAsyncDisposable
         var session = _session ?? throw new InvalidOperationException("请先配对另一台电脑。");
         ClipboardSending?.Invoke(id);
         return await SendAsync(session, payload.Kind, "", stream, LanProtocol.Hash(payload.Bytes), token,
-            new(id, SyncKind.Clipboard, false, PeerName, SyncState.Running)).ConfigureAwait(false);
+            new(id, SyncKind.Clipboard, false, PeerName, SyncState.Running),
+            payload.Origin.Length == 0 ? _name : ValidateDeviceName(payload.Origin)).ConfigureAwait(false);
     }
 
     internal async Task<bool> SendLibraryAsync(byte[] bytes, CancellationToken token = default)
@@ -489,7 +491,8 @@ internal sealed class LanNode : IAsyncDisposable
         }
     }
 
-    private async Task<bool> SendAsync(Session session, string kind, string name, Stream body, string hash, CancellationToken token, SyncActivity? existing = null)
+    private async Task<bool> SendAsync(Session session, string kind, string name, Stream body, string hash, CancellationToken token,
+        SyncActivity? existing = null, string origin = "")
     {
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(session.Closed, token);
         // 每个方向的每条逻辑通道仅允许一个待确认请求；文件和剪贴板分别排队。
@@ -502,7 +505,7 @@ internal sealed class LanNode : IAsyncDisposable
             gate.Release();
             throw new InvalidOperationException("资料库同步已暂停，未发送排队内容。");
         }
-        var header = new LanHeader(kind, existing?.Id ?? Guid.NewGuid().ToString("N"), name, body.Length, hash);
+        var header = new LanHeader(kind, existing?.Id ?? Guid.NewGuid().ToString("N"), name, body.Length, hash, Origin: origin);
         var activity = existing ?? new SyncActivity(header.Id, isFile ? SyncKind.Files : kind == "library" ? SyncKind.Library : SyncKind.Clipboard,
             false, PeerName, SyncState.Running, isFile ? name : "");
         activity = activity with { Total = body.Length };

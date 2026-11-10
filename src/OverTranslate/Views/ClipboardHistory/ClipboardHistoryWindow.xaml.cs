@@ -530,6 +530,8 @@ public partial class ClipboardHistoryWindow : Window
         }
         PreviewImage.Source = null;
         DetailHint.Text = record.Category + " · " + record.TimeLabel;
+        DetailSource.Text = record.SourceLabel;
+        DetailSource.Visibility = record.SourceLabel.Length == 0 ? Visibility.Collapsed : Visibility.Visible;
         PreviewPanel.Visibility = Visibility.Visible; PreviewText.Focus();
         if (HistoryList.SelectedItem is ClipboardRecordView view)
         {

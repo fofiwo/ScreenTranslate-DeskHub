@@ -59,7 +59,7 @@ internal static class ClipboardContent
         }
         if (text.Length == 0 && html.Length == 0 && rtf.Length == 0 && files.Length == 0 && image is null) return null;
         return new(new ClipboardRecord { Text = text, Html = html, Rtf = rtf, Files = files,
-            Source = data.GetDataPresent(LanClipboardSync.OriginFormat) ? "局域网" : source,
+            Source = data.GetDataPresent(LanClipboardSync.OriginFormat) ? LanClipboardSync.DescribeOrigin(data.GetData(LanClipboardSync.OriginFormat)) : source,
             CopiedAt = copiedAt ?? DateTimeOffset.UtcNow }, null);
     }
 

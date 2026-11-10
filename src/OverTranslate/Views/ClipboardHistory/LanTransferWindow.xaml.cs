@@ -121,7 +121,7 @@ public partial class LanTransferWindow : Window
     private void EnsureLibrarySync()
     {
         if (!_useClipboard || _library is not null) return;
-        _library = new(_node, () => new LibraryStore(LibraryStore.DefaultPath));
+        _library = new(_node, () => SyncLibrary.Value);
         _library.Changed += LibrarySyncNotifications.NotifyChanged;
         _library.StatusChanged += message =>
         {

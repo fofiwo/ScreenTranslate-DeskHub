@@ -32,6 +32,8 @@ internal sealed record ClipboardRecord
         : Text.Length > 0 ? Text : HasImage ? "图片" : Html.Length > 0 ? HtmlPreview(Html)
             : "富文本（打开预览或复制以使用原始格式）";
     [JsonIgnore] public string Header => string.IsNullOrEmpty(Source) ? Category : Source;
+    [JsonIgnore] public string SourceLabel => string.IsNullOrEmpty(Source) ? ""
+        : Source.StartsWith("来自 ", StringComparison.Ordinal) ? Source : "来源：" + Source;
     [JsonIgnore] public string ExactTime => $"复制：{CopiedAt.LocalDateTime:yyyy-MM-dd HH:mm:ss}\n首次：{CreatedAt.LocalDateTime:yyyy-MM-dd HH:mm:ss}";
     [JsonIgnore] public string TimeLabel
     {

@@ -151,6 +151,7 @@ internal sealed partial class LibraryStore
     {
         lock (_gate)
         {
+            _syncState = null;
             // 与迁移工具等独立进程串行保存，写入前重读，避免旧快照吞掉其他资料。
             using var mutex = AcquireFileMutex();
             try

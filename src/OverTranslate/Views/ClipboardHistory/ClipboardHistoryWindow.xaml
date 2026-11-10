@@ -156,10 +156,7 @@
      <ListBox.ItemTemplate><DataTemplate>
       <StackPanel>
        <Grid Margin="0,0,0,3"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-         <TextBlock Text="{Binding FileKind}" FontSize="11" Foreground="{DynamicResource AppTextSecondary}" Margin="0,0,5,0"/>
-         <TextBlock Text="{Binding Record.Source}" FontSize="11" Foreground="{DynamicResource AppTextSecondary}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" MaxWidth="150"/>
-        </StackPanel>
+         <TextBlock Text="{Binding FileKind}" FontSize="11" Foreground="{DynamicResource AppTextSecondary}" VerticalAlignment="Center"/>
         <StackPanel Grid.Column="1" Orientation="Horizontal">
          <Button Content="&#xE724;" Tag="send" Click="CardAction_Click" ToolTip="发送到设备" AutomationProperties.Name="发送文件到设备" Width="26" Height="24">
           <Button.Style><Style TargetType="Button" BasedOn="{StaticResource IconButton}"><Setter Property="Visibility" Value="Collapsed"/><Style.Triggers><DataTrigger Binding="{Binding HasFiles}" Value="True"><Setter Property="Visibility" Value="Visible"/></DataTrigger></Style.Triggers></Style></Button.Style>
@@ -188,7 +185,13 @@
           <Image Stretch="Uniform" MaxWidth="640" MaxHeight="480"/>
          </ToolTip>
         </Image.ToolTip>
-       </Image>
+        </Image>
+        <TextBlock Text="{Binding Record.SourceLabel}" ToolTip="{Binding Record.SourceLabel}" FontSize="11"
+         Foreground="{DynamicResource AppTextSecondary}" TextTrimming="CharacterEllipsis" Margin="0,5,0,0">
+         <TextBlock.Style><Style TargetType="TextBlock"><Style.Triggers>
+          <DataTrigger Binding="{Binding Record.SourceLabel}" Value=""><Setter Property="Visibility" Value="Collapsed"/></DataTrigger>
+         </Style.Triggers></Style></TextBlock.Style>
+        </TextBlock>
       </StackPanel>
      </DataTemplate></ListBox.ItemTemplate>
     </ListBox>
@@ -204,7 +207,11 @@
    </Grid>
    <Border x:Name="PreviewPanel" Grid.Row="1" Grid.RowSpan="5" Visibility="Collapsed" Background="{DynamicResource AppCardBg}" BorderBrush="{DynamicResource AppBorder}" BorderThickness="1" CornerRadius="10" Padding="14">
     <Grid><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
-     <DockPanel Margin="0,0,0,12"><Button DockPanel.Dock="Right" Style="{StaticResource IconButton}" Content="&#xE8BB;" Click="ClosePreview_Click" ToolTip="返回列表" AutomationProperties.Name="返回列表"/><TextBlock x:Name="DetailHint" Text="完整预览" VerticalAlignment="Center" FontWeight="SemiBold"/></DockPanel>
+      <DockPanel Margin="0,0,0,12"><Button DockPanel.Dock="Right" Style="{StaticResource IconButton}" Content="&#xE8BB;" Click="ClosePreview_Click" ToolTip="返回列表" AutomationProperties.Name="返回列表"/>
+       <StackPanel><TextBlock x:Name="DetailHint" Text="完整预览" VerticalAlignment="Center" FontWeight="SemiBold"/>
+        <TextBlock x:Name="DetailSource" Margin="0,4,8,0" FontSize="12" Foreground="{DynamicResource AppTextSecondary}" TextWrapping="Wrap"/>
+       </StackPanel>
+      </DockPanel>
      <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto"><StackPanel>
       <Image x:Name="PreviewImage" Stretch="Uniform" MaxHeight="360"/>
       <TextBox x:Name="PreviewText" IsReadOnly="True" TextWrapping="Wrap" BorderThickness="0" Background="Transparent" Foreground="{DynamicResource AppTextPrimary}" AutomationProperties.Name="剪贴板完整预览"/>

@@ -119,6 +119,7 @@ public sealed partial class ScreenTranslateShellTests
                 }
                 if (Environment.GetEnvironmentVariable("SCREEN_TRANSLATE_CLIPBOARD_POPUP_ONLY") == "1")
                 {
+                    VerifyClipboardDeviceSource();
                     VerifySystemClipboardHistory();
                     return;
                 }
@@ -312,6 +313,7 @@ public sealed partial class ScreenTranslateShellTests
                 Render(shell, "continuous-light");
                 VerifyHiddenShellReopens(shell);
                 Checkpoint("clipboard history start");
+                VerifyClipboardDeviceSource();
                 VerifySystemClipboardHistory();
                 Checkpoint("library regression start");
                 VerifyLibraryWindow(Checkpoint);

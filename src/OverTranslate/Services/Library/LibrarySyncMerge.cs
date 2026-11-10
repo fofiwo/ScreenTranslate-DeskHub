@@ -121,17 +121,18 @@ internal static class LibrarySyncMerge
         }
     }
 
-    internal static LibrarySyncItem ExportItem(LibraryState state, string id, LibrarySyncVersion version)
+    internal static LibrarySyncItem ExportItem(LibraryState state, string id, LibrarySyncVersion version,
+        IReadOnlyDictionary<string, LibraryPrompt>? prompts = null, IReadOnlyDictionary<string, LibraryConnection>? connections = null)
     {
         var item = new LibrarySyncItem { Id = id, Version = Copy(version), Alternatives = version.Branches.Select(WireBranch).ToList() };
         item.Version.Branches = [];
         item.Version.Clock = item.Version.Clock.OrderBy(v => v.Key, StringComparer.Ordinal).ToDictionary(v => v.Key, v => v.Value);
         if (version.Deleted) return item;
         if (id.StartsWith("p:", StringComparison.Ordinal))
-        { item.Prompt = Copy(state.Prompts.Single(p => p.Id == id[2..])); item.Prompt.CopyCount = 0; }
+        { item.Prompt = Copy(prompts is null ? state.Prompts.Single(p => p.Id == id[2..]) : prompts[id[2..]]); item.Prompt.CopyCount = 0; }
         else
         {
-            item.Connection = Copy(state.Connections.Single(c => c.Id == id[2..]));
+            item.Connection = Copy(connections is null ? state.Connections.Single(c => c.Id == id[2..]) : connections[id[2..]]);
             item.ApiKey = LocalSecretStore.Unprotect(item.Connection.ApiKeyProtected);
             item.Connection.ApiKeyProtected = ""; item.Connection.AllowInsecureEndpoint = false;
             item.Connection.LastCopiedModelId = ""; item.Connection.Revision = "";
@@ -160,11 +161,23 @@ internal static class LibrarySyncMerge
         return stored;
     }
 
-    public static LibrarySyncSnapshot Export(LibraryState state) => new()
+    internal static string VersionStamp(LibrarySyncVersion version) => JsonSerializer.Serialize(new
     {
-        Items = state.Sync!.Versions.OrderBy(v => v.Key, StringComparer.Ordinal)
-            .Select(v => ExportItem(state, v.Key, v.Value)).ToList()
-    };
+        version.Revision, version.Deleted,
+        Clock = version.Clock.OrderBy(v => v.Key, StringComparer.Ordinal),
+        Branches = version.Branches.OrderBy(b => b.Version.Revision, StringComparer.Ordinal).Select(b => VersionStamp(b.Version))
+    });
+
+    public static LibrarySyncSnapshot Export(LibraryState state, IEnumerable<string>? ids = null)
+    {
+        var prompts = state.Prompts.ToDictionary(p => p.Id, StringComparer.Ordinal);
+        var connections = state.Connections.ToDictionary(c => c.Id, StringComparer.Ordinal);
+        return new()
+        {
+            Items = (ids ?? state.Sync!.Versions.Keys).Order(StringComparer.Ordinal)
+                .Select(id => ExportItem(state, id, state.Sync!.Versions[id], prompts, connections)).ToList()
+        };
+    }
 
     internal static void Validate(LibrarySyncSnapshot snapshot)
     {
@@ -329,6 +342,11 @@ internal static class LibrarySyncMerge
 
 internal sealed partial class LibraryStore
 {
+    private LibraryState? _syncState;
+    private (long Length, DateTime Modified) _syncFileStamp;
+    private long _syncReadAt;
+    private IReadOnlyDictionary<string, string>? _syncVersions;
+
     private static bool SamePromptContent(LibraryPrompt a, LibraryPrompt b) =>
         a.Title == b.Title && a.Content == b.Content && a.Description == b.Description && a.Tags.SequenceEqual(b.Tags);
 
@@ -336,10 +354,41 @@ internal sealed partial class LibraryStore
     {
         lock (_gate)
         {
-            var current = Read();
-            if (current.Sync is null)
-                UpdateCore(s => { if (s.Sync is null) { s.Sync = new(); LibrarySyncMerge.Track(new LibraryState(), s); } }, false);
-            return LibrarySyncMerge.Export(Read());
+            return LibrarySyncMerge.Export(LoadSyncState());
+        }
+    }
+
+    private LibraryState LoadSyncState()
+    {
+        var current = Load();
+        if (current.Sync is not null) return current;
+        UpdateCore(s => { if (s.Sync is null) { s.Sync = new(); LibrarySyncMerge.Track(new LibraryState(), s); } }, false);
+        return Load();
+    }
+
+    internal LibrarySyncSnapshot ExportSyncChanges(IReadOnlyDictionary<string, string>? knownVersions,
+        out IReadOnlyDictionary<string, string> versions)
+    {
+        lock (_gate)
+        {
+            var file = new FileInfo(_path);
+            var stamp = (file.Exists ? file.Length : -1, file.LastWriteTimeUtc);
+            // 缓存仅保留本机加密状态；定期重读兜底发现保留了时间戳和长度的外部替换。
+            if (_syncState is null || stamp != _syncFileStamp
+                || System.Diagnostics.Stopwatch.GetElapsedTime(_syncReadAt) >= TimeSpan.FromSeconds(30))
+            {
+                _syncState = null;
+                var current = LoadSyncState();
+                _syncVersions = current.Sync!.Versions.ToDictionary(v => v.Key, v => LibrarySyncMerge.VersionStamp(v.Value), StringComparer.Ordinal);
+                _syncState = current; _syncFileStamp = stamp;
+                _syncReadAt = System.Diagnostics.Stopwatch.GetTimestamp();
+            }
+            var currentVersions = _syncVersions!;
+            versions = currentVersions;
+            if (knownVersions is null) return LibrarySyncMerge.Export(_syncState);
+            if (ReferenceEquals(knownVersions, currentVersions)) return new();
+            var changed = currentVersions.Keys.Where(id => knownVersions.GetValueOrDefault(id) != currentVersions[id]).ToArray();
+            return changed.Length == 0 ? new() : LibrarySyncMerge.Export(_syncState, changed);
         }
     }
 

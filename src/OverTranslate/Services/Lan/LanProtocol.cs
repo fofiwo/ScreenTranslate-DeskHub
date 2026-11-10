@@ -6,11 +6,11 @@ using OverTranslate.Services.Library;
 
 namespace OverTranslate.Services.Lan;
 
-internal sealed record LanClipboardPayload(string Kind, byte[] Bytes, long Sequence = 0);
+internal sealed record LanClipboardPayload(string Kind, byte[] Bytes, long Sequence = 0, string Origin = "");
 internal sealed record LanPairRequest(string Name, string Address);
 internal sealed record LanProgress(string Name, long Completed, long Total, string Phase);
 internal sealed record LanHeader(string Kind, string Id = "", string Name = "", long Length = 0,
-    string Hash = "", bool Accepted = false, int Version = 3, bool FileOffers = false, bool Reconnect = false);
+    string Hash = "", bool Accepted = false, int Version = 3, bool FileOffers = false, bool Reconnect = false, string Origin = "");
 
 internal static class LanProtocol
 {
@@ -57,6 +57,9 @@ internal static class LanProtocol
         }
         else if (header.Kind is "text" or "image")
         {
+            if (header.Origin is null || header.Origin.Length > 80 || header.Origin.Any(char.IsControl)
+                || header.Origin.Length > 0 && string.IsNullOrWhiteSpace(header.Origin))
+                throw new InvalidDataException("剪贴板来源设备无效。");
             if (header.Length > MaxClipboard) throw new InvalidDataException("剪贴板内容超过 32 MB 上限。");
         }
         else throw new InvalidDataException("不支持的传输类型。");

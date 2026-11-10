@@ -45,7 +45,7 @@ internal sealed class LanLibrarySync : IAsyncDisposable
     private async Task RunAsync()
     {
         long connection = -1;
-        string? sent = null;
+        IReadOnlyDictionary<string, string>? sent = null;
         while (!_stop.IsCancellationRequested)
         {
             try
@@ -54,15 +54,20 @@ internal sealed class LanLibrarySync : IAsyncDisposable
                 {
                     var version = _node.ConnectionVersion;
                     if (version != connection) { connection = version; sent = null; }
-                    var bytes = JsonSerializer.SerializeToUtf8Bytes(_store.Value.ExportSync());
+                    var snapshot = _store.Value.ExportSyncChanges(sent, out var versions);
+                    if (sent is not null && snapshot.Items.Count == 0)
+                    {
+                        await Task.Delay(_interval, _stop.Token).ConfigureAwait(false);
+                        continue;
+                    }
+                    var bytes = JsonSerializer.SerializeToUtf8Bytes(snapshot);
                     try
                     {
-                        var hash = LanProtocol.Hash(bytes);
-                        if (hash != sent && _node.ConnectionVersion == version && _node.IsConnected && _node.LibraryEnabled)
+                        if (_node.ConnectionVersion == version && _node.IsConnected && _node.LibraryEnabled)
                         {
                             StatusChanged?.Invoke("正在同步提示词库和模型库…");
                             if (await _node.SendLibraryAsync(bytes, _stop.Token).ConfigureAwait(false))
-                            { sent = hash; StatusChanged?.Invoke("提示词库和模型库已同步；后续修改会自动同步。"); }
+                            { sent = versions; StatusChanged?.Invoke("提示词库和模型库已同步；后续修改会自动同步。"); }
                             else StatusChanged?.Invoke("对方未能接收或保存资料库，请检查对方同步开关、资料和目录权限；将自动重试。");
                         }
                     }
