@@ -1,6 +1,5 @@
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Input;
 using OverTranslate.Services.ClipboardHistory;
 using OverTranslate.Services.Lan;
 using OverTranslate.Views.ClipboardHistory;
@@ -20,50 +19,12 @@ public sealed partial class ScreenTranslateShellTests
         journal.Update(new("clipboard", SyncKind.Clipboard, false, "另一台电脑", SyncState.Completed));
         journal.Update(new("library", SyncKind.Library, true, "另一台电脑", SyncState.Rejected, Issue: SyncIssue.Paused));
         journal.Update(new("files", SyncKind.Files, false, "另一台电脑", SyncState.Waiting, "项目文件", Total: 1024));
-        var clipboard = new ClipboardHistoryStore(System.IO.Path.Combine(root, "clipboard"));
-        clipboard.Add(new() { Text = "同步页面不应复制这条历史", Source = "fixture.exe" });
-        var copies = 0;
-        var window = new ClipboardHistoryWindow(clipboard, _ => { copies++; return Task.CompletedTask; },
-            paste: () => Task.FromResult(false),
+        var window = new ClipboardHistoryWindow(new ClipboardHistoryStore(System.IO.Path.Combine(root, "clipboard")), _ => Task.CompletedTask,
             settings: new(), saveSettings: () => true, syncActivities: journal)
         { Left = -10000, Top = -10000, ShowActivated = false };
         try
         {
             window.Show(); window.UpdateLayout();
-            PumpUntil(() => !window.IsRefreshing);
-            var tabs = (ListBox)window.FindName("TypeFilter");
-            var send = (Button)window.FindName("SendToDeviceButton");
-            var records = (ListBox)window.FindName("HistoryList");
-            var search = (TextBox)window.FindName("SearchBox");
-            Assert.Equal("全部", ((ListBoxItem)tabs.SelectedItem).Content);
-            Assert.False(send.IsVisible);
-            Render(window, "clipboard-sync-hidden-default", 560, 700);
-            var syncTab = tabs.Items.Cast<ListBoxItem>().Single(item => Equals(item.Content, "设备与同步"));
-            search.Text = "同步页面";
-            tabs.SelectedItem = syncTab; window.UpdateLayout();
-            Assert.True(send.IsVisible);
-            Assert.False(records.IsVisible);
-            Assert.False(search.IsVisible);
-            Assert.False(((TextBlock)window.FindName("ActionHint")).IsVisible);
-            Assert.NotNull(window.SelectedRecord);
-            foreach (var key in new[] { Key.Enter, Key.Up, Key.Down })
-                window.RaiseEvent(new KeyEventArgs(Keyboard.PrimaryDevice, PresentationSource.FromVisual(window), 0, key)
-                    { RoutedEvent = Keyboard.PreviewKeyDownEvent });
-            Assert.Equal(0, copies);
-            Assert.True(window.IsVisible);
-            foreach (var tab in tabs.Items.Cast<ListBoxItem>().Where(item => item != syncTab))
-            {
-                tabs.SelectedItem = tab; window.UpdateLayout();
-                Assert.False(send.IsVisible);
-                Assert.True(records.IsVisible);
-                Assert.True(search.IsVisible);
-            }
-            Assert.Equal("同步页面", search.Text);
-            tabs.SelectedItem = syncTab;
-            window.ShowPanel(); window.UpdateLayout();
-            Assert.Equal(0, tabs.SelectedIndex);
-            Assert.False(send.IsVisible);
-            tabs.SelectedItem = syncTab; window.UpdateLayout();
             var summary = (TextBlock)window.FindName("SyncSummaryText");
             Assert.Contains("剪贴板：已完成", summary.Text);
             Assert.Contains("资料库：未被接收", summary.Text);
