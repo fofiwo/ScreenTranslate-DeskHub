@@ -156,7 +156,7 @@ public partial class LibraryWindow : Window
             _current.RefreshShortcut();
             if (!_current.IsVisible) _current.Show();
             if (_current.WindowState == WindowState.Minimized) _current.WindowState = WindowState.Normal;
-            _current.Activate();
+            KeyboardForeground.Activate(_current);
         }
         catch when (version != _openVersion) { }
         finally
@@ -182,7 +182,7 @@ public partial class LibraryWindow : Window
             SetQuickAccess(true);
             if (!IsVisible) Show();
             if (WindowState == WindowState.Minimized) WindowState = WindowState.Normal;
-            Activate();
+            KeyboardForeground.Activate(this);
         }
     }
 

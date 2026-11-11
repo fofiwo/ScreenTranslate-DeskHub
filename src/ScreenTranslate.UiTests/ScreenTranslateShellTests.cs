@@ -47,6 +47,11 @@ public sealed partial class ScreenTranslateShellTests
                     Source = new Uri("pack://application:,,,/ScreenTranslate;component/Resources/Strings.zh-Hans.xaml", UriKind.Absolute)
                 };
                 ApplyTheme(app, "Light");
+                if (Environment.GetEnvironmentVariable("SCREEN_TRANSLATE_HOTKEY_RECOVERY_ONLY") == "1")
+                {
+                    VerifyHotkeyRecovery();
+                    return;
+                }
                 if (Environment.GetEnvironmentVariable("SCREEN_TRANSLATE_COLOR_HIERARCHY_ONLY") == "1")
                 {
                     VerifyListColorHierarchy(libraryDirectory);
@@ -210,6 +215,7 @@ public sealed partial class ScreenTranslateShellTests
                     VerifyClipboardWindowPinToggle();
                     return;
                 }
+                VerifyHotkeyRecovery();
                 VerifyUpdateEntries();
                 VerifyListColorHierarchy(libraryDirectory);
                 Checkpoint("library quick access start");

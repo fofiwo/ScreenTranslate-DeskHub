@@ -28,6 +28,7 @@ public partial class MainWindow : Window
     private GlobalHotkey? _libraryHotkey;
     private GlobalHotkey? _clipboardHotkey;
     public IReadOnlyList<HotkeyAction> HotkeyRegistrationFailures { get; private set; } = [];
+    public IReadOnlyList<HotkeyAction> HotkeyFallbacks { get; private set; } = [];
     private GlobalHotkey? _windowHotkey;
     private GlobalHotkey? _realtimePauseHotkey;
     private bool _hotkeysSuspendedForRecording;
@@ -219,6 +220,7 @@ public partial class MainWindow : Window
             }
         }
         HotkeyRegistrationFailures = failed;
+        HotkeyFallbacks = hooks.Where(pair => pair.Value.UsesKeyboardHook).Select(pair => pair.Key).ToArray();
 
     }
 

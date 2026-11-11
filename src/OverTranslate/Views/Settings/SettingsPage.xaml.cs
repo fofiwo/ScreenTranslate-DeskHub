@@ -17,6 +17,7 @@ public partial class SettingsPage : UserControl
     private readonly Dictionary<HotkeyAction, TextBox> _boxes = new();
     private readonly Dictionary<HotkeyAction, CheckBox> _enabled = new();
     private HotkeyAction? _recording;
+    private ShortcutRecorder? _recorder;
     private readonly Action<bool> _setHotkeyRecording;
     private readonly Func<bool> _saveSettings;
     internal event EventHandler? OptionsChanged;
@@ -49,9 +50,7 @@ public partial class SettingsPage : UserControl
             System.Windows.Automation.AutomationProperties.SetName(box, title + "快捷键");
             box.PreviewMouseLeftButtonDown += (_, e) =>
             {
-                if (_recording is null) _setHotkeyRecording(true);
-                _recording = action;
-                box.Focus(); box.Text = "请按键盘组合…"; e.Handled = true;
+                box.Focus(); BeginRecording(action); e.Handled = true;
             };
             box.PreviewKeyDown += Record_KeyDown;
             box.LostKeyboardFocus += (_, _) => { if (_recording == action) EndRecording(); };
@@ -115,7 +114,10 @@ public partial class SettingsPage : UserControl
             .Where(b => b.Enabled && (b.ShadowedBy is not null || !HotkeyBindings.IsBindable(b.Trigger)))
             .Select(b => $"{_enabled[b.Action].Content}：组合冲突或不可注册，请重新设置。").ToList();
         if (System.Windows.Application.Current?.MainWindow is MainWindow main)
+        {
             errors.AddRange(main.HotkeyRegistrationFailures.Select(a => $"{_enabled[a].Content}：注册失败，组合可能被其他程序占用。"));
+            errors.AddRange(main.HotkeyFallbacks.Select(a => $"{_enabled[a].Content}：已启用，本软件优先响应此组合。"));
+        }
         HotkeyStatus.Text = errors.Count > 0 ? string.Join("\n", errors) : "键盘组合无冲突；全局注册状态以当前运行程序为准。";
     }
 
@@ -172,9 +174,7 @@ public partial class SettingsPage : UserControl
         if (sender is not TextBox box) return;
         if (_recording is null && e.Key is Key.Enter or Key.Space && box.Tag is HotkeyAction selected)
         {
-            _setHotkeyRecording(true);
-            _recording = selected;
-            box.Text = "请按键盘组合…";
+            BeginRecording(selected);
             e.Handled = true;
             return;
         }
@@ -186,11 +186,39 @@ public partial class SettingsPage : UserControl
         if (e.IsRepeat || key is Key.LeftCtrl or Key.RightCtrl or Key.LeftAlt or Key.RightAlt or Key.LeftShift or Key.RightShift or Key.LWin or Key.RWin) return;
         var modifiers = Keyboard.Modifiers;
         uint mods = (modifiers.HasFlag(ModifierKeys.Control) ? 2u : 0) |
-            (modifiers.HasFlag(ModifierKeys.Alt) ? 1u : 0) | (modifiers.HasFlag(ModifierKeys.Shift) ? 4u : 0);
-        var vk = (uint)KeyInterop.VirtualKeyFromKey(key);
+            (modifiers.HasFlag(ModifierKeys.Alt) ? 1u : 0) | (modifiers.HasFlag(ModifierKeys.Shift) ? 4u : 0) |
+            (modifiers.HasFlag(ModifierKeys.Windows) ? 8u : 0);
+        RecordShortcut((uint)KeyInterop.VirtualKeyFromKey(key), mods);
+    }
+
+    private void BeginRecording(HotkeyAction action)
+    {
+        EndRecording(reload: false);
+        _setHotkeyRecording(true);
+        _recording = action;
+        _boxes[action].Text = "请按键盘组合…";
+        if (PresentationSource.FromVisual(this) is not System.Windows.Interop.HwndSource source) return;
+        ShortcutRecorder? recorder = null;
+        recorder = new ShortcutRecorder(source.Handle, (key, modifiers) => Dispatcher.BeginInvoke(() =>
+        {
+            if (ReferenceEquals(_recorder, recorder) && _recording == action) RecordShortcut(key, modifiers);
+        }));
+        _recorder = recorder;
+        if (!recorder.Install())
+        {
+            recorder.Dispose(); _recorder = null;
+            HotkeyStatus.Text = "全局组合录入未启动；当前仍可录入窗口收到的按键。";
+        }
+    }
+
+    private void RecordShortcut(uint vk, uint mods)
+    {
+        if (_recording is not { } action) return;
+        var key = KeyInterop.KeyFromVirtualKey((int)vk);
+        if (key is Key.Escape or Key.Tab) { EndRecording(); return; }
         var trigger = ShortcutTrigger.Keyboard(mods, vk);
         var s = SettingsService.Instance.Current;
-        if (vk == 0 || modifiers.HasFlag(ModifierKeys.Windows) || !HotkeyBindings.IsBindable(trigger))
+        if (vk == 0 || (mods & 8) != 0 || !HotkeyBindings.IsBindable(trigger))
         { HotkeyStatus.Text = "请使用 Ctrl、Alt 或 Shift 组合，或 F1–F24 等功能键。"; return; }
         var conflict = HotkeyBindings.Resolve(s).FirstOrDefault(b => b.Action != action && b.Enabled && b.Trigger == trigger);
         if (conflict.Enabled) { HotkeyStatus.Text = $"与“{_enabled[conflict.Action].Content}”冲突，请选择其他组合。"; return; }
@@ -213,6 +241,8 @@ public partial class SettingsPage : UserControl
     {
         if (_recording is null) return;
         _recording = null;
+        _recorder?.Dispose();
+        _recorder = null;
         _setHotkeyRecording(false);
         if (reload) Reload();
     }

@@ -261,7 +261,7 @@ public partial class ClipboardHistoryWindow : Window
 
     internal void ToggleVisibility()
     {
-        if (IsVisible) Dismiss(); else ShowPanel();
+        if (IsVisible && WindowState != WindowState.Minimized && IsActive) Dismiss(); else ShowPanel();
     }
 
     internal void Dismiss()

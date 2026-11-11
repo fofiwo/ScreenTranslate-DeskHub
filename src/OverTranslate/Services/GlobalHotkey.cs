@@ -1,11 +1,13 @@
 using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Interop;
+using NLog;
 
 namespace OverTranslate.Services;
 
 public class GlobalHotkey : IDisposable
 {
+    private static readonly Logger Log = LogManager.GetCurrentClassLogger();
     private const int WM_HOTKEY = 0x0312;
 
     /// <summary>
@@ -46,12 +48,15 @@ public class GlobalHotkey : IDisposable
     private IntPtr _hwnd;
     private HwndSource? _source;
     private bool _registered;
-    public bool IsRegistered => _registered;
+    private GlobalHotkeyFallback? _fallback;
+    private int _generation;
+    public bool UsesKeyboardHook => _fallback?.IsInstalled == true;
+    public bool IsRegistered => _registered || UsesKeyboardHook;
 
     public void Register(IntPtr hwnd, uint modifiers, uint virtualKey)
     {
-        _hwnd = hwnd;
         Unregister();
+        _hwnd = hwnd;
 
         _source = HwndSource.FromHwnd(hwnd);
         _source?.AddHook(WndProc);
@@ -62,16 +67,46 @@ public class GlobalHotkey : IDisposable
         // and every one of these shortcuts is a toggle or a session start — held for half a second,
         // a single key would switch the one-shot view back and forth a dozen times.
         _registered = RegisterHotKey(hwnd, _id, modifiers | MOD_NOREPEAT, virtualKey);
+        if (_registered) return;
+
+        var error = Marshal.GetLastWin32Error();
+        if (error == 1409 && _source is { } source)
+        {
+            var generation = _generation;
+            _fallback = new GlobalHotkeyFallback(modifiers, virtualKey, () =>
+            {
+                // 钩子线程只投递通知；录入、改键或退出后丢弃旧通知。
+                if (source.Dispatcher.HasShutdownStarted) return;
+                source.Dispatcher.BeginInvoke(() =>
+                {
+                    if (generation == _generation && UsesKeyboardHook)
+                        HotkeyPressed?.Invoke(this, EventArgs.Empty);
+                });
+            });
+            if (_fallback.Install())
+            {
+                Log.Info("Hotkey {Id} uses keyboard fallback after registration conflict", _id);
+                return;
+            }
+            error = _fallback.InstallError;
+            _fallback.Dispose();
+            _fallback = null;
+        }
+        Log.Warn("Hotkey {Id} could not be enabled (win32 error {Error})", _id, error);
     }
 
     public void Unregister()
     {
+        _generation++;
+        _fallback?.Dispose();
+        _fallback = null;
         if (_registered)
         {
             UnregisterHotKey(_hwnd, _id);
             _registered = false;
         }
         _source?.RemoveHook(WndProc);
+        _source = null;
     }
 
     private IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
