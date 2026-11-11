@@ -47,6 +47,11 @@ public sealed partial class ScreenTranslateShellTests
                     Source = new Uri("pack://application:,,,/ScreenTranslate;component/Resources/Strings.zh-Hans.xaml", UriKind.Absolute)
                 };
                 ApplyTheme(app, "Light");
+                if (Environment.GetEnvironmentVariable("SCREEN_TRANSLATE_COLOR_HIERARCHY_ONLY") == "1")
+                {
+                    VerifyListColorHierarchy(libraryDirectory);
+                    return;
+                }
                 if (Environment.GetEnvironmentVariable("SCREEN_TRANSLATE_VISUAL_AUDIT_ONLY") == "1")
                 {
                     VerifyVisualLanguageAdversarial();
@@ -206,6 +211,7 @@ public sealed partial class ScreenTranslateShellTests
                     return;
                 }
                 VerifyUpdateEntries();
+                VerifyListColorHierarchy(libraryDirectory);
                 Checkpoint("library quick access start");
                 VerifyLibraryQuickAccess();
                 VerifyBorderlessShortcutShell();

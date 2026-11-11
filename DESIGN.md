@@ -13,6 +13,9 @@ colors:
   border: "#DDE3EF"
   border-subtle: "#E9EDF5"
   accent-subtle: "#EDF2FF"
+  list-bg: "#E8EDF5"
+  list-hover: "#EBF0F9"
+  list-selected: "#D8E5FC"
   button-border: "#D3DAE6"
   button-hover: "#F0F4FC"
   button-pressed: "#E3EAF8"
@@ -25,6 +28,9 @@ colors:
   dark-surface: "#19233A"
   dark-rail: "#141D32"
   dark-card: "#202C46"
+  dark-list-bg: "#141D32"
+  dark-list-hover: "#2B3B58"
+  dark-list-selected: "#2D456F"
   dark-text-primary: "#F5F7FF"
   dark-text-secondary: "#B7C4DD"
   dark-accent: "#9BB9FF"
@@ -199,9 +205,11 @@ Shell 默认窗口为 1220 × 800，最小为 1100 × 680；标题栏高 40，�
 
 `ModernTextBox` 与 `ModernComboBox` 默认高见 input；首页与 OCR 页按实际布局覆盖到 40。TextBox 左右内边距为 9，聚焦使用 `AppInputFocusBorder`，禁用透明度为 0.5。保留 ComboBox 搜索、选择事件、密码字段原生语义及 `PART_ContentHost` 等模板部件，不能为造型移除。
 
+资料库搜索区沿用窗口底色，不再铺满白色背景；搜索标签为 14、SemiBold、主文字色，输入文字为 14、输入框高 36。两页保持一致，详情白色分区不受影响。
+
 ### Navigation / Lists
 
-`ProductNav` 是同组 RadioButton：未选中采用次级文字色和透明底；hover 为按钮悬停底；选中为 AppAccent/AppAccentFg 加 SemiBold。列表 `ProductListItem` 内边距 16，条目下间距 6；hover 使用按钮悬停底，选中使用 `AppAccentSubtle`。不可把列表选中和导航选中误当成同一种填色。
+`ProductNav` 是同组 RadioButton：未选中采用次级文字色和透明底；hover 为按钮悬停底；选中为 AppAccent/AppAccentFg 加 SemiBold。列表 `ProductListItem` 内边距 16，条目下间距 6；普通项使用 AppCardBg 和 AppBorder，hover 使用 AppListHoverBg，选中使用 AppListSelectedBg、AppAccent 描边及短侧标记，选中态优先于悬停。资料库和剪贴板复用此模板，以 AppListBg 区分列表槽与条目；资料库详情采用白色独立分区，保留原有左右布局。剪贴板搜索使用输入底色及聚焦描边，分类选中使用 AppAccent/AppAccentFg；资料库和设置 Tab 使用 AppListSelectedBg。不可把列表选中和导航选中误当成同一种填色。
 
 ### Task Surface / Hints
 

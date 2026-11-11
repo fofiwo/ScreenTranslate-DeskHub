@@ -9,6 +9,10 @@
     <SolidColorBrush x:Key="AppBorder"         Color="#3A4864"/>
     <SolidColorBrush x:Key="AppSubtleBorder"   Color="#2E3D58"/>
 
+    <SolidColorBrush x:Key="AppListBg"         Color="#141D32"/>
+    <SolidColorBrush x:Key="AppListHoverBg"    Color="#2B3B58"/>
+    <SolidColorBrush x:Key="AppListSelectedBg" Color="#2D456F"/>
+
     <!-- A note the reader is not being asked to act on, laid over AppCardBg. A lift rather than a
          dip: it has to read as a panel on top of the card, and AppAccentSubtle — which this used
          first — is darker than the card it sits on and carries far more colour than a sentence

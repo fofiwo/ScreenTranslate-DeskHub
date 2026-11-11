@@ -108,17 +108,26 @@
         <Setter Property="Padding" Value="16"/>
         <Setter Property="Margin" Value="0,0,0,6"/>
         <Setter Property="Foreground" Value="{DynamicResource AppTextPrimary}"/>
-        <Setter Property="Background" Value="Transparent"/>
+        <Setter Property="Background" Value="{DynamicResource AppCardBg}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource AppBorder}"/>
+        <Setter Property="BorderThickness" Value="1"/>
         <Setter Property="FocusVisualStyle" Value="{StaticResource ProductFocus}"/>
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="ListBoxItem">
-                    <Border x:Name="Root" Background="{TemplateBinding Background}" Padding="{TemplateBinding Padding}" CornerRadius="8">
-                        <ContentPresenter/>
-                    </Border>
+                    <Grid Background="Transparent">
+                        <Border x:Name="Root" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" Padding="{TemplateBinding Padding}" CornerRadius="8">
+                            <ContentPresenter/>
+                        </Border>
+                        <Border x:Name="SelectionMark" Width="3" Height="20" CornerRadius="2" HorizontalAlignment="Left" VerticalAlignment="Center" Margin="1,0,0,0" Background="Transparent"/>
+                    </Grid>
                     <ControlTemplate.Triggers>
-                        <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Root" Property="Background" Value="{DynamicResource AppButtonHoverBg}"/></Trigger>
-                        <Trigger Property="IsSelected" Value="True"><Setter TargetName="Root" Property="Background" Value="{DynamicResource AppAccentSubtle}"/></Trigger>
+                        <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Root" Property="Background" Value="{DynamicResource AppListHoverBg}"/><Setter TargetName="Root" Property="BorderBrush" Value="{DynamicResource AppInputBorder}"/></Trigger>
+                        <Trigger Property="IsSelected" Value="True">
+                            <Setter TargetName="Root" Property="Background" Value="{DynamicResource AppListSelectedBg}"/>
+                            <Setter TargetName="Root" Property="BorderBrush" Value="{DynamicResource AppAccent}"/>
+                            <Setter TargetName="SelectionMark" Property="Background" Value="{DynamicResource AppAccent}"/>
+                        </Trigger>
                     </ControlTemplate.Triggers>
                 </ControlTemplate>
             </Setter.Value>
@@ -133,7 +142,7 @@
     </Grid>
     <ControlTemplate.Triggers>
      <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Surface" Property="Background" Value="{DynamicResource AppButtonHoverBg}"/></Trigger>
-     <Trigger Property="IsSelected" Value="True"><Setter TargetName="Surface" Property="Background" Value="{DynamicResource AppAccentSubtle}"/><Setter TargetName="Surface" Property="TextElement.Foreground" Value="{DynamicResource AppAccent}"/><Setter TargetName="Surface" Property="TextElement.FontWeight" Value="SemiBold"/></Trigger>
+     <Trigger Property="IsSelected" Value="True"><Setter TargetName="Surface" Property="Background" Value="{DynamicResource AppListSelectedBg}"/><Setter TargetName="Surface" Property="TextElement.Foreground" Value="{DynamicResource AppAccent}"/><Setter TargetName="Surface" Property="TextElement.FontWeight" Value="SemiBold"/></Trigger>
      <Trigger Property="IsEnabled" Value="False"><Setter Property="Opacity" Value="0.5"/></Trigger>
     </ControlTemplate.Triggers>
    </ControlTemplate></Setter.Value></Setter>

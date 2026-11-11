@@ -82,7 +82,7 @@ public sealed partial class ScreenTranslateShellTests
             list.SelectedIndex = 0; list.UpdateLayout();
             var item = Assert.IsType<ListBoxItem>(list.ItemContainerGenerator.ContainerFromIndex(0));
             Assert.Same(history.FindResource("ProductListItem"), item.Style);
-            Assert.Equal(((SolidColorBrush)history.FindResource("AppAccentSubtle")).Color,
+            Assert.Equal(((SolidColorBrush)history.FindResource("AppListSelectedBg")).Color,
                 ((SolidColorBrush)Visuals<Border>(item).First().Background).Color);
             var devices = (DeviceSyncWindow)windows[3];
             var deviceList = (ListBox)devices.FindName("DeviceList");

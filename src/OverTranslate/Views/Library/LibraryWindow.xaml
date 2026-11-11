@@ -88,22 +88,14 @@
   </Style>
   <Style TargetType="CheckBox" BasedOn="{StaticResource ModernCheckBox}"/>
   <Style x:Key="LibraryRow" TargetType="ListBoxItem" BasedOn="{StaticResource ProductListItem}">
-   <Setter Property="Padding" Value="0"/><Setter Property="Margin" Value="0"/>
+   <Setter Property="Padding" Value="0"/><Setter Property="Margin" Value="6,2,6,4"/>
    <Setter Property="FontWeight" Value="Normal"/>
-   <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="ListBoxItem">
-    <Grid Background="Transparent">
-     <Border x:Name="RowSurface" Background="Transparent" CornerRadius="6" Margin="0,2"><ContentPresenter/></Border>
-     <Border x:Name="SelectionMark" Width="3" HorizontalAlignment="Left" Background="Transparent" Margin="0,8"/>
-    </Grid>
-    <ControlTemplate.Triggers>
-     <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="RowSurface" Property="Background" Value="{DynamicResource AppButtonHoverBg}"/></Trigger>
-     <Trigger Property="IsSelected" Value="True"><Setter TargetName="RowSurface" Property="Background" Value="{DynamicResource AppAccentSubtle}"/><Setter TargetName="SelectionMark" Property="Background" Value="{DynamicResource AppAccent}"/></Trigger>
-    </ControlTemplate.Triggers>
-   </ControlTemplate></Setter.Value></Setter>
   </Style>
   <Style x:Key="SelectedDetail" TargetType="Border">
    <Setter Property="Background" Value="{DynamicResource AppSurfaceBg}"/>
-   <Setter Property="Padding" Value="18,12,0,0"/>
+   <Setter Property="BorderBrush" Value="{DynamicResource AppBorder}"/><Setter Property="BorderThickness" Value="1"/>
+   <Setter Property="CornerRadius" Value="10"/><Setter Property="Margin" Value="12,0,0,0"/>
+   <Setter Property="Padding" Value="18,12"/>
    <Style.Triggers><Trigger Property="DataContext" Value="{x:Null}"><Setter Property="Visibility" Value="Collapsed"/></Trigger></Style.Triggers>
   </Style>
   <DataTemplate x:Key="DetailTag"><Border Background="{DynamicResource AppHeaderBg}" Padding="7,2" Margin="0,0,6,4" CornerRadius="3"><TextBlock Text="{Binding}" Style="{StaticResource LibraryMeta}" MaxWidth="180" TextTrimming="CharacterEllipsis" ToolTip="{Binding}"/></Border></DataTemplate>
@@ -130,11 +122,11 @@
    </StackPanel>
   </Grid>
 
-  <TabControl x:Name="Tabs" Grid.Row="2" SelectionChanged="Tabs_Changed" BorderThickness="0" Background="{DynamicResource AppSurfaceBg}" TabStripPlacement="Top" Padding="0" KeyboardNavigation.TabNavigation="Continue">
+  <TabControl x:Name="Tabs" Grid.Row="2" SelectionChanged="Tabs_Changed" BorderThickness="0" Background="{DynamicResource AppWindowBg}" TabStripPlacement="Top" Padding="0" KeyboardNavigation.TabNavigation="Continue">
    <TabItem Header="提示词" Style="{StaticResource ProductTab}">
     <Grid Margin="0,12,0,0" TextElement.Foreground="{DynamicResource AppTextPrimary}" TextElement.FontWeight="Normal"><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition/></Grid.RowDefinitions>
      <Grid Margin="0,0,0,8"><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-      <DockPanel VerticalAlignment="Center" Margin="0,0,12,0"><TextBlock Text="搜索" DockPanel.Dock="Left" VerticalAlignment="Center" Margin="0,0,8,0" Foreground="{DynamicResource AppTextSecondary}"/><TextBox x:Name="PromptSearch" Style="{StaticResource Field}" TextChanged="PromptSearch_Changed" ToolTip="搜索标题、描述、正文和标签" AutomationProperties.Name="搜索提示词"/></DockPanel>
+      <DockPanel VerticalAlignment="Center" Margin="0,0,12,0"><TextBlock Text="搜索" DockPanel.Dock="Left" VerticalAlignment="Center" Margin="0,0,10,0" FontSize="14" FontWeight="SemiBold" Foreground="{DynamicResource AppTextPrimary}"/><TextBox x:Name="PromptSearch" Style="{StaticResource Field}" FontSize="14" Height="36" TextChanged="PromptSearch_Changed" ToolTip="搜索标题、描述、正文和标签" AutomationProperties.Name="搜索提示词"/></DockPanel>
 
       <Button Grid.Column="2" Content="新建提示词" Style="{StaticResource SmallButton}" Foreground="{DynamicResource AppAccent}" Click="NewPrompt_Click"/>
      </Grid>
@@ -145,10 +137,10 @@
       </StackPanel>
      </Expander>
      <Grid Grid.Row="2"><Grid.ColumnDefinitions><ColumnDefinition Width="2*" MinWidth="290"/><ColumnDefinition Width="3*"/></Grid.ColumnDefinitions>
-      <Border Background="{DynamicResource AppHeaderBg}" CornerRadius="10">
+      <Border Background="{DynamicResource AppListBg}" CornerRadius="10">
        <Grid><Grid.RowDefinitions><RowDefinition Height="30"/><RowDefinition/></Grid.RowDefinitions>
         <Border Background="{DynamicResource AppHeaderBg}" Padding="12,0"><TextBlock x:Name="PromptCount" Style="{StaticResource LibraryMeta}" VerticalAlignment="Center"/></Border>
-        <ListBox x:Name="PromptList" Grid.Row="1" SelectionChanged="PromptList_SelectionChanged" PreviewMouseLeftButtonUp="PromptList_Click" PreviewKeyDown="PromptList_KeyDown" BorderThickness="0" Background="Transparent" ScrollViewer.HorizontalScrollBarVisibility="Disabled" ScrollViewer.ScrollChanged="Prompts_ScrollChanged" VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling" ScrollViewer.CanContentScroll="True" ItemContainerStyle="{StaticResource LibraryRow}" HorizontalContentAlignment="Stretch" AutomationProperties.Name="提示词列表：单击复制，方向键选择，Enter 复制">
+        <ListBox x:Name="PromptList" Grid.Row="1" SelectionChanged="PromptList_SelectionChanged" PreviewMouseLeftButtonUp="PromptList_Click" PreviewKeyDown="PromptList_KeyDown" BorderThickness="0" Background="{DynamicResource AppListBg}" ScrollViewer.HorizontalScrollBarVisibility="Disabled" ScrollViewer.ScrollChanged="Prompts_ScrollChanged" VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling" ScrollViewer.CanContentScroll="True" ItemContainerStyle="{StaticResource LibraryRow}" HorizontalContentAlignment="Stretch" AutomationProperties.Name="提示词列表：单击复制，方向键选择，Enter 复制">
          <ListBox.ItemTemplate><DataTemplate>
           <Grid Height="58" Margin="12,0,8,0"><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
            <StackPanel VerticalAlignment="Center" Margin="0,0,8,0"><TextBlock Text="{Binding Title}" Style="{StaticResource LibraryListTitle}" ToolTip="{Binding Title}"/><TextBlock Text="{Binding ContentPreview}" Style="{StaticResource LibraryListSummary}" ToolTip="{Binding Content}"/></StackPanel>
@@ -187,14 +179,14 @@
    <TabItem Header="模型资料" Style="{StaticResource ProductTab}">
     <Grid Margin="0,8,0,0" TextElement.Foreground="{DynamicResource AppTextPrimary}" TextElement.FontWeight="Normal"><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition/></Grid.RowDefinitions>
      <Grid Margin="0,0,0,10"><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-      <DockPanel VerticalAlignment="Center" Margin="0,0,12,0"><TextBlock Text="搜索" DockPanel.Dock="Left" VerticalAlignment="Center" Margin="0,0,8,0" Foreground="{DynamicResource AppTextSecondary}"/><TextBox x:Name="ModelSearch" Style="{StaticResource Field}" TextChanged="ModelSearch_Changed" AutomationProperties.Name="搜索模型资料" ToolTip="搜索平台、地址、模型 ID 和备注"/></DockPanel>
+      <DockPanel VerticalAlignment="Center" Margin="0,0,12,0"><TextBlock Text="搜索" DockPanel.Dock="Left" VerticalAlignment="Center" Margin="0,0,10,0" FontSize="14" FontWeight="SemiBold" Foreground="{DynamicResource AppTextPrimary}"/><TextBox x:Name="ModelSearch" Style="{StaticResource Field}" FontSize="14" Height="36" TextChanged="ModelSearch_Changed" AutomationProperties.Name="搜索模型资料" ToolTip="搜索平台、地址、模型 ID 和备注"/></DockPanel>
       <Button Grid.Column="1" Content="新增连接资料" Style="{StaticResource SmallButton}" Foreground="{DynamicResource AppAccent}" Click="NewModel_Click"/>
      </Grid>
      <Grid Grid.Row="1"><Grid.ColumnDefinitions><ColumnDefinition Width="2*" MinWidth="290"/><ColumnDefinition Width="3*"/></Grid.ColumnDefinitions>
-      <Border Background="{DynamicResource AppHeaderBg}" CornerRadius="10">
+      <Border Background="{DynamicResource AppListBg}" CornerRadius="10">
        <Grid><Grid.RowDefinitions><RowDefinition Height="30"/><RowDefinition/></Grid.RowDefinitions>
         <Border Background="{DynamicResource AppHeaderBg}" Padding="12,0"><DockPanel LastChildFill="True"><TextBlock Text="拖拽排序" DockPanel.Dock="Right" Style="{StaticResource LibraryMeta}" VerticalAlignment="Center" Margin="8,0,0,0"/><TextBlock x:Name="ModelCount" Style="{StaticResource LibraryMeta}" VerticalAlignment="Center"/></DockPanel></Border>
-        <ListBox x:Name="ModelList" Grid.Row="1" ItemContainerStyle="{StaticResource LibraryRow}" SelectionChanged="ModelList_SelectionChanged" HorizontalContentAlignment="Stretch" BorderThickness="0" Background="Transparent" ScrollViewer.HorizontalScrollBarVisibility="Disabled" VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling" AutomationProperties.Name="模型连接资料列表" AutomationProperties.HelpText="按住条目拖动，松开后自动保存顺序" AllowDrop="True" PreviewMouseLeftButtonDown="ModelList_PreviewMouseLeftButtonDown" PreviewMouseMove="ModelList_PreviewMouseMove" PreviewMouseLeftButtonUp="ModelList_PreviewMouseLeftButtonUp" DragOver="ModelList_DragOver" DragLeave="ModelList_DragLeave" Drop="ModelList_Drop">
+        <ListBox x:Name="ModelList" Grid.Row="1" ItemContainerStyle="{StaticResource LibraryRow}" SelectionChanged="ModelList_SelectionChanged" HorizontalContentAlignment="Stretch" BorderThickness="0" Background="{DynamicResource AppListBg}" ScrollViewer.HorizontalScrollBarVisibility="Disabled" VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling" AutomationProperties.Name="模型连接资料列表" AutomationProperties.HelpText="按住条目拖动，松开后自动保存顺序" AllowDrop="True" PreviewMouseLeftButtonDown="ModelList_PreviewMouseLeftButtonDown" PreviewMouseMove="ModelList_PreviewMouseMove" PreviewMouseLeftButtonUp="ModelList_PreviewMouseLeftButtonUp" DragOver="ModelList_DragOver" DragLeave="ModelList_DragLeave" Drop="ModelList_Drop">
          <ListBox.ItemTemplate><DataTemplate>
           <Grid Height="58" Margin="12,0"><Grid.ColumnDefinitions><ColumnDefinition Width="18"/><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
            <TextBlock Text="⠿" Foreground="{DynamicResource AppTextSecondary}" VerticalAlignment="Center" Cursor="SizeAll" ToolTip="按住拖动以排序"/>
