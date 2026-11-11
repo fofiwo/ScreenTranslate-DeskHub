@@ -13,21 +13,32 @@ public static class StartupService
         get
         {
             using var key = Registry.CurrentUser.OpenSubKey(RunKey, writable: false);
-            return key?.GetValue(AppName) is not null;
+            return IsEnabledFor(key, ExecutablePath);
         }
     }
 
+    private static string ExecutablePath => Environment.ProcessPath
+        ?? System.Diagnostics.Process.GetCurrentProcess().MainModule?.FileName
+        ?? throw new InvalidOperationException("无法确定程序路径，未修改开机启动项。");
+
+    internal static bool IsEnabledFor(RegistryKey? key, string executablePath) =>
+        // 同名启动项可能属于旧目录或另一份便携版，不能把它显示为本副本已启用。
+        key?.GetValue(AppName) is string command &&
+        string.Equals(command.Trim(), $"\"{executablePath}\"", StringComparison.OrdinalIgnoreCase);
+
     public static void Set(bool enable)
     {
-        using var key = Registry.CurrentUser.OpenSubKey(RunKey, writable: true);
-        if (key is null) return;
+        using var key = Registry.CurrentUser.CreateSubKey(RunKey, writable: true)
+            ?? throw new InvalidOperationException("无法打开开机启动注册表项。");
 
+        Set(key, enable, ExecutablePath);
+    }
+
+    internal static void Set(RegistryKey key, bool enable, string executablePath)
+    {
         if (enable)
         {
-            var exePath = Environment.ProcessPath
-                ?? System.Diagnostics.Process.GetCurrentProcess().MainModule?.FileName;
-            if (string.IsNullOrEmpty(exePath)) return;
-            key.SetValue(AppName, $"\"{exePath}\"");
+            key.SetValue(AppName, $"\"{executablePath}\"");
         }
         else
         {
