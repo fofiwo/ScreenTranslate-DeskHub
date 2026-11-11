@@ -131,6 +131,8 @@ public partial class ShellWindow : Window
             _instance.Show();
 
         _instance.Navigate(target);
+        // 快捷键唤醒直接呈现内容，避免首次打开仍需等待页面过渡。
+        if (quickAccess) _instance.ReleaseContentAnimations();
         _instance.RefreshHotkeyHints();
         _instance.RefreshQuickToolAvailability();
 

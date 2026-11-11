@@ -93,6 +93,7 @@
     <Style x:Key="ProductSecondaryButton" TargetType="Button" BasedOn="{StaticResource FlatButton}">
         <Setter Property="Height" Value="40"/>
         <Setter Property="Padding" Value="16,0"/>
+        <Setter Property="FontWeight" Value="Medium"/>
         <Setter Property="FocusVisualStyle" Value="{StaticResource ProductFocus}"/>
     </Style>
     <Style x:Key="ProductLink" TargetType="Button" BasedOn="{StaticResource ProductSecondaryButton}">
@@ -128,12 +129,11 @@
    <Setter Property="FocusVisualStyle" Value="{StaticResource ProductFocus}"/><Setter Property="Padding" Value="18,10"/>
    <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="TabItem">
     <Grid Background="Transparent">
-     <Border x:Name="Surface" TextElement.FontSize="15" TextElement.Foreground="{DynamicResource AppTextSecondary}" Background="Transparent" Padding="{TemplateBinding Padding}"><ContentPresenter ContentSource="Header" VerticalAlignment="Center" HorizontalAlignment="Center" RecognizesAccessKey="True"/></Border>
-     <Border x:Name="Underline" Height="3" VerticalAlignment="Bottom" Background="Transparent"/>
+     <Border x:Name="Surface" CornerRadius="8" Margin="0,0,6,0" TextElement.FontSize="14" TextElement.Foreground="{DynamicResource AppTextSecondary}" Background="Transparent" Padding="{TemplateBinding Padding}"><ContentPresenter ContentSource="Header" VerticalAlignment="Center" HorizontalAlignment="Center" RecognizesAccessKey="True"/></Border>
     </Grid>
     <ControlTemplate.Triggers>
      <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Surface" Property="Background" Value="{DynamicResource AppButtonHoverBg}"/></Trigger>
-     <Trigger Property="IsSelected" Value="True"><Setter TargetName="Surface" Property="TextElement.Foreground" Value="{DynamicResource AppAccent}"/><Setter TargetName="Surface" Property="TextElement.FontWeight" Value="SemiBold"/><Setter TargetName="Underline" Property="Background" Value="{DynamicResource AppAccent}"/></Trigger>
+     <Trigger Property="IsSelected" Value="True"><Setter TargetName="Surface" Property="Background" Value="{DynamicResource AppAccentSubtle}"/><Setter TargetName="Surface" Property="TextElement.Foreground" Value="{DynamicResource AppAccent}"/><Setter TargetName="Surface" Property="TextElement.FontWeight" Value="SemiBold"/></Trigger>
      <Trigger Property="IsEnabled" Value="False"><Setter Property="Opacity" Value="0.5"/></Trigger>
     </ControlTemplate.Triggers>
    </ControlTemplate></Setter.Value></Setter>

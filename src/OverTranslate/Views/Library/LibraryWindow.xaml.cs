@@ -120,6 +120,24 @@ public partial class LibraryWindow : Window
         catch (Exception ex) { AppMessageWindow.ShowMessage(Error(ex), "资料库暂时无法打开", MessageBoxButton.OK, MessageBoxImage.Warning); }
     }
 
+    internal static async Task PrepareForShortcutAsync(Func<LibraryStore> createStore)
+    {
+        if (_current is not null || _opening) return;
+        var version = _openVersion;
+        var pending = _openingStore ??= Task.Run(() => { var store = createStore(); return (Store: store, State: store.Read()); });
+        try
+        {
+            var loaded = await pending;
+            await System.Windows.Threading.Dispatcher.Yield(System.Windows.Threading.DispatcherPriority.ApplicationIdle);
+            if (version != _openVersion || _opening || _current is not null
+                || ShortcutUiWarmup.ShouldSkip) return;
+            var window = new LibraryWindow(loaded.Store, initialState: loaded.State);
+            try { ShortcutUiWarmup.PrepareLayout(window); _current = window; }
+            catch { window._shutdown = true; window.Close(); throw; }
+        }
+        finally { if (ReferenceEquals(_openingStore, pending)) _openingStore = null; }
+    }
+
     internal static async Task OpenAsync(bool quickAccess, Func<LibraryStore> createStore)
     {
         var version = ++_openVersion;

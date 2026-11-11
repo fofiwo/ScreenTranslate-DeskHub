@@ -5,10 +5,11 @@
 
     <UserControl.Resources>
         <Style x:Key="ProductRealtimeSection" TargetType="Border">
-            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Background" Value="{DynamicResource AppHeaderBg}"/>
             <Setter Property="BorderBrush" Value="{DynamicResource AppSubtleBorder}"/>
-            <Setter Property="BorderThickness" Value="0,0,0,1"/>
-            <Setter Property="Padding" Value="0,0,0,22"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="CornerRadius" Value="10"/>
+            <Setter Property="Padding" Value="20"/>
             <Setter Property="Margin" Value="0,0,0,22"/>
         </Style>
     </UserControl.Resources>
@@ -128,7 +129,7 @@
                      user may set in any order — the second one cannot be answered until the first
                      is, and the whole card changes with that answer. A number says that where a
                      heading only names it. -->
-                <Border Style="{StaticResource ProductRealtimeSection}" Padding="0,0,0,22">
+                <Border Style="{StaticResource ProductRealtimeSection}">
                     <Grid>
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="200"/>
@@ -237,7 +238,7 @@
                 </Border>
 
                 <!-- ── 步驟 2：選擇畫面或視窗 ── -->
-                <Border Style="{StaticResource ProductRealtimeSection}" Padding="0,0,0,22">
+                <Border Style="{StaticResource ProductRealtimeSection}">
                     <Grid>
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="200"/>

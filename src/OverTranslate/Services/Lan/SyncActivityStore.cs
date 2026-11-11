@@ -45,6 +45,12 @@ internal sealed class SyncActivityStore
     private readonly object _gate = new();
     private readonly string _path;
     private readonly List<SyncActivity> _items = [];
+    private readonly Dictionary<(string Id, string Device), SyncActivity> _received = [];
+    private readonly HashSet<(string Id, string Device)> _savedReceipts = [];
+    private SyncActivity[]? _receivedSnapshot;
+    private string _receivedReadWarning = "", _receivedWriteWarning = "";
+    private string ReceivedPath => Path.ChangeExtension(_path, ".received.jsonl");
+    public string ReceivedStorageWarning => string.Join("\n", new[] { _receivedReadWarning, _receivedWriteWarning }.Where(x => x.Length > 0));
     private static readonly Lazy<SyncActivityStore> Shared = new(() => new(Path.Combine(AppDataPaths.Root, "sync-activity.json")));
     public static SyncActivityStore Default => Shared.Value;
     public event EventHandler? Changed;
@@ -64,8 +70,28 @@ internal sealed class SyncActivityStore
             }
         }
         catch (Exception) { StorageWarning = "同步记录读取失败，本次记录仅保存在当前运行中。"; }
+        try
+        {
+            if (File.Exists(ReceivedPath))
+                foreach (var line in File.ReadLines(ReceivedPath))
+                {
+                    if (string.IsNullOrWhiteSpace(line)) continue;
+                    try
+                    {
+                        var receipt = JsonSerializer.Deserialize<SyncActivity>(line);
+                        if (receipt is { Kind: SyncKind.Files, Incoming: true, State: SyncState.Completed, Folder.Length: > 0 })
+                        { _received[(receipt.Id, receipt.DeviceId)] = receipt; _savedReceipts.Add((receipt.Id, receipt.DeviceId)); }
+                    }
+                    catch (JsonException) { _receivedReadWarning = "部分收件记录无法读取，其余记录已保留。"; }
+                }
+            // 从仍可读取的旧同步记录补入，已被旧版淘汰的记录无法恢复。
+            foreach (var item in _items) SaveReceipt(item);
+        }
+        catch (Exception) { _receivedReadWarning = "收件记录读取失败，原文件已保留；请检查目录权限与磁盘。"; }
     }
     public IReadOnlyList<SyncActivity> Snapshot() { lock (_gate) return _items.ToArray(); }
+    public IReadOnlyList<SyncActivity> ReceivedSnapshot()
+    { lock (_gate) return _receivedSnapshot ??= _received.Values.OrderByDescending(x => x.Updated).ToArray(); }
     public static SyncIssue IssueFor(Exception exception) => exception switch
     {
         UnauthorizedAccessException => SyncIssue.Permission, InvalidDataException => SyncIssue.InvalidContent,
@@ -81,11 +107,29 @@ internal sealed class SyncActivityStore
             if (old is { Active: false } && activity.Active) return;
             if (index >= 0) _items.RemoveAt(index);
             _items.Insert(0, activity with { Updated = DateTimeOffset.Now });
+            SaveReceipt(_items[0]);
             if (_items.Count > 100) _items.RemoveRange(100, _items.Count - 100);
             // 进度仅更新内存；状态变化才写盘，避免逐块写文件。
             if (old is null || old.State != activity.State) Save();
         }
         Changed?.Invoke(this, EventArgs.Empty);
+    }
+    private void SaveReceipt(SyncActivity item)
+    {
+        if (item is not { Kind: SyncKind.Files, Incoming: true, State: SyncState.Completed, Folder.Length: > 0 }) return;
+        var key = (item.Id, item.DeviceId);
+        if (_received.TryGetValue(key, out var old) && old.Folder == item.Folder && _savedReceipts.Contains(key)) return;
+        _received[key] = item;
+        _receivedSnapshot = null;
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(ReceivedPath)!);
+            // 新记录自带换行边界，掉电截断的上一行不会吞掉后续有效记录。
+            File.AppendAllText(ReceivedPath, Environment.NewLine + JsonSerializer.Serialize(item));
+            _savedReceipts.Add(key);
+            _receivedWriteWarning = "";
+        }
+        catch (Exception) { _receivedWriteWarning = "收件记录保存失败，重启后可能丢失；请检查目录权限与磁盘空间。"; }
     }
     public void InterruptActive(string peer, string deviceId = "")
     {

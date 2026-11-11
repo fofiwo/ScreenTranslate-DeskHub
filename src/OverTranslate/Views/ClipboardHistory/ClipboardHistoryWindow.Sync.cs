@@ -26,6 +26,7 @@ public partial class ClipboardHistoryWindow
         SyncConnectionText.Text = LanTransferWindow.CurrentSyncStatus;
         RefreshSendRecipients();
         var items = _syncActivities.Snapshot();
+        RefreshReceivedFiles();
         var parts = new List<string>();
         foreach (var kind in new[] { SyncKind.Clipboard, SyncKind.Library, SyncKind.Files })
         {
@@ -53,7 +54,7 @@ public partial class ClipboardHistoryWindow
         e.Handled = true;
         if (_busy || _inlineSending) return;
         if (e.Data.GetData(System.Windows.DataFormats.FileDrop) is string[] paths)
-        { SyncTab.IsSelected = true; AddSendSources(paths); }
+        { ShowSendPage(); AddSendSources(paths); }
     }
     private void RefreshSendRecipients()
     {
@@ -79,7 +80,7 @@ public partial class ClipboardHistoryWindow
                 ? "原接收设备已断开，请重新选择接收设备。" : "暂无在线设备 · 点击上方连接状态进行配对"
             : !peer.Supported ? "对方版本不支持接收确认，请更新后重新连接。" : "仅发送到所选设备";
         SendFilesButton.IsEnabled = !_inlineSending && peer?.Supported == true && _sendPaths.Count is > 0 and <= 100;
-        SendRecipientBox.IsEnabled = AddSendFilesButton.IsEnabled = AddSendFoldersButton.IsEnabled = ClearSendSourcesButton.IsEnabled = !_inlineSending;
+        SendRecipientBox.IsEnabled = AddSendFilesButton.IsEnabled = AddSendFoldersButton.IsEnabled = ClearSendSourcesButton.IsEnabled = SendSourceList.IsEnabled = !_inlineSending;
         SendDropHint.Visibility = _sendPaths.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
         SendRecipientEmpty.Visibility = peer is null ? Visibility.Visible : Visibility.Collapsed;
         SendRecipientEmpty.Text = _sendRecipientId is null ? "暂无在线设备" : "请重新选择接收设备";
@@ -121,6 +122,12 @@ public partial class ClipboardHistoryWindow
     }
     private void ClearSendSources_Click(object sender, RoutedEventArgs e)
     { if (!_inlineSending) { _sendPaths.Clear(); AddSendSources([]); } }
+    private void RemoveSendSource_Click(object sender, RoutedEventArgs e)
+    {
+        if (_inlineSending || sender is not FrameworkElement { DataContext: string path }) return;
+        _sendPaths.RemoveAll(p => string.Equals(p, path, StringComparison.OrdinalIgnoreCase));
+        AddSendSources([]);
+    }
     private async void SendToDevice_Click(object sender, RoutedEventArgs e)
     {
         if (_busy || _inlineSending || _sendPaths.Count is 0 or > 100

@@ -9,6 +9,59 @@ namespace OverTranslate.Tests;
 public class SnipClipboardTests
 {
     [Fact]
+    public async Task SyntheticPreparationDoesNotWaitForAnUnrelatedClipboardWrite()
+    {
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var release = new ManualResetEventSlim();
+        var active = SnipClipboard.RunStaAsync(() => SnipClipboard.WriteAsync(() =>
+        {
+            entered.SetResult();
+            if (!release.Wait(TimeSpan.FromSeconds(5))) throw new TimeoutException("fixture write");
+        }, CancellationToken.None));
+        Task? preparation = null;
+        var completedIndependently = false;
+        try
+        {
+            await entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            preparation = SnipClipboard.PrepareAsync();
+            completedIndependently = await Task.WhenAny(preparation, Task.Delay(1500)) == preparation;
+        }
+        finally
+        {
+            release.Set();
+            await active;
+            if (preparation is not null) await preparation;
+        }
+        Assert.True(completedIndependently, "合成图片预加载不应等待正在写入的系统剪贴板。");
+    }
+
+    [Fact]
+    public async Task WorkerControlDoesNotWaitForTheCallingUiContext()
+    {
+        var context = new CountingContext();
+        var previous = SynchronizationContext.Current;
+        Task pending;
+        try
+        {
+            SynchronizationContext.SetSynchronizationContext(context);
+            pending = SnipClipboard.RunStaAsync(() => Task.Delay(30));
+        }
+        finally { SynchronizationContext.SetSynchronizationContext(previous); }
+        await pending.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.Equal(0, context.Posts);
+    }
+
+    private sealed class CountingContext : SynchronizationContext
+    {
+        internal int Posts;
+        public override void Post(SendOrPostCallback callback, object? state)
+        {
+            Interlocked.Increment(ref Posts);
+            ThreadPool.QueueUserWorkItem(_ => callback(state));
+        }
+    }
+
+    [Fact]
     public async Task BusyReadBackDoesNotPublishTheImageAgain()
     {
         await SnipClipboard.RunStaAsync(async () =>

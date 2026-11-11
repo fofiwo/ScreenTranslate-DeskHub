@@ -7,7 +7,7 @@
  Foreground="{DynamicResource AppTextPrimary}" FontFamily="{DynamicResource AppFont}" FontSize="13"
  UseLayoutRounding="True" Closing="Window_Closing" Style="{StaticResource ProductToolWindow}">
  <DockPanel><controls:ToolWindowHeader DockPanel.Dock="Top"/>
- <ScrollViewer Background="{DynamicResource AppWindowBg}" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+ <ScrollViewer Background="{DynamicResource AppSurfaceBg}" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
  <StackPanel Margin="24">
   <DockPanel>
    <Button DockPanel.Dock="Right" Content="断开连接" Style="{StaticResource ProductSecondaryButton}" Click="Disconnect_Click"/>

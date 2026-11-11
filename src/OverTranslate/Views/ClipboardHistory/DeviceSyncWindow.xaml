@@ -3,8 +3,8 @@
  xmlns:controls="clr-namespace:OverTranslate.Views.Controls"
  Title="设备与同步" Width="760" Height="600" MinWidth="520" MinHeight="440" WindowStartupLocation="CenterScreen" Style="{StaticResource ProductToolWindow}"
  Background="{DynamicResource AppWindowBg}" Foreground="{DynamicResource AppTextPrimary}" FontFamily="{DynamicResource AppFont}">
- <DockPanel><controls:ToolWindowHeader DockPanel.Dock="Top"/>
- <Border Padding="24" Background="{DynamicResource AppWindowBg}"><Grid>
+ <DockPanel Background="{DynamicResource AppWindowBg}"><controls:ToolWindowHeader DockPanel.Dock="Top"/>
+ <Border Padding="24" Background="{DynamicResource AppSurfaceBg}" CornerRadius="12,12,0,0"><Grid>
   <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
   <DockPanel><StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Top">
    <Button Content="同步记录" Click="History_Click" Style="{StaticResource ProductLink}" Margin="0,0,8,0"/>
@@ -16,7 +16,7 @@
    <TextBlock Text="多台可同时在线 · 同步开关按设备生效 · 文件发送时单独选择接收方" Foreground="{DynamicResource AppTextSecondary}" TextWrapping="Wrap"/>
    <TextBlock x:Name="WarningText" Style="{StaticResource ProductInlineError}" AutomationProperties.LiveSetting="Polite"/>
   </StackPanel>
-  <Grid Grid.Row="2"><ListBox x:Name="DeviceList" SelectionChanged="Selection_Changed" Background="Transparent" Foreground="{DynamicResource AppTextPrimary}" BorderBrush="{DynamicResource AppBorder}" ItemContainerStyle="{StaticResource ProductListItem}" VirtualizingPanel.ScrollUnit="Pixel" ScrollViewer.HorizontalScrollBarVisibility="Disabled" AutomationProperties.Name="已保存与当前连接设备">
+  <Grid Grid.Row="2"><ListBox x:Name="DeviceList" SelectionChanged="Selection_Changed" Background="{DynamicResource AppHeaderBg}" Foreground="{DynamicResource AppTextPrimary}" BorderThickness="0" ItemContainerStyle="{StaticResource ProductListItem}" VirtualizingPanel.ScrollUnit="Pixel" ScrollViewer.HorizontalScrollBarVisibility="Disabled" AutomationProperties.Name="已保存与当前连接设备">
    <ListBox.ItemTemplate><DataTemplate><StackPanel>
     <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
      <TextBlock Text="{Binding Name}" FontSize="16" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,0,16,0"/>

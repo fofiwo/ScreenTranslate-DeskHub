@@ -3,15 +3,21 @@
  xmlns:controls="clr-namespace:OverTranslate.Views.Controls"
  Width="520" MaxHeight="640" SizeToContent="Height" ResizeMode="NoResize" ShowInTaskbar="False"
  WindowStartupLocation="CenterScreen" Style="{StaticResource ProductToolWindow}">
- <DockPanel Background="{DynamicResource AppWindowBg}">
+ <DockPanel Background="{DynamicResource AppSurfaceBg}">
   <controls:ToolWindowHeader DockPanel.Dock="Top"/>
-  <StackPanel Margin="24">
-   <DockPanel><TextBlock x:Name="SeverityText" DockPanel.Dock="Left" FontSize="22" Width="32" Foreground="{DynamicResource AppAccent}"/>
-    <TextBlock x:Name="MessageTitle" Style="{StaticResource ProductDialogTitle}"/></DockPanel>
-   <ScrollViewer MaxHeight="380" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Margin="0,16,0,24">
-    <TextBlock x:Name="MessageText" TextWrapping="Wrap"/>
-   </ScrollViewer>
+  <Border DockPanel.Dock="Bottom" Background="{DynamicResource AppWindowBg}" Padding="24,16,24,8">
    <WrapPanel x:Name="Actions" HorizontalAlignment="Right"/>
+  </Border>
+  <ScrollViewer MaxHeight="500" Padding="28,24" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+  <StackPanel>
+   <DockPanel>
+    <Border DockPanel.Dock="Left" Background="{DynamicResource AppAccentSubtle}" CornerRadius="10" Padding="10,6" Margin="0,0,12,0" VerticalAlignment="Top">
+     <Border.Style><Style TargetType="Border"><Style.Triggers><DataTrigger Binding="{Binding Text, ElementName=SeverityText}" Value=""><Setter Property="Visibility" Value="Collapsed"/></DataTrigger></Style.Triggers></Style></Border.Style>
+     <TextBlock x:Name="SeverityText" FontSize="22" FontWeight="SemiBold" Width="20" TextAlignment="Center" Foreground="{DynamicResource AppAccent}"/>
+    </Border>
+    <TextBlock x:Name="MessageTitle" Style="{StaticResource ProductDialogTitle}"/></DockPanel>
+   <TextBlock x:Name="MessageText" TextWrapping="Wrap" FontSize="14" LineHeight="24" Margin="0,16,0,0"/>
   </StackPanel>
+  </ScrollViewer>
  </DockPanel>
 </Window>

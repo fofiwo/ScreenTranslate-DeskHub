@@ -22,6 +22,7 @@ namespace OverTranslate.Views.Capture;
 
 public partial class ScreenCaptureWindow
 {
+    private static readonly NLog.Logger SnipLog = NLog.LogManager.GetCurrentClassLogger();
     private Canvas? _snipCanvas;
     private SnipSurface? _snipSurface;
     private Border? _snipToolbar;
@@ -366,6 +367,7 @@ public partial class ScreenCaptureWindow
         if (_snipWriting || _snipClosed) return;
         if (_snipSource is null) { SetSnipStatus("请先拖动框选截图区域。"); return; }
         FinishSnipStroke(); CommitSnipText(); SetSnipWriting(true);
+        var elapsed = System.Diagnostics.Stopwatch.StartNew();
         try
         {
             var source = _snipSource;
@@ -378,10 +380,17 @@ public partial class ScreenCaptureWindow
                 if (write is not null) await SnipClipboard.WriteAsync(() => write(image), cancellationToken);
                 else await SnipClipboard.WriteImageAsync(image, cancellationToken);
             });
+            SnipLog.Info("Screenshot copy verified: {Width}x{Height}, elapsedMs={Elapsed}",
+                source.PixelWidth, source.PixelHeight, elapsed.ElapsedMilliseconds);
             if (!_snipClosed) Close();
         }
         catch (OperationCanceledException) { }
-        catch (Exception) { if (!_snipClosed) SetSnipStatus("截图复制失败，选区和标注已保留，请重试。"); }
+        catch (Exception ex)
+        {
+            SnipLog.Warn("Screenshot copy failed: type={Type}, hresult={HResult:X8}, elapsedMs={Elapsed}",
+                ex.GetType().Name, ex.HResult, elapsed.ElapsedMilliseconds);
+            if (!_snipClosed) SetSnipStatus("截图复制失败，选区和标注已保留，请重试。");
+        }
         finally { SetSnipWriting(false); }
     }
 
@@ -446,6 +455,17 @@ internal static class SnipClipboard
     // 已进入 OLE 的写入无法中断；后续截图、色值和贴图复制须等它结束。
     private static readonly SemaphoreSlim Writer = new(1, 1);
 
+    internal static Task PrepareAsync() => RunStaAsync(() =>
+    {
+        // 仅准备本地图像路径，不读写系统剪贴板，也不占用真实复制的互斥锁。
+        var image = BitmapSource.Create(2, 2, 96, 96, PixelFormats.Bgra32, null, new byte[16], 8);
+        image.Freeze();
+        var data = new DataObject(); data.SetImage(image);
+        _ = SameImage(image, image);
+        _ = Services.ClipboardHistory.ClipboardContent.EncodeImage(image);
+        return Task.CompletedTask;
+    });
+
     internal static Task WriteImageAsync(BitmapSource image, CancellationToken cancellationToken,
         Action? write = null, Func<BitmapSource?>? read = null) => WriteCoreAsync(async () =>
     {
@@ -498,10 +518,10 @@ internal static class SnipClipboard
     internal static async Task RunStaAsync(Func<Task> write)
     {
         var thread = new HookThread("Snip clipboard");
-        thread.Start();
-        try { await thread.Dispatcher!.InvokeAsync(write).Task.Unwrap(); }
+        await Task.Run(thread.Start).ConfigureAwait(false);
+        try { await thread.Dispatcher!.InvokeAsync(write).Task.Unwrap().ConfigureAwait(false); }
         // 无 UI 上下文时 continuation 可能在 STA 上执行，不能让线程等待自身退出。
-        finally { await Task.Run(thread.Dispose); }
+        finally { await Task.Run(thread.Dispose).ConfigureAwait(false); }
     }
 
     internal static Task WriteAsync(Action write, CancellationToken cancellationToken) =>

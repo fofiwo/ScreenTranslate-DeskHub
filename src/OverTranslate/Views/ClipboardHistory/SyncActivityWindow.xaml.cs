@@ -8,6 +8,7 @@ namespace OverTranslate.Views.ClipboardHistory;
 public partial class SyncActivityWindow : Window
 {
     private readonly SyncActivityStore _store;
+    private bool _retrying;
     internal SyncActivityWindow(SyncActivityStore store)
     {
         _store = store;
@@ -32,7 +33,7 @@ public partial class SyncActivityWindow : Window
     {
         var item = ActivityList.SelectedItem as SyncActivity;
         OpenFolderButton.IsEnabled = item is { Incoming: true, State: SyncState.Completed, Folder.Length: > 0 };
-        RetryButton.IsEnabled = item is { Incoming: false, Kind: SyncKind.Files, Active: false, Sources.Length: > 0 };
+        RetryButton.IsEnabled = !_retrying && item is { Incoming: false, Kind: SyncKind.Files, Active: false, Sources.Length: > 0 };
         CancelSendButton.IsEnabled = item is { Incoming: false, Kind: SyncKind.Files, Active: true };
     }
     private void OpenFolder_Click(object sender, RoutedEventArgs e)
@@ -48,8 +49,16 @@ public partial class SyncActivityWindow : Window
     }
     private async void Retry_Click(object sender, RoutedEventArgs e)
     {
-        if (ActivityList.SelectedItem is SyncActivity { Sources: { } paths })
-            await LanTransferWindow.ChooseAndSendAsync(this, paths);
+        if (_retrying || ActivityList.SelectedItem is not SyncActivity { Incoming: false, Kind: SyncKind.Files, Active: false, Sources.Length: > 0 } item) return;
+        _retrying = true; Selection_Changed(this, null!);
+        RetryFeedback.Text = "正在重新发送，请选择接收设备并等待对方确认…";
+        try
+        {
+            var result = await LanTransferWindow.ChooseAndSendAsync(this, item.Sources!);
+            RetryFeedback.Text = result is null ? "已取消选择，未开始重新发送。" : $"重新发送结果：{result}";
+        }
+        catch (Exception) { RetryFeedback.Text = "重新发送失败，请检查文件、设备连接与磁盘后重试。"; }
+        finally { _retrying = false; Selection_Changed(this, null!); }
     }
     private void Setup_Click(object sender, RoutedEventArgs e) => LanTransferWindow.Open();
     private void CancelSend_Click(object sender, RoutedEventArgs e)

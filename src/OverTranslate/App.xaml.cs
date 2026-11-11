@@ -130,6 +130,7 @@ public partial class App
         Services.ClipboardHistory.ClipboardHistoryRuntime.Start(Dispatcher);
         Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Background, Views.ClipboardHistory.LanTransferWindow.RestoreConnections);
         ShellWindow.ShowOrActivate();
+        _ = ShortcutUiWarmup.RunAsync();
         _ = Task.Run(async () =>
         {
             try { await UpdateService.CreateManager().CleanupInstalledPackageAsync(); }

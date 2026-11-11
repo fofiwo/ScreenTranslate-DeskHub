@@ -27,7 +27,6 @@ public sealed partial class ScreenTranslateShellTests
         };
         Window[] windows = [
             new FileSendWindow("测试电脑", true, [@"C:\fixture\" + string.Concat(Enumerable.Repeat(@"很长的目录\", 60)) + "example.txt"]),
-            new FileReceiveWindow("测试电脑", new("file-offer", Name: new string('长', 600), Length: 1024)),
             new SyncActivityWindow(journal),
             new LanTransferWindow(Path.Combine(directory, "preferences.json"), readAddresses: () => []),
             new DeviceSyncWindow(readRows: () => deviceRows, activities: journal)
@@ -53,7 +52,6 @@ public sealed partial class ScreenTranslateShellTests
                     { window.Width = window.MinWidth; window.Height = window.MinHeight; }
                     window.UpdateLayout();
                     var root = (FrameworkElement)window.Content;
-                    if (window is FileReceiveWindow receive) VerifyReceiveContentScroll(receive);
                     var buttons = window is LanTransferWindow
                         ? Visuals<Button>(Visuals<UserControl>(root).Single(c => c.GetType().Name == "ToolWindowHeader"))
                         : Visuals<Button>(root);
@@ -72,21 +70,21 @@ public sealed partial class ScreenTranslateShellTests
             Assert.Contains(Visuals<Button>((FrameworkElement)sender.Content), b => b.IsCancel);
             Assert.Same(sender.FindResource("ModernComboBox"), ((ComboBox)sender.FindName("RecipientBox")).Style);
             Assert.True(((ListBox)sender.FindName("SourceList")).ActualHeight >= 60);
-            var transfer = (LanTransferWindow)windows[3];
+            var transfer = (LanTransferWindow)windows[2];
             var sync = (CheckBox)transfer.FindName("AutoSyncBox");
             Assert.Same(transfer.FindResource("ModernCheckBox"), sync.Style);
             Assert.NotNull(sync.FocusVisualStyle);
             sync.IsEnabled = false;
             Assert.Equal(0.45, sync.Opacity);
             sync.IsEnabled = true;
-            var history = (SyncActivityWindow)windows[2];
+            var history = (SyncActivityWindow)windows[1];
             var list = (ListBox)history.FindName("ActivityList");
             list.SelectedIndex = 0; list.UpdateLayout();
             var item = Assert.IsType<ListBoxItem>(list.ItemContainerGenerator.ContainerFromIndex(0));
             Assert.Same(history.FindResource("ProductListItem"), item.Style);
             Assert.Equal(((SolidColorBrush)history.FindResource("AppAccentSubtle")).Color,
                 ((SolidColorBrush)Visuals<Border>(item).First().Background).Color);
-            var devices = (DeviceSyncWindow)windows[4];
+            var devices = (DeviceSyncWindow)windows[3];
             var deviceList = (ListBox)devices.FindName("DeviceList");
             deviceList.SelectedIndex = 0; deviceList.UpdateLayout();
             Assert.True(((Button)devices.FindName("SettingsButton")).IsEnabled);
@@ -127,37 +125,10 @@ public sealed partial class ScreenTranslateShellTests
         }
     }
 
-    private static void VerifyReceiveContentScroll(FileReceiveWindow window)
-    {
-        var root = (FrameworkElement)window.Content;
-        var folder = (TextBlock)window.FindName("FolderText");
-        var original = folder.Text;
-        try
-        {
-            folder.Text = @"C:\fixture\" + string.Concat(Enumerable.Repeat(@"很长的目录\", 60));
-            window.UpdateLayout();
-            foreach (var text in new[] { (TextBlock)window.FindName("OfferText"), folder })
-            {
-                var scroller = Visuals<ScrollViewer>(root).Single(s => Visuals<TextBlock>(s).Contains(text));
-                var viewport = Visuals<ScrollContentPresenter>(scroller).First();
-                AssertInside(root, viewport);
-                Assert.True(scroller.ScrollableHeight > 0, $"{text.Name}: long content must be scrollable.");
-                scroller.ScrollToBottom(); window.UpdateLayout();
-                var bottom = text.TranslatePoint(new Point(0, text.ActualHeight), viewport).Y;
-                Assert.InRange(bottom, 0, viewport.ActualHeight + 1);
-                foreach (var button in Visuals<Button>(root).Where(b => b.IsVisible)) AssertInside(root, button);
-                scroller.ScrollToTop(); window.UpdateLayout();
-                Assert.Equal(0, scroller.VerticalOffset);
-                Assert.InRange(text.TranslatePoint(new Point(), viewport).Y, -1, viewport.ActualHeight);
-            }
-        }
-        finally { folder.Text = original; window.UpdateLayout(); }
-    }
-
     private static void VerifyAuxiliaryKeyboardAndOverflow(Window[] windows)
     {
         var errors = new List<string>();
-        var transfer = (LanTransferWindow)windows[3];
+        var transfer = (LanTransferWindow)windows[2];
         ((Expander)transfer.FindName("FileTransferSection")).IsExpanded = true;
         ((ListBox)transfer.FindName("TransferLog")).ItemsSource = new[] { string.Concat(Enumerable.Repeat("很长的传输结果与目录\\", 80)) + "最后一行" };
         transfer.UpdateLayout();

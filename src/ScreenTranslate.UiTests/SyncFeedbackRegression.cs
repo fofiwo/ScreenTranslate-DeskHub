@@ -1,6 +1,7 @@
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using OverTranslate.Services;
 using OverTranslate.Services.ClipboardHistory;
 using OverTranslate.Services.Lan;
 using OverTranslate.Views.ClipboardHistory;
@@ -157,16 +158,6 @@ public sealed partial class ScreenTranslateShellTests
                 }
                 finally { picker.Close(); }
             }
-            var receiver = new FileReceiveWindow("另一台电脑", new("file-offer", Name: "项目文件.zip", Length: 1024));
-            receiver.Show(); receiver.UpdateLayout();
-            try
-            {
-                Assert.False(((Button)receiver.FindName("AcceptButton")).IsEnabled);
-                Assert.Contains("另一台电脑", ((TextBlock)receiver.FindName("OfferText")).Text);
-                var receiverRoot = (FrameworkElement)receiver.Content;
-                Render(receiver, "file-receive-confirm", (int)Math.Ceiling(receiverRoot.ActualWidth), (int)Math.Ceiling(receiverRoot.ActualHeight));
-            }
-            finally { receiver.Close(); }
             var deviceWindow = new DeviceSyncWindow(() => new[]
             {
                 new LanDeviceRow("a", "DELL-MY", "192.168.1.20:51000", "已连接", "剪贴板开启 · 资料库暂停", "文件：已完成", true, true, DateTimeOffset.Now),
@@ -202,6 +193,7 @@ public sealed partial class ScreenTranslateShellTests
             PumpUntil(() => !window.IsBusy);
             Assert.Equal(1, copies);
             PumpUntil(() => clipboard.Read().Single().CopiedAt > previousCopiedAt);
+            VerifyIncomingFileAttention(root);
         }
         finally
         {
@@ -253,6 +245,8 @@ public sealed partial class ScreenTranslateShellTests
             };
             Complete(node.ConnectAsync(System.Net.IPAddress.Loopback, host.Port, host.PairCode));
             PumpUntil(() => send.IsEnabled);
+            // 前一次发送结束允许失焦收起；模拟用户重新打开页面后再发起下一次发送。
+            window.Show(); KeyboardForeground.Activate(window);
             send.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
             PumpUntil(() => window.IsBusy);
             var openedHistory = false;

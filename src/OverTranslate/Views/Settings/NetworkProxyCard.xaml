@@ -1,8 +1,8 @@
 <UserControl x:Class="OverTranslate.Views.Settings.NetworkProxyCard"
  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
- Foreground="{DynamicResource AppTextPrimary}" Background="{DynamicResource AppWindowBg}" FontSize="13">
- <Border Padding="16" BorderThickness="1" CornerRadius="8" BorderBrush="{DynamicResource AppBorder}" Background="{DynamicResource AppWindowBg}">
+ Foreground="{DynamicResource AppTextPrimary}" Background="Transparent" FontSize="13">
+ <Border Padding="20" CornerRadius="10" Background="{DynamicResource AppHeaderBg}">
   <StackPanel>
    <TextBlock Text="网络代理" Style="{StaticResource ProductSectionTitle}"/>
    <CheckBox x:Name="EnabledBox" Content="启用自定义代理" Style="{StaticResource ModernCheckBox}" Margin="0,0,0,12"/>

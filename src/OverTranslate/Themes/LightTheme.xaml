@@ -2,9 +2,9 @@
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
 
     <!-- Window / Surface -->
-    <SolidColorBrush x:Key="AppWindowBg"       Color="#FFFFFF"/>
+    <SolidColorBrush x:Key="AppWindowBg"       Color="#F3F5F9"/>
     <SolidColorBrush x:Key="AppSurfaceBg"      Color="#FFFFFF"/>
-    <SolidColorBrush x:Key="AppHeaderBg"       Color="#F5F7FC"/>
+    <SolidColorBrush x:Key="AppHeaderBg"       Color="#EFF2F7"/>
     <SolidColorBrush x:Key="AppCardBg"         Color="#FFFFFF"/>
     <SolidColorBrush x:Key="AppBorder"         Color="#DDE3EF"/>
     <SolidColorBrush x:Key="AppSubtleBorder"   Color="#E9EDF5"/>
@@ -51,7 +51,7 @@
 
     <!-- Buttons -->
     <SolidColorBrush x:Key="AppButtonBg"       Color="#FFFFFF"/>
-    <SolidColorBrush x:Key="AppButtonBorder"   Color="#CAD3E3"/>
+    <SolidColorBrush x:Key="AppButtonBorder"   Color="#D3DAE6"/>
     <SolidColorBrush x:Key="AppButtonHoverBg"  Color="#F0F4FC"/>
     <SolidColorBrush x:Key="AppButtonPressedBg" Color="#E3EAF8"/>
 
@@ -227,6 +227,6 @@
     <SolidColorBrush x:Key="ProductHeroBg" Color="#FFBE24"/>
     <SolidColorBrush x:Key="ProductHeroFg" Color="#302400"/>
     <SolidColorBrush x:Key="ProductHeroSecondary" Color="#544000"/>
-    <SolidColorBrush x:Key="ProductRailBg" Color="#FFFFFF"/>
+    <SolidColorBrush x:Key="ProductRailBg" Color="#F3F5F9"/>
     <SolidColorBrush x:Key="ProductFrameAccent" Color="#003DA6"/>
 </ResourceDictionary>

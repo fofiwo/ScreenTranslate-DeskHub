@@ -135,8 +135,11 @@
       <TextBlock x:Name="SyncSummaryText" Margin="2,6,2,0" TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource AppTextSecondary}" AutomationProperties.LiveSetting="Polite"/>
       <ProgressBar x:Name="SyncProgress" Height="4" Margin="2,6,2,0" Minimum="0" Maximum="100" Visibility="Collapsed"/>
      </StackPanel>
-      <Grid Margin="0,16,0,0"><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
-       <TextBlock Text="发送文件或文件夹" FontSize="17" FontWeight="SemiBold" Margin="0,0,0,12"/>
+      <Grid x:Name="SendPageContent" Margin="0,16,0,0"><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+       <WrapPanel Margin="0,0,0,12">
+        <TextBlock Text="发送文件或文件夹" FontSize="17" FontWeight="SemiBold" VerticalAlignment="Center" Margin="0,0,12,0"/>
+        <Button x:Name="ViewReceivedFilesButton" Content="查看接收文件" Style="{StaticResource ProductLink}" Click="ViewReceivedFiles_Click"/>
+       </WrapPanel>
        <StackPanel Grid.Row="1">
         <TextBlock Text="接收设备" Margin="0,0,0,6"/>
         <Grid>
@@ -155,7 +158,10 @@
        <Border Grid.Row="4" MinHeight="140" Background="{DynamicResource AppHeaderBg}" BorderBrush="{DynamicResource AppBorder}" BorderThickness="1" CornerRadius="8">
         <Grid>
          <ListBox x:Name="SendSourceList" Background="Transparent" Foreground="{DynamicResource AppTextPrimary}" BorderThickness="0" Padding="8" MaxHeight="240" ItemContainerStyle="{StaticResource ProductListItem}" ScrollViewer.HorizontalScrollBarVisibility="Disabled" VirtualizingPanel.ScrollUnit="Pixel" AutomationProperties.Name="待发送文件和文件夹">
-          <ListBox.ItemTemplate><DataTemplate><TextBlock Text="{Binding}" TextWrapping="Wrap"/></DataTemplate></ListBox.ItemTemplate>
+          <ListBox.ItemTemplate><DataTemplate><DockPanel>
+           <Button Content="移除" DockPanel.Dock="Right" Style="{StaticResource ProductLink}" Click="RemoveSendSource_Click" Margin="8,0,0,0" VerticalAlignment="Top" AutomationProperties.Name="从待发送列表移除" ToolTip="仅移出待发送列表，保留源文件"/>
+           <TextBlock Text="{Binding}" TextWrapping="Wrap" VerticalAlignment="Center"/>
+          </DockPanel></DataTemplate></ListBox.ItemTemplate>
          </ListBox>
          <StackPanel x:Name="SendDropHint" VerticalAlignment="Center" HorizontalAlignment="Center" Margin="20" IsHitTestVisible="False">
           <TextBlock Text="拖入文件或文件夹" FontSize="15" FontWeight="SemiBold" TextAlignment="Center"/>
@@ -164,9 +170,38 @@
         </Grid>
        </Border>
       </Grid>
+      <StackPanel x:Name="ReceivePageContent" Visibility="Collapsed" Margin="0,16,0,0">
+       <WrapPanel Margin="0,0,0,12">
+        <TextBlock x:Name="ReceivePageTitle" Text="接收文件" FontSize="17" FontWeight="SemiBold" VerticalAlignment="Center" Margin="0,0,12,0"/>
+        <Button x:Name="BackToSendButton" Content="返回发送" Style="{StaticResource ProductLink}" Click="BackToSend_Click"/>
+       </WrapPanel>
+       <TextBlock x:Name="ReceiveErrorText" Style="{StaticResource ProductInlineError}" AutomationProperties.LiveSetting="Polite"/>
+       <StackPanel x:Name="IncomingRequestsPanel" AutomationProperties.Name="待确认的收件请求"/>
+       <TextBlock Text="已接收文件" FontSize="15" FontWeight="SemiBold" Margin="0,4,0,12"/>
+       <TextBlock Text="收件记录独立保存，每页 50 批。" Style="{StaticResource ProductHint}" Margin="0,0,0,8"/>
+       <TextBlock x:Name="ReceiveStorageWarning" Style="{StaticResource ProductInlineError}" AutomationProperties.LiveSetting="Polite"/>
+       <TextBlock x:Name="ReceivedFilesEmpty" Text="还没有接收到文件。收到请求后，可在这里选择目录并接收或拒绝。" Style="{StaticResource ProductHint}"/>
+       <ItemsControl x:Name="ReceivedFilesList" AutomationProperties.Name="已接收文件记录">
+        <ItemsControl.ItemTemplate><DataTemplate>
+         <Border Background="{DynamicResource AppHeaderBg}" CornerRadius="8" Padding="12" Margin="0,0,0,10">
+          <StackPanel>
+           <TextBlock Text="{Binding Name}" FontWeight="SemiBold" TextWrapping="Wrap"/>
+           <TextBlock Margin="0,6,0,0" Style="{StaticResource ProductHint}"><Run Text="来自 "/><Run Text="{Binding Peer}"/><Run Text=" · "/><Run Text="{Binding Updated, StringFormat={}{0:MM-dd HH:mm}}"/></TextBlock>
+           <TextBlock Text="{Binding Folder}" TextWrapping="Wrap" Margin="0,6,0,8"/>
+           <Button Content="打开保存文件夹" Style="{StaticResource ProductSecondaryButton}" Click="OpenReceivedFolder_Click" HorizontalAlignment="Left"/>
+          </StackPanel>
+         </Border>
+        </DataTemplate></ItemsControl.ItemTemplate>
+       </ItemsControl>
+       <WrapPanel Margin="0,8,0,0">
+        <Button x:Name="PreviousReceivedPageButton" Content="上一页" Style="{StaticResource ProductLink}" Click="ReceivedPage_Click"/>
+        <TextBlock x:Name="ReceivedPageText" Style="{StaticResource ProductHint}" VerticalAlignment="Center" Margin="8,0"/>
+        <Button x:Name="NextReceivedPageButton" Content="下一页" Style="{StaticResource ProductLink}" Click="ReceivedPage_Click"/>
+       </WrapPanel>
+      </StackPanel>
      </StackPanel>
      </ScrollViewer>
-     <StackPanel Grid.Row="1">
+     <StackPanel x:Name="SendActionsPanel" Grid.Row="1">
       <TextBlock x:Name="SendSelectionHint" Text="可拖入到此页任意位置，也可点击添加。" Style="{StaticResource ProductHint}" Margin="0,0,0,8" AutomationProperties.LiveSetting="Polite"/>
       <DockPanel>
        <Button x:Name="SendFilesButton" DockPanel.Dock="Right" Content="发送" Style="{StaticResource ProductButton}" Click="SendToDevice_Click" MinWidth="96" Margin="12,0,0,0"/>

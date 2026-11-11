@@ -26,6 +26,10 @@ public sealed partial class ScreenTranslateShellTests
         try
         {
             ShellWindow.ShowOrActivateFromShortcut(ShellPage.Home);
+            var content = (Border)window.FindName("ContentHost");
+            Assert.Equal(1, content.Opacity);
+            Assert.Null(content.CacheMode);
+            Assert.Equal(0, ((System.Windows.Media.TranslateTransform)window.FindName("ContentTransform")).Y);
             var header = (Grid)window.FindName("WindowTitleBar");
             var controls = (FrameworkElement)window.FindName("QuickWindowControls");
             Assert.Equal(Visibility.Collapsed, header.Visibility);
@@ -50,6 +54,8 @@ public sealed partial class ScreenTranslateShellTests
             Render(window, "shell-shortcut-light", 1100, 680);
             window.WindowState = WindowState.Minimized;
             ShellWindow.ShowOrActivateFromShortcut(ShellPage.Realtime);
+            Assert.Equal(1, content.Opacity);
+            Assert.Null(content.CacheMode);
             Assert.Equal(WindowState.Normal, window.WindowState);
             Assert.True(((RadioButton)window.FindName("RealtimeNav")).IsChecked);
             ShellWindow.ShowOrActivate(ShellPage.Settings);

@@ -18,20 +18,23 @@
             </Border>
             <Grid Margin="0,24,0,0">
                 <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="28"/><ColumnDefinition/></Grid.ColumnDefinitions>
+                <Border Background="{DynamicResource AppHeaderBg}" CornerRadius="10" Padding="20">
                 <StackPanel>
                     <TextBlock Text="桌面贴图" Style="{StaticResource ProductSectionTitle}"/>
                     <TextBlock Text="把剪贴板图片贴到桌面。多张并存，默认按原始像素显示；拖动移动，滚轮缩放，右键复制、恢复原始尺寸或关闭。" Style="{StaticResource ProductHint}"/>
                     <Button x:Name="PinClipboardButton" Content="贴出剪贴板图片" Style="{StaticResource ProductSecondaryButton}" Click="Pin_Click" HorizontalAlignment="Left" Margin="0,14,0,0"/>
                     <TextBlock x:Name="PinShortcutText" Style="{StaticResource ProductHint}" Margin="0,8,0,0"/>
                 </StackPanel>
-                <StackPanel Grid.Column="2">
+                </Border>
+                <Border Grid.Column="2" Background="{DynamicResource AppHeaderBg}" CornerRadius="10" Padding="20">
+                <StackPanel>
                     <TextBlock Text="屏幕取色" Style="{StaticResource ProductSectionTitle}"/>
                     <TextBlock Text="进入截图后移动鼠标，查看当前位置的 HEX 与 RGB。按 C 复制色值并保留截图界面，默认 #RRGGBB，轻按 Shift 切换 HEX／RGB；文字编辑时 C 正常输入。" Style="{StaticResource ProductHint}"/>
                     <Button x:Name="PickColorButton" Content="进入截图取色" Style="{StaticResource ProductSecondaryButton}" Click="Screenshot_Click" HorizontalAlignment="Left" Margin="0,14,0,0" ToolTipService.ShowOnDisabled="True"/>
                 </StackPanel>
+                </Border>
             </Grid>
-            <Border Height="1" Background="{DynamicResource AppSubtleBorder}" Margin="0,24,0,18"/>
-            <TextBlock Text="操作提示" Style="{StaticResource ProductSectionTitle}"/>
+            <TextBlock Text="操作提示" Style="{StaticResource ProductSectionTitle}" Margin="0,24,0,12"/>
             <TextBlock Text="双击选区、Enter 或 Ctrl+C 复制图片并退出；Ctrl+P 贴出标注结果；Ctrl+Z 撤销，Ctrl+Y 重做；Esc 取消。复制失败会保留截图和标注，可直接重试。" Style="{StaticResource ProductHint}"/>
             <Button x:Name="ShortcutSettingsButton" Content="设置截图与贴图快捷键 →" Style="{StaticResource ProductLink}" Margin="-10,10,0,0" Click="Shortcuts_Click"/>
         </StackPanel>

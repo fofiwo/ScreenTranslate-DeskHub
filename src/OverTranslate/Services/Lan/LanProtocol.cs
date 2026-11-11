@@ -10,7 +10,7 @@ internal sealed record LanClipboardPayload(string Kind, byte[] Bytes, long Seque
 internal sealed record LanPairRequest(string Name, string Address);
 internal sealed record LanProgress(string Name, long Completed, long Total, string Phase);
 internal sealed record LanHeader(string Kind, string Id = "", string Name = "", long Length = 0,
-    string Hash = "", bool Accepted = false, int Version = 3, bool FileOffers = false, bool Reconnect = false, string Origin = "");
+    string Hash = "", bool Accepted = false, int Version = 3, bool FileOffers = false, bool Reconnect = false, string Origin = "", bool FileCancellation = false);
 
 internal static class LanProtocol
 {

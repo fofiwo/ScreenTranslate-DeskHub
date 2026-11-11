@@ -235,22 +235,29 @@ public sealed partial class ScreenTranslateShellTests
             _ready = new EventWaitHandle(false, EventResetMode.ManualReset, readyName);
             _release = new EventWaitHandle(false, EventResetMode.ManualReset, releaseName);
             var script = $$"""
+                $ErrorActionPreference = 'Stop'
                 Add-Type 'using System; using System.Runtime.InteropServices; public class ClipboardFixture { [DllImport("user32.dll")] public static extern bool OpenClipboard(IntPtr owner); [DllImport("user32.dll")] public static extern bool CloseClipboard(); }'
                 $ready = [Threading.EventWaitHandle]::OpenExisting('{{readyName}}')
                 $release = [Threading.EventWaitHandle]::OpenExisting('{{releaseName}}')
-                if (-not [ClipboardFixture]::OpenClipboard([IntPtr]::Zero)) { exit 2 }
+                $timer = [Diagnostics.Stopwatch]::StartNew()
+                while (-not [ClipboardFixture]::OpenClipboard([IntPtr]::Zero)) {
+                    if ($timer.ElapsedMilliseconds -ge 3000) { exit 2 }
+                    Start-Sleep -Milliseconds 25
+                }
                 try { $ready.Set() | Out-Null; $release.WaitOne(6000) | Out-Null }
                 finally { [ClipboardFixture]::CloseClipboard() | Out-Null; $ready.Dispose(); $release.Dispose() }
                 """;
             _process = Process.Start(new ProcessStartInfo("powershell.exe")
             {
                 Arguments = "-NoProfile -NonInteractive -EncodedCommand " + Convert.ToBase64String(System.Text.Encoding.Unicode.GetBytes(script)),
-                UseShellExecute = false, CreateNoWindow = true, WindowStyle = ProcessWindowStyle.Hidden
+                UseShellExecute = false, CreateNoWindow = true, WindowStyle = ProcessWindowStyle.Hidden,
+                RedirectStandardError = true
             })!;
             if (!_ready.WaitOne(TimeSpan.FromSeconds(8)))
             {
+                var detail = _process.HasExited ? $"exit={_process.ExitCode}; {_process.StandardError.ReadToEnd()}" : "child still running";
                 Dispose();
-                throw new InvalidOperationException("External clipboard fixture did not acquire the lock.");
+                throw new InvalidOperationException("External clipboard fixture did not acquire the lock: " + detail);
             }
         }
         public void Release() => _release.Set();

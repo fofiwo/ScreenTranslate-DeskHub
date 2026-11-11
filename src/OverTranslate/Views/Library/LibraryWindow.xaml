@@ -92,7 +92,7 @@
    <Setter Property="FontWeight" Value="Normal"/>
    <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="ListBoxItem">
     <Grid Background="Transparent">
-     <Border x:Name="RowSurface" Background="Transparent" BorderBrush="{DynamicResource AppSubtleBorder}" BorderThickness="0,0,0,1"><ContentPresenter/></Border>
+     <Border x:Name="RowSurface" Background="Transparent" CornerRadius="6" Margin="0,2"><ContentPresenter/></Border>
      <Border x:Name="SelectionMark" Width="3" HorizontalAlignment="Left" Background="Transparent" Margin="0,8"/>
     </Grid>
     <ControlTemplate.Triggers>
@@ -145,7 +145,7 @@
       </StackPanel>
      </Expander>
      <Grid Grid.Row="2"><Grid.ColumnDefinitions><ColumnDefinition Width="2*" MinWidth="290"/><ColumnDefinition Width="3*"/></Grid.ColumnDefinitions>
-      <Border BorderBrush="{DynamicResource AppSubtleBorder}" BorderThickness="1" CornerRadius="4">
+      <Border Background="{DynamicResource AppHeaderBg}" CornerRadius="10">
        <Grid><Grid.RowDefinitions><RowDefinition Height="30"/><RowDefinition/></Grid.RowDefinitions>
         <Border Background="{DynamicResource AppHeaderBg}" Padding="12,0"><TextBlock x:Name="PromptCount" Style="{StaticResource LibraryMeta}" VerticalAlignment="Center"/></Border>
         <ListBox x:Name="PromptList" Grid.Row="1" SelectionChanged="PromptList_SelectionChanged" PreviewMouseLeftButtonUp="PromptList_Click" PreviewKeyDown="PromptList_KeyDown" BorderThickness="0" Background="Transparent" ScrollViewer.HorizontalScrollBarVisibility="Disabled" ScrollViewer.ScrollChanged="Prompts_ScrollChanged" VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling" ScrollViewer.CanContentScroll="True" ItemContainerStyle="{StaticResource LibraryRow}" HorizontalContentAlignment="Stretch" AutomationProperties.Name="提示词列表：单击复制，方向键选择，Enter 复制">
@@ -171,7 +171,7 @@
           <ItemsControl ItemsSource="{Binding Tags}" ItemTemplate="{StaticResource DetailTag}"><ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate></ItemsControl.ItemsPanel></ItemsControl>
          </StackPanel>
         </ScrollViewer>
-        <TextBox x:Name="PromptPreview" Grid.Row="1" Text="{Binding Content, Mode=OneWay}" IsReadOnly="True" TextWrapping="Wrap" AcceptsReturn="True" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Padding="16,12" BorderThickness="1" BorderBrush="{DynamicResource AppSubtleBorder}" Background="{DynamicResource AppSurfaceBg}" Foreground="{DynamicResource AppTextPrimary}" FontFamily="{DynamicResource AppFont}" FontSize="15" FontWeight="Normal" TextBlock.LineHeight="26" TextBlock.LineStackingStrategy="BlockLineHeight" AutomationProperties.Name="完整提示词正文，可选中文字"/>
+        <TextBox x:Name="PromptPreview" Grid.Row="1" Text="{Binding Content, Mode=OneWay}" IsReadOnly="True" TextWrapping="Wrap" AcceptsReturn="True" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Padding="16,12" BorderThickness="0" Background="{DynamicResource AppHeaderBg}" Foreground="{DynamicResource AppTextPrimary}" FontFamily="{DynamicResource AppFont}" FontSize="15" FontWeight="Normal" TextBlock.LineHeight="26" TextBlock.LineStackingStrategy="BlockLineHeight" AutomationProperties.Name="完整提示词正文，可选中文字"/>
         <Grid x:Name="PromptActions" Grid.Row="2" Margin="0,8,0,0"><Grid.RowDefinitions><RowDefinition Height="22"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
          <TextBlock x:Name="PromptCopyFeedback" Style="{StaticResource LibraryMeta}" Text="单击左侧条目复制 · ↑↓ 选择 · Enter 复制" TextTrimming="CharacterEllipsis" ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}" AutomationProperties.LiveSetting="Polite"/>
          <Grid Grid.Row="1"><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
@@ -191,7 +191,7 @@
       <Button Grid.Column="1" Content="新增连接资料" Style="{StaticResource SmallButton}" Foreground="{DynamicResource AppAccent}" Click="NewModel_Click"/>
      </Grid>
      <Grid Grid.Row="1"><Grid.ColumnDefinitions><ColumnDefinition Width="2*" MinWidth="290"/><ColumnDefinition Width="3*"/></Grid.ColumnDefinitions>
-      <Border BorderBrush="{DynamicResource AppSubtleBorder}" BorderThickness="1" CornerRadius="4">
+      <Border Background="{DynamicResource AppHeaderBg}" CornerRadius="10">
        <Grid><Grid.RowDefinitions><RowDefinition Height="30"/><RowDefinition/></Grid.RowDefinitions>
         <Border Background="{DynamicResource AppHeaderBg}" Padding="12,0"><DockPanel LastChildFill="True"><TextBlock Text="拖拽排序" DockPanel.Dock="Right" Style="{StaticResource LibraryMeta}" VerticalAlignment="Center" Margin="8,0,0,0"/><TextBlock x:Name="ModelCount" Style="{StaticResource LibraryMeta}" VerticalAlignment="Center"/></DockPanel></Border>
         <ListBox x:Name="ModelList" Grid.Row="1" ItemContainerStyle="{StaticResource LibraryRow}" SelectionChanged="ModelList_SelectionChanged" HorizontalContentAlignment="Stretch" BorderThickness="0" Background="Transparent" ScrollViewer.HorizontalScrollBarVisibility="Disabled" VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling" AutomationProperties.Name="模型连接资料列表" AutomationProperties.HelpText="按住条目拖动，松开后自动保存顺序" AllowDrop="True" PreviewMouseLeftButtonDown="ModelList_PreviewMouseLeftButtonDown" PreviewMouseMove="ModelList_PreviewMouseMove" PreviewMouseLeftButtonUp="ModelList_PreviewMouseLeftButtonUp" DragOver="ModelList_DragOver" DragLeave="ModelList_DragLeave" Drop="ModelList_Drop">

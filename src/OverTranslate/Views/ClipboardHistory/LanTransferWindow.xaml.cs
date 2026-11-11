@@ -379,12 +379,12 @@ public partial class LanTransferWindow : Window
         e.Handled = true;
         if (e.Data.GetData(System.Windows.DataFormats.FileDrop) is string[] paths) await SendFilesAsync(paths);
     }
-    internal async Task SendFilesAsync(string[] paths)
+    internal async Task<string> SendFilesAsync(string[] paths)
     {
-        if (IsSending) { TransferStatus.Text = "上一批文件仍在发送，请等待或取消。"; return; }
-        if (!_node.IsConnected) { TransferStatus.Text = "请先配对另一台电脑。"; return; }
+        if (IsSending) return TransferStatus.Text = "上一批文件仍在发送，请等待或取消。";
+        if (!_node.IsConnected) return TransferStatus.Text = "请先配对另一台电脑。";
         if (paths.Length == 0 || paths.Length > 100 || paths.Any(p => !File.Exists(p) && !Directory.Exists(p)))
-        { TransferStatus.Text = "请拖入 1–100 个文件或文件夹。"; return; }
+            return TransferStatus.Text = "请拖入 1–100 个文件或文件夹。";
         using var request = new CancellationTokenSource();
         var connection = _node.ConnectionVersion;
         _files = request; UpdateControls();
@@ -392,11 +392,12 @@ public partial class LanTransferWindow : Window
         {
             if (_node.ConnectionVersion != connection) throw new IOException("配对设备已更换。");
             TransferStatus.Text = "正在准备文件与文件夹，随后等待对方选择保存目录…";
-            TransferStatus.Text = await _node.SendBundleAsync(paths, request.Token)
+            // 返回本批结果，避免调用方读取到被并行接收进度覆盖的状态栏。
+            return TransferStatus.Text = await _node.SendBundleAsync(paths, request.Token)
                 ? $"本批 {paths.Length} 项已全部送达并保存。" : "对方未接收本批文件，请联系对方后重试。";
         }
-        catch (OperationCanceledException) { TransferStatus.Text = "传输已取消，已完成文件保留。若连接已断开，请重新配对后继续。"; }
-        catch (Exception) { TransferStatus.Text = "文件未全部送达，请检查连接、接收目录权限、磁盘空间、文件名或文件大小后重试。"; }
+        catch (OperationCanceledException) { return TransferStatus.Text = "传输已取消，已完成文件保留。若连接已断开，请重新配对后继续。"; }
+        catch (Exception) { return TransferStatus.Text = "文件未全部送达，请检查连接、接收目录权限、磁盘空间、文件名或文件大小后重试。"; }
         finally { _files = null; UpdateControls(); }
     }
     private void CancelFiles_Click(object sender, RoutedEventArgs e) => _files?.Cancel();

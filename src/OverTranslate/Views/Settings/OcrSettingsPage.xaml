@@ -6,7 +6,9 @@
         <StackPanel Margin="0,24,12,24" MaxWidth="760" HorizontalAlignment="Stretch">
             <TextBlock Text="识别方式" FontSize="20" FontWeight="SemiBold" Margin="0,0,0,10"/>
             <TextBlock Text="先选择 OCR 引擎，再保存设置。可用测试文字检查识别结果。" TextWrapping="Wrap" Foreground="{DynamicResource AppTextSecondary}" Margin="0,0,0,22"/>
-            <TextBlock Text="OCR 引擎"/>
+            <Border Background="{DynamicResource AppHeaderBg}" CornerRadius="10" Padding="20" Margin="0,0,0,20">
+            <StackPanel>
+            <TextBlock Text="OCR 引擎" FontWeight="SemiBold"/>
             <ComboBox Height="40" x:Name="OcrProviderBox" Style="{StaticResource ModernComboBox}" Margin="0,8,0,16" SelectionChanged="Provider_Changed" AutomationProperties.Name="OCR 引擎">
                 <ComboBox.ItemTemplate><DataTemplate><TextBlock Text="{Binding}"/></DataTemplate></ComboBox.ItemTemplate>
             </ComboBox>
@@ -28,7 +30,8 @@
                 <StackPanel Margin="0,0,12,0"><TextBlock Text="请求超时（秒，2–120）"/><TextBox Style="{StaticResource ModernTextBox}" Height="40" x:Name="TimeoutBox" Margin="0,8,0,0"/></StackPanel>
                 <StackPanel Grid.Column="1"><TextBlock Text="最小间隔（毫秒，500–60000）"/><TextBox Style="{StaticResource ModernTextBox}" Height="40" x:Name="IntervalBox" Margin="0,8,0,0"/></StackPanel>
             </Grid>
-            <Border Height="1" Background="{DynamicResource AppBorder}" Margin="0,10,0,22"/>
+            </StackPanel>
+            </Border>
             <WrapPanel>
                 <Button Style="{StaticResource ProductButton}" Content="保存识别设置" Click="Save_Click" Padding="16,6" Height="42" Margin="0,0,10,0"/>
                 <Button Style="{StaticResource ProductSecondaryButton}" x:Name="TestButton" Content="保存并检查 OCR" Click="Test_Click" Padding="16,6" Height="42"/>

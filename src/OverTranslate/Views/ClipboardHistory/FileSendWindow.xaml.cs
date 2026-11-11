@@ -46,6 +46,8 @@ public partial class FileSendWindow : Window
         if (dialog.ShowDialog(this) == true) Add(dialog.FolderNames);
     }
     private void Clear_Click(object sender, RoutedEventArgs e) { _paths.Clear(); Add([]); }
+    private void Remove_Click(object sender, RoutedEventArgs e)
+    { if (sender is FrameworkElement { DataContext: string path }) { _paths.Remove(path); Add([]); } }
     private void Setup_Click(object sender, RoutedEventArgs e) { OpenSetup = true; DialogResult = false; }
     private void Send_Click(object sender, RoutedEventArgs e)
     {

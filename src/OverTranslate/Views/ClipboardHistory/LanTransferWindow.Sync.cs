@@ -19,7 +19,7 @@ public partial class LanTransferWindow
         }
     }
 
-    internal static async Task ChooseAndSendAsync(Window owner, string[] paths)
+    internal static async Task<string?> ChooseAndSendAsync(Window owner, string[] paths)
     {
         RestoreConnections();
         var versions = Connections.ToDictionary(w => w._deviceId, w => w._node.ConnectionVersion);
@@ -31,11 +31,12 @@ public partial class LanTransferWindow
                 || version != window._node.ConnectionVersion || !window._node.IsConnected)
             {
                 OverTranslate.Views.Controls.AppMessageWindow.ShowMessage(owner, "连接已变化，请重新选择接收方。", "发送未开始");
-                return;
+                return "连接已变化，未开始重新发送。";
             }
-            await window.SendFilesAsync(picker.Paths);
+            return await window.SendFilesAsync(picker.Paths);
         }
         else if (picker.OpenSetup) Open();
+        return null;
     }
 
     internal static async Task<string> SendToDeviceAsync(LanDeviceChoice peer, string[] paths)
@@ -44,21 +45,17 @@ public partial class LanTransferWindow
         if (window is null || !window._node.IsConnected || !window._node.SupportsFileOffers
             || window._node.ConnectionVersion != peer.ConnectionVersion)
             return "连接已变化，请重新选择接收设备。";
-        await window.SendFilesAsync(paths);
-        return window.TransferStatus.Text;
+        return await window.SendFilesAsync(paths);
     }
 
     private async Task<string?> ConfirmFilesAsync(LanHeader header, CancellationToken token)
     {
-        return await Dispatcher.InvokeAsync(() =>
+        var confirmation = await Dispatcher.InvokeAsync(() =>
         {
-            if (_shutdown || token.IsCancellationRequested) return null;
-            var dialog = new FileReceiveWindow(_node.PeerName, header);
-            if (IsVisible) dialog.Owner = this;
-            using var cancellation = token.Register(() => Dispatcher.BeginInvoke(() => { if (dialog.IsVisible) dialog.Close(); }));
-            var accepted = dialog.ShowDialog() == true;
-            return accepted && !token.IsCancellationRequested ? dialog.Folder : null;
+            if (_shutdown || token.IsCancellationRequested) return Task.FromResult<string?>(null);
+            return ClipboardHistoryWindow.ConfirmIncomingFilesAsync(_node.PeerName, header, _preferences.ReceiveFolder, token);
         });
+        return await confirmation;
     }
 
     private void SyncHistory_Click(object sender, RoutedEventArgs e) => new SyncActivityWindow(_activities) { Owner = this }.ShowDialog();

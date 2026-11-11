@@ -204,12 +204,25 @@ public partial class ClipboardHistoryWindow : Window
         Closed += (_, _) =>
         {
             _closed = true; _lifetime.Cancel(); _timeTimer.Stop(); _store.Changed -= Store_Changed;
+            foreach (var card in IncomingRequestsPanel.Children.OfType<FileReceiveCard>()) card.Reject();
             _placementSource?.RemoveHook(PlacementMessage); _placementSource = null;
             HistoryList.ItemsSource = null; PreviewImage.Source = null; PreviewText.Clear(); _lifetime.Dispose();
             if (ReferenceEquals(_current, this)) _current = null;
         };
         StatusText.Text = store.UnreadableCount > 0 ? $"{store.UnreadableCount} 条记录无法读取，原文件已保留。" : ClipboardHistoryRuntime.LastError ?? "";
         RefreshViews();
+    }
+
+    internal static async Task PrepareForShortcutAsync(Task<ClipboardHistoryStore> storeTask)
+    {
+        var version = _openVersion;
+        var store = await storeTask;
+        await System.Windows.Threading.Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
+        if (version != _openVersion || _opening || _current is not null
+            || ShortcutUiWarmup.ShouldSkip) return;
+        var window = new ClipboardHistoryWindow(store, managePosition: true);
+        try { ShortcutUiWarmup.PrepareLayout(window); _current = window; }
+        catch { window._shutdown = true; window.Close(); throw; }
     }
 
     public static async void Open()
@@ -237,7 +250,8 @@ public partial class ClipboardHistoryWindow : Window
     {
         _pasteTarget = OriginalApplicationPaste.CaptureTarget();
         RefreshBehaviorSettings();
-        SearchBox.Clear(); TypeFilter.SelectedIndex = 0;
+        if (HasIncomingFiles) ShowReceivePage();
+        else { SearchBox.Clear(); TypeFilter.SelectedIndex = 0; }
         RefreshViews();
         if (!IsVisible) Show();
         if (WindowState == WindowState.Minimized) WindowState = WindowState.Normal;
@@ -283,7 +297,7 @@ public partial class ClipboardHistoryWindow : Window
 
     private void ScheduleDismiss() => Dispatcher.BeginInvoke(DispatcherPriority.Background, () =>
     {
-        if (!_closed && IsVisible && !IsActive && !WindowPinned && !_busy
+        if (!_closed && IsVisible && !IsActive && !WindowPinned && !HasIncomingFiles && !_busy
             && !MenuButton.ContextMenu.IsOpen && !HistoryList.ContextMenu.IsOpen) Dismiss();
     });
 
@@ -583,7 +597,7 @@ public partial class ClipboardHistoryWindow : Window
 
     internal void SetWindowPinned(bool pinned)
     {
-        WindowPinned = pinned; Topmost = pinned;
+        WindowPinned = pinned; Topmost = pinned || HasIncomingFiles;
         WindowPinButton.Content = pinned ? "\uE77A" : "\uE718";
         if (pinned) WindowPinButton.SetResourceReference(BackgroundProperty, "AppAccentSubtle");
         else WindowPinButton.Background = Brushes.Transparent;

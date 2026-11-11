@@ -3,8 +3,8 @@
  xmlns:controls="clr-namespace:OverTranslate.Views.Controls"
  Title="发送到设备" Width="520" Height="520" MinWidth="440" MinHeight="480" WindowStartupLocation="CenterOwner" Style="{StaticResource ProductToolWindow}"
  Background="{DynamicResource AppWindowBg}" Foreground="{DynamicResource AppTextPrimary}" FontFamily="{DynamicResource AppFont}">
- <DockPanel><controls:ToolWindowHeader DockPanel.Dock="Top"/>
- <Border Padding="24" Background="{DynamicResource AppWindowBg}"><Grid><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+ <DockPanel Background="{DynamicResource AppWindowBg}"><controls:ToolWindowHeader DockPanel.Dock="Top"/>
+ <Border Padding="24" Background="{DynamicResource AppSurfaceBg}" CornerRadius="12,12,0,0"><Grid><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
   <StackPanel>
    <TextBlock Text="发送文件或文件夹" Style="{StaticResource ProductDialogTitle}"/>
    <TextBlock Text="对方选择保存目录并确认后开始传输，保留文件夹结构与空文件夹。" Style="{StaticResource ProductHint}" Margin="0,8,0,16"/>
@@ -19,8 +19,11 @@
    <Button Content="添加文件夹" Style="{StaticResource ProductSecondaryButton}" Click="AddFolder_Click" Margin="8,0,0,0"/>
    <Button Content="清空" ToolTip="清空待发送项目" Style="{StaticResource ProductLink}" Click="Clear_Click" Margin="8,0,0,0"/>
   </WrapPanel>
-  <ListBox x:Name="SourceList" Grid.Row="2" Background="{DynamicResource AppCardBg}" Foreground="{DynamicResource AppTextPrimary}" BorderBrush="{DynamicResource AppBorder}" ItemContainerStyle="{StaticResource ProductListItem}" VirtualizingPanel.ScrollUnit="Pixel" ScrollViewer.HorizontalScrollBarVisibility="Disabled" AutomationProperties.Name="待发送项目">
-   <ListBox.ItemTemplate><DataTemplate><TextBlock Text="{Binding}" TextWrapping="Wrap"/></DataTemplate></ListBox.ItemTemplate>
+  <ListBox x:Name="SourceList" Grid.Row="2" Background="{DynamicResource AppHeaderBg}" Foreground="{DynamicResource AppTextPrimary}" BorderThickness="0" ItemContainerStyle="{StaticResource ProductListItem}" VirtualizingPanel.ScrollUnit="Pixel" ScrollViewer.HorizontalScrollBarVisibility="Disabled" AutomationProperties.Name="待发送项目">
+   <ListBox.ItemTemplate><DataTemplate><DockPanel>
+    <Button Content="移除" DockPanel.Dock="Right" Style="{StaticResource ProductLink}" Click="Remove_Click" Margin="8,0,0,0" VerticalAlignment="Top" AutomationProperties.Name="从待发送列表移除" ToolTip="仅移出待发送列表，保留源文件"/>
+    <TextBlock Text="{Binding}" TextWrapping="Wrap" VerticalAlignment="Center"/>
+   </DockPanel></DataTemplate></ListBox.ItemTemplate>
   </ListBox>
   <StackPanel Grid.Row="3" Margin="0,12,0,0">
    <TextBlock x:Name="SelectionHint" TextWrapping="Wrap" Margin="0,0,0,8" Foreground="{DynamicResource AppTextSecondary}"/>

@@ -50,11 +50,11 @@
     <!--  CARD BORDER                                -->
     <!-- ═══════════════════════════════════════════ -->
     <Style x:Key="CardBorder" TargetType="Border">
-        <Setter Property="Background"      Value="{DynamicResource AppCardBg}"/>
+        <Setter Property="Background"      Value="{DynamicResource AppHeaderBg}"/>
         <Setter Property="BorderBrush"     Value="{DynamicResource AppBorder}"/>
-        <Setter Property="BorderThickness" Value="1"/>
-        <Setter Property="CornerRadius"    Value="8"/>
-        <Setter Property="Padding"         Value="16,12"/>
+        <Setter Property="BorderThickness" Value="0"/>
+        <Setter Property="CornerRadius"    Value="10"/>
+        <Setter Property="Padding"         Value="20,16"/>
         <Setter Property="Margin"          Value="0,0,0,12"/>
     </Style>
 
@@ -66,9 +66,9 @@
     <!--  second card that happens to be smaller.    -->
     <!-- ═══════════════════════════════════════════ -->
     <Style x:Key="InnerGroupBorder" TargetType="Border">
-        <Setter Property="Background"      Value="Transparent"/>
+        <Setter Property="Background"      Value="{DynamicResource AppSurfaceBg}"/>
         <Setter Property="BorderBrush"     Value="{DynamicResource AppSubtleBorder}"/>
-        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="BorderThickness" Value="0"/>
         <Setter Property="CornerRadius"    Value="6"/>
         <Setter Property="Padding"         Value="12,10"/>
         <Setter Property="Margin"          Value="0,0,0,10"/>
@@ -85,7 +85,7 @@
     <Style x:Key="ToggleRowBorder" TargetType="Border">
         <Setter Property="Background"      Value="{DynamicResource AppSurfaceBg}"/>
         <Setter Property="BorderBrush"     Value="{DynamicResource AppSubtleBorder}"/>
-        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="BorderThickness" Value="0"/>
         <Setter Property="CornerRadius"    Value="6"/>
         <Setter Property="Padding"         Value="12,10"/>
         <Setter Property="Margin"          Value="0,0,0,8"/>

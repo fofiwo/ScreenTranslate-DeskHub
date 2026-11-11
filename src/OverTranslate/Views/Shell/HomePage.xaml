@@ -60,19 +60,22 @@
             </Grid>
             <Expander Header="截图选项" Margin="0,16,0,0"><ContentControl x:Name="CaptureOptionsHost"/></Expander>
             <TextBlock Text="鼠标可穿透译文操作原界面；滚动或切换窗口时收起旧结果。" Style="{StaticResource ProductHint}" Margin="2,8,0,0"/>
-            <Border Height="1" Background="{DynamicResource AppSubtleBorder}" Margin="0,20,0,16"/>
-            <Grid>
+            <Grid Margin="0,24,0,0">
                 <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="28"/><ColumnDefinition/></Grid.ColumnDefinitions>
+                <Border Background="{DynamicResource AppHeaderBg}" CornerRadius="10" Padding="18">
                 <StackPanel>
                     <TextBlock Text="让变化的画面持续翻译" FontSize="16" FontWeight="SemiBold"/>
                     <TextBlock Text="字幕、聊天或应用界面变化时，更新选定区域的译文。" Style="{StaticResource ProductHint}" Margin="0,8,0,8"/>
                     <Button Content="{DynamicResource S.Shell.RealtimeTranslate}" Style="{StaticResource ProductLink}" Margin="-10,0,0,0" Click="Realtime_Click"/>
                 </StackPanel>
-                <StackPanel Grid.Column="2">
+                </Border>
+                <Border Grid.Column="2" Background="{DynamicResource AppHeaderBg}" CornerRadius="10" Padding="18">
+                <StackPanel>
                     <TextBlock Text="只想取出屏幕文字" FontSize="16" FontWeight="SemiBold"/>
                     <TextBlock Text="按 OCR 快捷键框选，识别后自动复制，自己粘贴。" Style="{StaticResource ProductHint}" Margin="0,8,0,8"/>
                     <Button Content="设置 OCR 快捷键 →" Style="{StaticResource ProductLink}" Margin="-10,0,0,0" Click="Shortcuts_Click"/>
                 </StackPanel>
+                </Border>
             </Grid>
             <TextBlock Text="截图仅复制到剪贴板。选择在线 OCR 或翻译服务时，所选图像或文字会发送给该服务。" Style="{StaticResource ProductHint}" Margin="0,14,0,0"/>
         </StackPanel>

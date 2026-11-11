@@ -4,8 +4,8 @@
  xmlns:lan="clr-namespace:OverTranslate.Services.Lan"
  Title="同步记录" Width="680" Height="560" MinWidth="460" MinHeight="440" WindowStartupLocation="CenterOwner" Style="{StaticResource ProductToolWindow}"
  Background="{DynamicResource AppWindowBg}" Foreground="{DynamicResource AppTextPrimary}" FontFamily="{DynamicResource AppFont}">
- <DockPanel><controls:ToolWindowHeader DockPanel.Dock="Top"/>
- <Border Padding="24" Background="{DynamicResource AppWindowBg}"><Grid><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+ <DockPanel Background="{DynamicResource AppWindowBg}"><controls:ToolWindowHeader DockPanel.Dock="Top"/>
+ <Border Padding="24" Background="{DynamicResource AppSurfaceBg}" CornerRadius="12,12,0,0"><Grid><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
   <DockPanel><Button Content="设备与同步" DockPanel.Dock="Right" Style="{StaticResource ProductLink}" Click="Setup_Click"/>
    <TextBlock Text="同步记录" Style="{StaticResource ProductDialogTitle}"/>
   </DockPanel>
@@ -13,7 +13,7 @@
    <TextBlock Text="保留最近 100 条 · 不记录剪贴板正文、资料库内容或配对码" Foreground="{DynamicResource AppTextSecondary}" TextWrapping="Wrap" Margin="0,6,0,0"/>
    <TextBlock x:Name="StorageWarning" Style="{StaticResource ProductInlineError}" AutomationProperties.LiveSetting="Polite"/>
   </StackPanel>
-  <Grid Grid.Row="2"><ListBox x:Name="ActivityList" Background="Transparent" BorderBrush="{DynamicResource AppBorder}" Foreground="{DynamicResource AppTextPrimary}" ItemContainerStyle="{StaticResource ProductListItem}" VirtualizingPanel.ScrollUnit="Pixel" ScrollViewer.HorizontalScrollBarVisibility="Disabled" SelectionChanged="Selection_Changed" AutomationProperties.Name="持久化同步记录">
+  <Grid Grid.Row="2"><ListBox x:Name="ActivityList" Background="{DynamicResource AppHeaderBg}" BorderThickness="0" Foreground="{DynamicResource AppTextPrimary}" ItemContainerStyle="{StaticResource ProductListItem}" VirtualizingPanel.ScrollUnit="Pixel" ScrollViewer.HorizontalScrollBarVisibility="Disabled" SelectionChanged="Selection_Changed" AutomationProperties.Name="持久化同步记录">
    <ListBox.ItemTemplate><DataTemplate><StackPanel>
     <DockPanel><TextBlock Text="{Binding Updated, StringFormat={}{0:MM-dd HH:mm:ss}}" DockPanel.Dock="Right" Style="{StaticResource ProductHint}" Margin="12,0,0,0"/>
      <TextBlock Text="{Binding KindLabel}" FontWeight="SemiBold" FontSize="14"/>
@@ -41,6 +41,7 @@
    </StackPanel></DataTemplate></ListBox.ItemTemplate>
   </ListBox><TextBlock x:Name="EmptyHint" Text="还没有同步记录。连接并开启对应同步后，结果会显示在这里。" Style="{StaticResource ProductHint}" Margin="24" VerticalAlignment="Center" IsHitTestVisible="False"/></Grid>
   <StackPanel Grid.Row="3" Margin="0,12,0,0">
+   <TextBlock x:Name="RetryFeedback" Style="{StaticResource ProductHint}" Margin="0,0,0,8" AutomationProperties.LiveSetting="Polite"/>
    <TextBlock Text="资料库失败后自动重试；剪贴板失败可重新复制。文件可选择记录重新发送。" Style="{StaticResource ProductHint}" Margin="0,0,0,10"/>
    <WrapPanel Margin="0,0,-8,-8">
    <Button x:Name="CancelSendButton" Content="取消发送" Style="{StaticResource ProductSecondaryButton}" Click="CancelSend_Click" IsEnabled="False" Margin="0,0,8,8"/>

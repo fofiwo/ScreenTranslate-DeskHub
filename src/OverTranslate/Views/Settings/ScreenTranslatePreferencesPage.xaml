@@ -1,6 +1,7 @@
 <UserControl x:Class="OverTranslate.Views.Settings.ScreenTranslatePreferencesPage"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             Foreground="{DynamicResource AppTextPrimary}">
     <UserControl.Resources>
         <Style TargetType="TabItem" BasedOn="{StaticResource ProductTab}"/>
         <Style TargetType="TabControl">
@@ -10,7 +11,7 @@
                         <Grid KeyboardNavigation.TabNavigation="Local">
                             <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition/></Grid.RowDefinitions>
                             <TabPanel IsItemsHost="True"/>
-                            <Border Grid.Row="1" BorderBrush="{DynamicResource AppBorder}" BorderThickness="0,1,0,0" Background="{DynamicResource AppSurfaceBg}">
+                            <Border Grid.Row="1" Background="{DynamicResource AppSurfaceBg}">
                                 <ContentPresenter x:Name="PART_SelectedContentHost" ContentSource="SelectedContent" TextElement.Foreground="{DynamicResource AppTextPrimary}" TextElement.FontWeight="Normal"/>
                             </Border>
                         </Grid>
@@ -30,16 +31,17 @@
             <TabItem Header="AI 与翻译" Padding="20,12">
                 <ScrollViewer x:Name="AiScroll" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                     <StackPanel Margin="0,24,12,24" MaxWidth="760" HorizontalAlignment="Stretch">
+                        <Border Background="{DynamicResource AppHeaderBg}" CornerRadius="10" Padding="20" Margin="0,0,0,24"><StackPanel>
                         <TextBlock Text="AI 翻译服务" FontSize="20" FontWeight="SemiBold"/>
                         <TextBlock Text="连接 OpenAI 兼容接口，配置实际用于截图和持续翻译的地址、模型与翻译提示词。此配置与模型资料库独立；面板支持获取模型列表和连接测试。" TextWrapping="Wrap" Foreground="{DynamicResource AppTextSecondary}" Margin="0,12,0,20"/>
                         <Button Content="配置 AI 翻译服务" Style="{StaticResource ProductButton}" HorizontalAlignment="Left" Click="OpenAi_Click" Padding="20,10" Height="44"/>
-                        <Border Height="1" Background="{DynamicResource AppBorder}" Margin="0,28,0,24"/>
-                        <ContentControl x:Name="AiOrganizingHost"/>
-                        <Border Height="1" Background="{DynamicResource AppBorder}" Margin="0,28,0,24"/>
+                        </StackPanel></Border>
+                        <Border Background="{DynamicResource AppHeaderBg}" CornerRadius="10" Padding="20" Margin="0,0,0,24"><ContentControl x:Name="AiOrganizingHost"/></Border>
+                        <Border Background="{DynamicResource AppHeaderBg}" CornerRadius="10" Padding="20" Margin="0,0,0,24"><StackPanel>
                         <TextBlock Text="DeepL" FontSize="18" FontWeight="SemiBold"/>
                         <TextBlock Text="使用自己的 DeepL API 配置。" Foreground="{DynamicResource AppTextSecondary}" Margin="0,8,0,12"/>
                         <Button Content="配置 DeepL" Style="{StaticResource ProductSecondaryButton}" HorizontalAlignment="Left" Click="DeepL_Click"/>
-                        <Border Height="1" Background="{DynamicResource AppBorder}" Margin="0,28,0,24"/>
+                        </StackPanel></Border>
                         <TextBlock Text="其他翻译服务" FontSize="18" FontWeight="SemiBold"/>
                         <TextBlock Text="在截图首页或持续翻译中选择 Microsoft、Google、Bing 等服务。可用性取决于所选服务与网络，尚未测试的服务不会标记为已连接。" TextWrapping="Wrap" Foreground="{DynamicResource AppTextSecondary}" Margin="0,10,0,0"/>
                         <ContentControl x:Name="ServiceOptionsHost"/>

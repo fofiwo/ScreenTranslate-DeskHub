@@ -1,5 +1,6 @@
 ﻿using System.Collections.Concurrent;
 using System.IO;
+using System.Buffers.Binary;
 using System.Net;
 using System.Net.NetworkInformation;
 using System.Net.Security;
@@ -199,9 +200,9 @@ internal sealed class LanNode : IAsyncDisposable
                 if (!IsLocalAddress(remote)) throw new InvalidDataException("仅接受局域网设备。");
                 var accepted = ConfirmPairAsync is { } confirm
                     && await confirm(new(name, remote.ToString()), timeout.Token).WaitAsync(timeout.Token).ConfigureAwait(false);
-                await LanProtocol.WriteHeaderAsync(ssl, new("paired", Name: _name, Accepted: accepted, FileOffers: true, Reconnect: true), timeout.Token).ConfigureAwait(false);
+                await LanProtocol.WriteHeaderAsync(ssl, new("paired", Name: _name, Accepted: accepted, FileOffers: true, Reconnect: true, FileCancellation: true), timeout.Token).ConfigureAwait(false);
                 if (!accepted) { ssl.Dispose(); client.Dispose(); client = null; await Task.Delay(500, token).ConfigureAwait(false); continue; }
-                var session = new Session(client, ssl, hello.FileOffers, hello.Reconnect);
+                var session = new Session(client, ssl, hello.FileOffers, hello.Reconnect, hello.FileCancellation);
                 client = null;
                 await RunSessionAsync(session, name, token).ConfigureAwait(false);
             }
@@ -255,12 +256,12 @@ internal sealed class LanNode : IAsyncDisposable
             string proof;
             try { proof = Convert.ToHexString(HMACSHA256.HashData(secret, Encoding.UTF8.GetBytes(challenge.Id))); }
             finally { CryptographicOperations.ZeroMemory(secret); }
-            await LanProtocol.WriteHeaderAsync(ssl, new("hello", Name: _name, Hash: proof, FileOffers: true, Reconnect: true), timeout.Token).ConfigureAwait(false);
+            await LanProtocol.WriteHeaderAsync(ssl, new("hello", Name: _name, Hash: proof, FileOffers: true, Reconnect: true, FileCancellation: true), timeout.Token).ConfigureAwait(false);
             var response = await LanProtocol.ReadHeaderAsync(ssl, timeout.Token).ConfigureAwait(false);
             if (response.Kind != "paired" || !response.Accepted) throw new IOException("对方未接受配对。");
             var name = ValidateDeviceName(response.Name);
             runToken.ThrowIfCancellationRequested();
-            var session = new Session(client, ssl, response.FileOffers, response.Reconnect);
+            var session = new Session(client, ssl, response.FileOffers, response.Reconnect, response.FileCancellation);
             _clientTask = RunSessionAsync(session, name, runToken);
         }
         catch { ssl?.Dispose(); client.Dispose(); throw; }
@@ -279,6 +280,14 @@ internal sealed class LanNode : IAsyncDisposable
             {
                 var header = await LanProtocol.ReadHeaderAsync(stream, token).ConfigureAwait(false);
                 session.Touch();
+                if (header.Kind == "file-cancel")
+                {
+                    if (!session.FileCancellation || channel != 0 || header.Length != 0 || header.Name.Length != 0
+                        || header.Hash.Length != 0 || !Guid.TryParseExact(header.Id, "N", out _))
+                        throw new InvalidDataException("文件取消请求无效。");
+                    session.CancelConfirmation(header.Id);
+                    continue;
+                }
                 if (header.Kind == "ack")
                 {
                     if (session.Pending.TryRemove(header.Id, out var pending)) pending.TrySetResult(header.Accepted);
@@ -296,7 +305,7 @@ internal sealed class LanNode : IAsyncDisposable
                     if (header.Kind == "file-offer")
                     {
                         if (!session.FileOffers || offer is not null) throw new InvalidDataException("文件请求无效。");
-                        using var confirmation = CancellationTokenSource.CreateLinkedTokenSource(token, session.Closed);
+                        using var confirmation = session.BeginConfirmation(header.Id, token);
                         confirmation.CancelAfter(TimeSpan.FromMinutes(5));
                         string? folder = null;
                         try
@@ -306,10 +315,12 @@ internal sealed class LanNode : IAsyncDisposable
                             if (folder is not null) folder = LanFiles.ValidateFolder(folder);
                         }
                         catch (Exception ex) when (!token.IsCancellationRequested && !session.Closed.IsCancellationRequested)
-                        { activity = activity with { Issue = ex is OperationCanceledException ? SyncIssue.Timeout : SyncActivityStore.IssueFor(ex) }; }
+                        { activity = activity with { Issue = session.ConfirmationCancelled(header.Id) ? SyncIssue.None : ex is OperationCanceledException ? SyncIssue.Timeout : SyncActivityStore.IssueFor(ex) }; }
+                        finally { session.EndConfirmation(); }
+                        if (session.ConfirmationCancelled(header.Id)) folder = null;
                         offer = folder is null ? null : (header, folder);
-                        RecordActivity(activity with { State = folder is null ? SyncState.Rejected : SyncState.Running });
-                        await session.WriteAsync(new("ack", header.Id, Accepted: folder is not null), null, null, token, 1).ConfigureAwait(false);
+                        RecordActivity(activity with { State = folder is not null ? SyncState.Running : session.ConfirmationCancelled(header.Id) ? SyncState.Cancelled : SyncState.Rejected });
+                        await session.WriteAsync(new("ack", header.Id, Accepted: folder is not null), null, null, token, session.FileCancellation ? 0 : 1).ConfigureAwait(false);
                         continue;
                     }
                     var applied = true;
@@ -317,6 +328,7 @@ internal sealed class LanNode : IAsyncDisposable
                     receiveTimeout.CancelAfter(isFile ? TimeSpan.FromHours(24) : TimeSpan.FromSeconds(30));
                     if (isFile)
                     {
+                        Stream payload = session.FileCancellation ? new LanFileChunks(stream, header.Length) : stream;
                         if (header.Kind == "bundle" && (offer is null || offer.Value.Header.Id != header.Id
                             || offer.Value.Header.Name != header.Name || offer.Value.Header.Length != header.Length || offer.Value.Header.Hash != header.Hash))
                             throw new InvalidDataException("文件尚未获得接收确认。");
@@ -329,17 +341,17 @@ internal sealed class LanNode : IAsyncDisposable
                             long remaining = header.Length;
                             while (remaining > 0)
                             {
-                                var count = await stream.ReadAsync(buffer.AsMemory(0, (int)Math.Min(buffer.Length, remaining)), receiveTimeout.Token)
+                                var count = await payload.ReadAsync(buffer.AsMemory(0, (int)Math.Min(buffer.Length, remaining)), receiveTimeout.Token)
                                     .AsTask().WaitAsync(TimeSpan.FromSeconds(30), receiveTimeout.Token).ConfigureAwait(false);
                                 if (count == 0) throw new EndOfStreamException();
                                 remaining -= count; session.Touch();
                             }
                             RecordActivity(activity with { State = SyncState.Rejected, Issue = SyncIssue.Unsupported });
-                            await session.WriteAsync(new("ack", header.Id, Accepted: false), null, null, token, channel).ConfigureAwait(false);
+                            await session.WriteAsync(new("ack", header.Id, Accepted: false), null, null, token, session.FileCancellation ? 0 : channel).ConfigureAwait(false);
                             continue;
                         }
                         var last = Environment.TickCount64;
-                        var path = await LanFiles.ReceiveAsync(stream, header, folder, done =>
+                        var path = await LanFiles.ReceiveAsync(payload, header, folder, done =>
                         {
                             session.Touch();
                             if (Environment.TickCount64 - last < 150 && done != header.Length) return;
@@ -392,7 +404,12 @@ internal sealed class LanNode : IAsyncDisposable
                         }
                     }
                     RecordActivity(activity with { State = applied ? SyncState.Completed : activity.Issue is not (SyncIssue.None or SyncIssue.Paused) ? SyncState.Failed : SyncState.Rejected, Completed = header.Length });
-                    await session.WriteAsync(new("ack", header.Id, Accepted: applied), null, null, token, channel).ConfigureAwait(false);
+                    await session.WriteAsync(new("ack", header.Id, Accepted: applied), null, null, token, session.FileCancellation && isFile ? 0 : channel).ConfigureAwait(false);
+                }
+                catch (LanFileCancelledException) when (session.FileCancellation && isFile)
+                {
+                    RecordActivity(activity with { State = SyncState.Cancelled });
+                    await session.WriteAsync(new("ack", header.Id, Accepted: false), null, null, token, 0).ConfigureAwait(false);
                 }
                 catch (Exception ex)
                 {
@@ -511,29 +528,43 @@ internal sealed class LanNode : IAsyncDisposable
         activity = activity with { Total = body.Length };
         var completed = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
         session.Pending[header.Id] = completed;
+        var safeCancellation = false;
         try
         {
             if (kind == "bundle")
             {
                 RecordActivity(activity with { State = SyncState.Waiting });
-                await session.WriteAsync(header with { Kind = "file-offer" }, null, null, linked.Token, 1).ConfigureAwait(false);
-                if (!await completed.Task.WaitAsync(TimeSpan.FromMinutes(5), linked.Token).ConfigureAwait(false))
-                { RecordActivity(activity with { State = SyncState.Rejected }); return false; }
+                await session.WriteAsync(header with { Kind = "file-offer" }, null, null, session.FileCancellation ? session.Closed : linked.Token, 1).ConfigureAwait(false);
+                bool offerAccepted;
+                try { offerAccepted = await completed.Task.WaitAsync(TimeSpan.FromMinutes(5), linked.Token).ConfigureAwait(false); }
+                catch (OperationCanceledException) when (session.FileCancellation && token.IsCancellationRequested && !session.Closed.IsCancellationRequested)
+                {
+                    await session.WriteAsync(new("file-cancel", header.Id), null, null, session.Closed).WaitAsync(TimeSpan.FromSeconds(30), session.Closed).ConfigureAwait(false);
+                    offerAccepted = await completed.Task.WaitAsync(TimeSpan.FromSeconds(30), session.Closed).ConfigureAwait(false);
+                }
+                if (!offerAccepted)
+                { safeCancellation = true; token.ThrowIfCancellationRequested(); RecordActivity(activity with { State = SyncState.Rejected }); return false; }
                 completed = new(TaskCreationOptions.RunContinuationsAsynchronously);
                 session.Pending[header.Id] = completed;
             }
             RecordActivity(activity with { State = SyncState.Running });
             var last = Environment.TickCount64;
-            await session.WriteAsync(header, body, done =>
+            void ReportProgress(long done)
             {
                 if (!isFile || Environment.TickCount64 - last < 150 && done != body.Length) return;
                 last = Environment.TickCount64;
                 RecordActivity(activity with { State = SyncState.Running, Completed = done });
                 Progress?.Invoke(this, new(name, done, body.Length, "发送中"));
-            }, linked.Token).ConfigureAwait(false);
-            if (isFile) RecordActivity(activity with { State = SyncState.Confirming, Completed = body.Length });
+            }
+            var sentAll = true;
+            if (isFile && session.FileCancellation)
+                sentAll = await session.WriteFileAsync(header, body, ReportProgress, linked.Token).ConfigureAwait(false);
+            else await session.WriteAsync(header, body, ReportProgress, linked.Token).ConfigureAwait(false);
+            if (isFile && sentAll) RecordActivity(activity with { State = SyncState.Confirming, Completed = body.Length });
             var accepted = await WaitForReceiptAsync(completed.Task, () => session.LastActivity,
-                isFile ? TimeSpan.FromMinutes(5) : TimeSpan.FromSeconds(60), linked.Token).ConfigureAwait(false);
+                isFile ? TimeSpan.FromMinutes(5) : TimeSpan.FromSeconds(60), isFile && session.FileCancellation ? session.Closed : linked.Token).ConfigureAwait(false);
+            safeCancellation = true;
+            if (!sentAll) throw new OperationCanceledException(token);
             RecordActivity(activity with { State = accepted ? SyncState.Completed : SyncState.Rejected, Completed = body.Length });
             if (accepted && kind == "file") Progress?.Invoke(this, new(name, body.Length, body.Length, "已送达"));
             return accepted;
@@ -541,8 +572,8 @@ internal sealed class LanNode : IAsyncDisposable
         catch (Exception ex)
         {
             RecordActivity(activity with { State = token.IsCancellationRequested ? SyncState.Cancelled : SyncState.Failed, Issue = token.IsCancellationRequested ? SyncIssue.None : SyncActivityStore.IssueFor(ex) });
-            // 帧中途取消后无法继续复用同一个字节流，关闭连接防止下一条消息被错当作文件内容。
-            session.Dispose();
+            // 新版已确认取消边界才能保留会话；旧版或真实传输失败仍关闭，防止半帧污染。
+            if (!(isFile && session.FileCancellation && safeCancellation && token.IsCancellationRequested)) session.Dispose();
             throw;
         }
         finally { session.Pending.TryRemove(header.Id, out _); gate.Release(); }
@@ -606,8 +637,33 @@ internal sealed class LanNode : IAsyncDisposable
         await StopAsync(true).ConfigureAwait(false);
     }
 
-    private sealed class Session(TcpClient client, SslStream stream, bool fileOffers, bool reconnect) : IDisposable
+    private sealed class Session(TcpClient client, SslStream stream, bool fileOffers, bool reconnect, bool fileCancellation) : IDisposable
     {
+        public bool FileCancellation { get; } = fileCancellation;
+        private readonly object _confirmationGate = new();
+        private string _cancelledConfirmation = "";
+        private string _confirmationId = "";
+        private CancellationTokenSource? _confirmation;
+        public CancellationTokenSource BeginConfirmation(string id, CancellationToken token)
+        {
+            lock (_confirmationGate)
+            {
+                _confirmationId = id;
+                _confirmation = CancellationTokenSource.CreateLinkedTokenSource(token, Closed);
+                if (_cancelledConfirmation == id) _confirmation.Cancel();
+                return _confirmation;
+            }
+        }
+        public void EndConfirmation() { lock (_confirmationGate) { _confirmation = null; _confirmationId = ""; } }
+        public bool ConfirmationCancelled(string id) { lock (_confirmationGate) return _cancelledConfirmation == id; }
+        public void CancelConfirmation(string id)
+        {
+            lock (_confirmationGate)
+            {
+                _cancelledConfirmation = id;
+                if (_confirmationId == id) _confirmation?.Cancel();
+            }
+        }
         public bool Reconnect { get; } = reconnect;
         public string PeerAddress { get; } = client.Client.RemoteEndPoint?.ToString() ?? "";
         public bool FileOffers { get; } = fileOffers;
@@ -628,6 +684,34 @@ internal sealed class LanNode : IAsyncDisposable
         public Stream FileStream => _multiplex.Files;
         public Stream LibraryStream => _multiplex.Library;
         public ConcurrentDictionary<string, TaskCompletionSource<bool>> Pending { get; } = new();
+
+        public async Task<bool> WriteFileAsync(LanHeader header, Stream body, Action<long> progress, CancellationToken token)
+        {
+            await _fileWriteGate.WaitAsync(Closed).ConfigureAwait(false);
+            try
+            {
+                await LanProtocol.WriteHeaderAsync(FileStream, header, Closed).ConfigureAwait(false);
+                var buffer = new byte[LanFileChunks.MaxChunk + 4];
+                long total = 0;
+                while (total < header.Length)
+                {
+                    if (token.IsCancellationRequested)
+                    {
+                        BinaryPrimitives.WriteInt32BigEndian(buffer, -1);
+                        await FileStream.WriteAsync(buffer.AsMemory(0, 4), Closed).AsTask().WaitAsync(TimeSpan.FromSeconds(30), Closed).ConfigureAwait(false);
+                        return false;
+                    }
+                    var count = await body.ReadAsync(buffer.AsMemory(4, (int)Math.Min(LanFileChunks.MaxChunk, header.Length - total)), Closed).ConfigureAwait(false);
+                    if (count == 0) throw new EndOfStreamException();
+                    BinaryPrimitives.WriteInt32BigEndian(buffer, count);
+                    // 当前分块完整写出后再检查取消，断网仍按原有超时关闭连接。
+                    await FileStream.WriteAsync(buffer.AsMemory(0, count + 4), Closed).AsTask().WaitAsync(TimeSpan.FromSeconds(30), Closed).ConfigureAwait(false);
+                    total += count; Touch(); progress(total);
+                }
+                return true;
+            }
+            finally { _fileWriteGate.Release(); }
+        }
 
         public async Task WriteAsync(LanHeader header, Stream? body, Action<long>? progress, CancellationToken token, int channel = 0)
         {

@@ -19,6 +19,12 @@ files = {"LICENSE", "THIRD-PARTY-NOTICES.txt", "FORK-NOTICES.md", "PRIVACY.md", 
          "build-screen-translate-installer.ps1", "README.DeskHub.md", "publish-deskhub.ps1",
          "docs/ScreenTranslate-Install.md", "docs/Screenshot.md", "docs/ScreenTranslate-Lan-Sync.md", "docs/Daily-Adversarial-Review-2026-11-09.md", "docs/Update-Proxy-Review-2026-11-09.md", ".github/workflows/deskhub-release.yml",
          "tools/prepare-public-source.py",
+         "DESIGN.md", "PRODUCT.md",
+         "docs/Desktop-Visual-Language-2026-11-11.md", "docs/Desktop-Visual-Adversarial-Review-2026-11-11.md",
+         "docs/File-Receive-Adversarial-Review-2026-11-11.md", "docs/File-Receive-Page-2026-11-11.md",
+         "docs/File-Transfer-Completion-2026-11-11.md", "docs/File-Transfer-UX-2026-11-11.md",
+         "docs/Screenshot-First-Use-Adversarial-Review-2026-11-11.md", "docs/Screenshot-First-Use-Performance-2026-11-11.md",
+         "docs/Shortcut-First-Open-2026-11-11.md",
          ".codex/skills/git-release-overtranslate/template.md",
          ".claude/skills/git-release-overtranslate/template.md"}
 forbidden_dirs = {".git", "bin", "obj", "data", "logs", ".vs", "TestResults", "clipboard-history"}

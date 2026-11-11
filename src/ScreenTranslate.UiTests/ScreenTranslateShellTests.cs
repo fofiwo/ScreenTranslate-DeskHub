@@ -47,6 +47,16 @@ public sealed partial class ScreenTranslateShellTests
                     Source = new Uri("pack://application:,,,/ScreenTranslate;component/Resources/Strings.zh-Hans.xaml", UriKind.Absolute)
                 };
                 ApplyTheme(app, "Light");
+                if (Environment.GetEnvironmentVariable("SCREEN_TRANSLATE_VISUAL_AUDIT_ONLY") == "1")
+                {
+                    VerifyVisualLanguageAdversarial();
+                    return;
+                }
+                if (Environment.GetEnvironmentVariable("SCREEN_TRANSLATE_FIRST_OPEN_ONLY") == "1")
+                {
+                    VerifyFirstOpenPerformance();
+                    return;
+                }
                 if (Environment.GetEnvironmentVariable("SCREEN_TRANSLATE_REFRESH_AUDIT_ONLY") == "1")
                 {
                     VerifyRealtimeReloadPerformance();
@@ -147,6 +157,7 @@ public sealed partial class ScreenTranslateShellTests
                     return;
                 }
                 Checkpoint("auxiliary dialogs start");
+                VerifyVisualLanguageAdversarial();
                 VerifyAuxiliarySurfaceDesign();
                 Checkpoint("snipping tools start");
                 VerifySnippingTools();
