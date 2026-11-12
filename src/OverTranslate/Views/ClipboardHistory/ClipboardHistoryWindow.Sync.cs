@@ -23,7 +23,7 @@ public partial class ClipboardHistoryWindow
     {
         if (_closed || Dispatcher.HasShutdownStarted) return;
         if (!Dispatcher.CheckAccess()) { Dispatcher.BeginInvoke(() => SyncFeedback_Changed(sender, e)); return; }
-        SyncConnectionText.Text = LanTransferWindow.CurrentSyncStatus;
+        SyncConnectionText.Text = LanTransferWindow.CurrentSyncStatus.Split('·', 2)[0].Trim();
         RefreshSendRecipients();
         var items = _syncActivities.Snapshot();
         RefreshReceivedFiles();
@@ -36,7 +36,7 @@ public partial class ClipboardHistoryWindow
                 + $"（{item.Updated.LocalDateTime:HH:mm}）");
         }
         SyncSummaryText.Text = _syncActivities.StorageWarning.Length > 0 ? _syncActivities.StorageWarning
-            : parts.Count == 0 ? "拖入文件 / 文件夹发送 · 点击上方连接状态查看同步记录" : string.Join("\n", parts);
+            : parts.Count == 0 ? "点击设备状态，管理连接与同步开关" : string.Join(" · ", parts);
         var active = items.FirstOrDefault(x => x.Active && x.Kind != SyncKind.Connection);
         SyncProgress.Visibility = active is null ? Visibility.Collapsed : Visibility.Visible;
         SyncProgress.IsIndeterminate = active is not null && (active.Total == 0 || active.State is SyncState.Preparing or SyncState.Waiting or SyncState.Confirming);
@@ -44,12 +44,16 @@ public partial class ClipboardHistoryWindow
     }
     private void Sync_DragOver(object sender, System.Windows.DragEventArgs e)
     {
+        SendDropZone.Tag = null;
         if (!e.Data.GetDataPresent(System.Windows.DataFormats.FileDrop)) return;
         e.Handled = true;
         e.Effects = _busy || _inlineSending ? System.Windows.DragDropEffects.None : System.Windows.DragDropEffects.Copy;
+        if (e.Effects == System.Windows.DragDropEffects.Copy) SendDropZone.Tag = "dragging";
     }
+    private void Sync_DragLeave(object sender, System.Windows.DragEventArgs e) => SendDropZone.Tag = null;
     private void Sync_Drop(object sender, System.Windows.DragEventArgs e)
     {
+        SendDropZone.Tag = null;
         if (!e.Data.GetDataPresent(System.Windows.DataFormats.FileDrop)) return;
         e.Handled = true;
         if (_busy || _inlineSending) return;
@@ -80,7 +84,11 @@ public partial class ClipboardHistoryWindow
                 ? "原接收设备已断开，请重新选择接收设备。" : "暂无在线设备 · 点击上方连接状态进行配对"
             : !peer.Supported ? "对方版本不支持接收确认，请更新后重新连接。" : "仅发送到所选设备";
         SendFilesButton.IsEnabled = !_inlineSending && peer?.Supported == true && _sendPaths.Count is > 0 and <= 100;
-        SendRecipientBox.IsEnabled = AddSendFilesButton.IsEnabled = AddSendFoldersButton.IsEnabled = ClearSendSourcesButton.IsEnabled = SendSourceList.IsEnabled = !_inlineSending;
+        SendFilesButton.Content = _inlineSending ? "正在发送…" : _sendPaths.Count > 0 ? $"发送 {_sendPaths.Count} 项" : "发送文件";
+        SendFilesButton.ToolTip = _inlineSending ? "等待对方确认或传输完成，可点击取消传输" : peer?.Supported != true
+            ? SendConnectionHint.Text : _sendPaths.Count == 0 ? "请先添加文件或文件夹" : "发送到所选设备，对方确认后开始传输";
+        SendRecipientBox.IsEnabled = AddSendFilesButton.IsEnabled = AddSendFoldersButton.IsEnabled = SendDropButton.IsEnabled = SendSourceList.IsEnabled = !_inlineSending;
+        ClearSendSourcesButton.IsEnabled = !_inlineSending && _sendPaths.Count > 0;
         SendDropHint.Visibility = _sendPaths.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
         SendRecipientEmpty.Visibility = peer is null ? Visibility.Visible : Visibility.Collapsed;
         SendRecipientEmpty.Text = _sendRecipientId is null ? "暂无在线设备" : "请重新选择接收设备";
@@ -94,7 +102,7 @@ public partial class ClipboardHistoryWindow
         { SendSelectionHint.Text = "部分路径无法访问或已不存在，请重新添加。"; return; }
         _sendPaths.Clear(); _sendPaths.AddRange(combined);
         SendSourceList.ItemsSource = _sendPaths.ToArray();
-        SendSelectionHint.Text = _sendPaths.Count == 0 ? "可拖入到此页任意位置，也可点击添加。"
+        SendSelectionHint.Text = _sendPaths.Count == 0 ? "尚未添加文件"
             : $"已添加 {_sendPaths.Count} 项 · 每批最多 10000 个文件与文件夹、64 GB";
         RefreshSendRecipients();
     }

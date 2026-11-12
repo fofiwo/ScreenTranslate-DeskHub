@@ -44,6 +44,10 @@ public sealed partial class ScreenTranslateShellTests
             search.Text = "同步页面";
             tabs.SelectedItem = syncTab; window.UpdateLayout();
             Assert.True(send.IsVisible);
+            Assert.False(((TextBlock)window.FindName("StatusText")).IsVisible);
+            Assert.False(((Button)window.FindName("ClearSendSourcesButton")).IsEnabled);
+            Assert.Equal("发送文件", send.Content);
+            Assert.True(((Button)window.FindName("SendDropButton")).IsVisible);
             Assert.False(records.IsVisible);
             Assert.False(search.IsVisible);
             Assert.False(((TextBlock)window.FindName("ActionHint")).IsVisible);
@@ -86,8 +90,14 @@ public sealed partial class ScreenTranslateShellTests
                 args.RoutedEvent = routedEvent; sources.RaiseEvent(args); return args;
             }
             Assert.Equal(System.Windows.DragDropEffects.Copy, RaiseDrop(System.Windows.DragDrop.PreviewDragOverEvent).Effects);
+            Assert.Equal("dragging", ((Border)window.FindName("SendDropZone")).Tag);
+            RaiseDrop(System.Windows.DragDrop.PreviewDragLeaveEvent);
+            Assert.Null(((Border)window.FindName("SendDropZone")).Tag);
             Assert.True(RaiseDrop(System.Windows.DragDrop.PreviewDropEvent).Handled);
+            Assert.Null(((Border)window.FindName("SendDropZone")).Tag);
             Assert.Equal(droppedFolder, Assert.Single(sources.Items.Cast<string>()));
+            Assert.Equal("发送 1 项", send.Content);
+            Assert.False(((Button)window.FindName("SendDropButton")).IsVisible);
             RaiseDrop(System.Windows.DragDrop.PreviewDropEvent);
             Assert.Single(sources.Items);
             payload.SetData(System.Windows.DataFormats.FileDrop, new[] { System.IO.Path.Combine(root, "missing") });
@@ -104,6 +114,7 @@ public sealed partial class ScreenTranslateShellTests
             payload.SetData(System.Windows.DataFormats.FileDrop, new[] { standalone });
             RaiseDrop(System.Windows.DragDrop.PreviewDropEvent);
             Assert.Equal(2, sources.Items.Count);
+            Assert.Equal("发送 2 项", send.Content);
             Assert.False(send.IsEnabled);
             var emptyFolder = System.IO.Path.Combine(droppedFolder, "empty");
             System.IO.Directory.CreateDirectory(emptyFolder);
@@ -114,6 +125,10 @@ public sealed partial class ScreenTranslateShellTests
             Assert.True(window.AllowDrop);
             Assert.Equal(Visibility.Visible, ((ProgressBar)window.FindName("SyncProgress")).Visibility);
             Render(window, "clipboard-sync-status-light", 560, 700);
+            window.Width = 460; window.UpdateLayout();
+            AssertInside(window, (Button)window.FindName("AddSendFilesButton"));
+            AssertInside(window, (Button)window.FindName("AddSendFoldersButton"));
+            Render(window, "clipboard-sync-status-light-narrow", 460, 700);
             ApplyTheme(System.Windows.Application.Current, "Dark");
             window.Width = 460; window.Height = 400; window.UpdateLayout();
             Render(window, "clipboard-sync-status-dark-minimum", 460, 400);
@@ -223,6 +238,8 @@ public sealed partial class ScreenTranslateShellTests
             Render(window, "clipboard-inline-folder-ready", 560, 700);
             send.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
             Assert.True(window.IsBusy); Assert.False(send.IsEnabled);
+            Assert.Equal("正在发送…", send.Content);
+            Assert.False(((Button)window.FindName("SendDropButton")).IsEnabled);
             PumpUntil(() => !window.IsBusy);
             Assert.Contains("已全部送达", ((TextBlock)window.FindName("SendSelectionHint")).Text);
             var batch = Assert.Single(System.IO.Directory.GetDirectories(receive));

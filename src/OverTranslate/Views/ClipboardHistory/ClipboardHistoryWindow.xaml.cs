@@ -417,6 +417,7 @@ public partial class ClipboardHistoryWindow : Window
         {
             var syncing = SyncTab.IsSelected;
             SyncPanel.Visibility = syncing ? Visibility.Visible : Visibility.Collapsed;
+            StatusText.Visibility = syncing ? Visibility.Collapsed : Visibility.Visible;
             SearchPanel.Visibility = HistoryPanel.Visibility = HistoryFooter.Visibility = syncing ? Visibility.Collapsed : Visibility.Visible;
             if (syncing) { ClosePreview(); RefreshSendRecipients(); return; }
         }
