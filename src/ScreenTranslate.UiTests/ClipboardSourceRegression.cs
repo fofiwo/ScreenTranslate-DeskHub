@@ -22,10 +22,12 @@ public sealed partial class ScreenTranslateShellTests
         {
             var data = new DataObject(); data.SetText("Synthetic remote clipboard content");
             data.SetData(LanClipboardSync.OriginFormat, "fixture-laptop");
-            var captured = ClipboardContent.Capture(data, "foreground-is-not-the-sender.exe")!;
+            var captured = ClipboardContent.Capture(data, "MouseWithoutBorders.exe")!;
             Assert.Equal("来自 fixture-laptop", captured.Record.Source);
             var store = new ClipboardHistoryStore(Path.Combine(root, "history"));
             store.Add(captured.Record);
+            store.Add(captured.Record with { Source = "MouseWithoutBorders.exe", CopiedAt = captured.Record.CopiedAt.AddMilliseconds(500) });
+            Assert.Equal(captured.Record.Source, Assert.Single(store.Read()).Source);
             var imageData = new DataObject();
             var bitmap = BitmapSource.Create(1, 1, 96, 96, PixelFormats.Bgra32, null, new byte[] { 0, 0, 255, 255 }, 4);
             bitmap.Freeze(); imageData.SetImage(bitmap);
@@ -63,6 +65,17 @@ public sealed partial class ScreenTranslateShellTests
             Assert.Equal(TextTrimming.CharacterEllipsis, longSource.TextTrimming);
             ApplyTheme(System.Windows.Application.Current, "Dark");
             Render(window, "clipboard-source-minimum-dark", 460, 400);
+
+            var relayData = new DataObject(); relayData.SetText("Synthetic clipboard without device metadata");
+            var relay = ClipboardContent.Capture(relayData, "MouseWithoutBorders.exe")!;
+            store.Add(relay.Record);
+            ((TextBox)window.FindName("SearchBox")).Text = relay.Record.Text;
+            PumpUntil(() => list.Items.Count == 1 && Visuals<TextBlock>(list).Any(t => t.Text == relay.Record.SourceLabel));
+            var relaySource = Visuals<TextBlock>(list).Single(t => t.Text == relay.Record.SourceLabel);
+            Assert.True(relaySource.IsVisible); AssertInside((FrameworkElement)window.Content, relaySource);
+            Assert.Equal(relay.Record.SourceLabel, relaySource.ToolTip);
+            list.SelectedIndex = 0; window.ShowPreview();
+            Assert.Equal(relay.Record.SourceLabel, detail.Text); Assert.True(detail.IsVisible);
         }
         finally
         {

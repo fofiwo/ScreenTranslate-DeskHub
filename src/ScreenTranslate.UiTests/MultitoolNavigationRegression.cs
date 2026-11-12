@@ -34,14 +34,19 @@ public sealed partial class ScreenTranslateShellTests
             {
                 Render(shell, $"multitool-home-{scale * 100:0}", 1100, 680, scale);
                 var scroll = Assert.IsType<ScrollViewer>(shell.FindName("ToolScroll"));
-                Assert.True(scroll.ScrollableHeight < 1, $"All tool entries must fit without scrolling at minimum size: extent {scroll.ExtentHeight}, viewport {scroll.ViewportHeight}, DPI {scale}.");
-                foreach (var name in new[] { "TranslationNav", "ScreenshotNav", "LibraryBtn", "ClipboardHistoryBtn", "ScreenshotBtn", "OcrExtractBtn", "PinImageBtn", "SettingsNav", "AboutNav" })
+                Assert.Equal(ScrollBarVisibility.Auto, scroll.VerticalScrollBarVisibility);
+                foreach (var name in new[] { "TranslationNav", "ScreenshotNav", "LibraryBtn", "ClipboardHistoryBtn", "CaptureTranslateBtn", "RealtimeQuickBtn", "MainWindowBtn", "QuickLibraryBtn", "QuickClipboardBtn", "ScreenshotBtn", "OcrExtractBtn", "PinImageBtn", "SettingsNav", "AboutNav" })
                 {
                     var entry = (FrameworkElement)shell.FindName(name);
+                    if (IsDescendantOf(entry, scroll))
+                    {
+                        scroll.ScrollToVerticalOffset(entry.TranslatePoint(new Point(), (UIElement)scroll.Content).Y);
+                        shell.UpdateLayout();
+                        AssertInside(scroll, entry);
+                    }
                     AssertInside((FrameworkElement)shell.Content, entry);
-                    if (IsDescendantOf(entry, scroll)) AssertInside(scroll, entry);
                 }
-                foreach (var (button, label) in new[] { ("LibraryBtn", "LibraryHotkeyText"), ("ClipboardHistoryBtn", "ClipboardHotkeyText"), ("ScreenshotBtn", "ScreenshotHotkeyText"), ("OcrExtractBtn", "OcrHotkeyText"), ("PinImageBtn", "PinImageHotkeyText") })
+                foreach (var (button, label) in new[] { ("CaptureTranslateBtn", "CaptureHotkeyText"), ("RealtimeQuickBtn", "RealtimeHotkeyText"), ("MainWindowBtn", "WindowHotkeyText"), ("QuickLibraryBtn", "QuickLibraryHotkeyText"), ("QuickClipboardBtn", "QuickClipboardHotkeyText"), ("LibraryBtn", "LibraryHotkeyText"), ("ClipboardHistoryBtn", "ClipboardHotkeyText"), ("ScreenshotBtn", "ScreenshotHotkeyText"), ("OcrExtractBtn", "OcrHotkeyText"), ("PinImageBtn", "PinImageHotkeyText") })
                     Assert.Equal(((TextBlock)shell.FindName(label)).Text,
                         System.Windows.Automation.AutomationProperties.GetAcceleratorKey((Button)shell.FindName(button)));
             }
@@ -54,6 +59,8 @@ public sealed partial class ScreenTranslateShellTests
             Render(shell, "multitool-continuous", 1100, 680);
             ((Button)shell.FindName("LibraryBtn")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
             Assert.Equal(1, openedLibrary);
+            ((Button)shell.FindName("QuickLibraryBtn")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Assert.Equal(2, openedLibrary);
             Assert.Same(realtime, host.Child);
             Assert.True(translation.IsChecked);
 
@@ -62,6 +69,8 @@ public sealed partial class ScreenTranslateShellTests
             Assert.Equal(Visibility.Collapsed, header.Visibility);
             Assert.False(translation.IsChecked);
             Render(shell, "multitool-settings", 1100, 680);
+            ((Button)shell.FindName("MainWindowBtn")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Assert.Same(realtime, host.Child);
             translation.IsChecked = true;
             Assert.Same(realtime, host.Child);
             Assert.True(continuous.IsChecked);

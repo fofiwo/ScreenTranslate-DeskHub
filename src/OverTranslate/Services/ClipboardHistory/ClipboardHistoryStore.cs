@@ -33,6 +33,7 @@ internal sealed record ClipboardRecord
             : "富文本（打开预览或复制以使用原始格式）";
     [JsonIgnore] public string Header => string.IsNullOrEmpty(Source) ? Category : Source;
     [JsonIgnore] public string SourceLabel => string.IsNullOrEmpty(Source) ? ""
+        : IsMouseWithoutBorders(Source) ? "跨设备 · Mouse Without Borders（电脑名未知）"
         : Source.StartsWith("来自 ", StringComparison.Ordinal) ? Source : "来源：" + Source;
     [JsonIgnore] public string ExactTime => $"复制：{CopiedAt.LocalDateTime:yyyy-MM-dd HH:mm:ss}\n首次：{CreatedAt.LocalDateTime:yyyy-MM-dd HH:mm:ss}";
     [JsonIgnore] public string TimeLabel
@@ -49,6 +50,10 @@ internal sealed record ClipboardRecord
         && (query.Length == 0 || Text.Contains(query, StringComparison.OrdinalIgnoreCase)
             || Html.Contains(query, StringComparison.OrdinalIgnoreCase) || Source.Contains(query, StringComparison.OrdinalIgnoreCase)
             || Files.Any(f => f.Contains(query, StringComparison.OrdinalIgnoreCase)));
+
+    internal static bool IsMouseWithoutBorders(string source) =>
+        source.Equals("MouseWithoutBorders.exe", StringComparison.OrdinalIgnoreCase)
+        || source.Equals("PowerToys.MouseWithoutBorders.exe", StringComparison.OrdinalIgnoreCase);
 
     internal static bool IsImageFile(string path) => Path.GetExtension(path).ToLowerInvariant() is
         ".png" or ".jpg" or ".jpeg" or ".bmp" or ".gif" or ".tif" or ".tiff" or ".webp"
@@ -128,7 +133,7 @@ internal sealed class ClipboardHistoryStore
             if (_records.TryGetValue(id, out var existing))
                 record = existing with { CopiedAt = value.CopiedAt > existing.CopiedAt ? value.CopiedAt : existing.CopiedAt,
                     CreatedAt = value.CopiedAt < existing.CreatedAt ? value.CopiedAt : existing.CreatedAt,
-                    Source = value.CopiedAt >= existing.CopiedAt && !string.IsNullOrEmpty(value.Source) ? value.Source : existing.Source };
+                    Source = SelectSource(existing, value) };
             else record = value with { Id = id, HasImage = png is not null, CreatedAt = value.CopiedAt };
             Directory.CreateDirectory(Folder);
             // 附件先落盘；元数据提交成功前，界面不会把一半写入的记录当作可用记录。
@@ -145,6 +150,19 @@ internal sealed class ClipboardHistoryStore
         }
         Changed?.Invoke(this, EventArgs.Empty);
         return record;
+    }
+
+    private static string SelectSource(ClipboardRecord existing, ClipboardRecord value)
+    {
+        // shortcut: 无共享事件 ID，仅合并两秒内相同内容的双通道来源；跨事件精确归因需同步协议提供事件 ID。
+        if ((value.CopiedAt - existing.CopiedAt).Duration() <= TimeSpan.FromSeconds(2))
+        {
+            if (existing.Source.StartsWith("来自 ", StringComparison.Ordinal) && ClipboardRecord.IsMouseWithoutBorders(value.Source))
+                return existing.Source;
+            if (value.Source.StartsWith("来自 ", StringComparison.Ordinal) && ClipboardRecord.IsMouseWithoutBorders(existing.Source))
+                return value.Source;
+        }
+        return value.CopiedAt >= existing.CopiedAt && !string.IsNullOrEmpty(value.Source) ? value.Source : existing.Source;
     }
 
     public void SetPinned(string id, bool pinned)

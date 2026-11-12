@@ -169,24 +169,56 @@
                         </Button>
                         <TextBlock x:Name="LibrarySummaryText" Margin="12,0,8,0" FontSize="11" Foreground="{DynamicResource AppTextSecondary}" TextTrimming="CharacterEllipsis" ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}"/>
                         <TextBlock Text="{DynamicResource S.Shell.QuickTools}" Margin="12,12,0,4" FontSize="11" Foreground="{DynamicResource AppTextSecondary}"/>
-                        <Button x:Name="ScreenshotBtn" ToolTipService.ShowOnDisabled="True" Style="{StaticResource RailAction}" Click="ScreenshotBtn_Click" AutomationProperties.Name="截图与标注" AutomationProperties.AcceleratorKey="{Binding Text, ElementName=ScreenshotHotkeyText}">
+                        <StackPanel x:Name="QuickToolsPanel">
+                        <Button x:Name="CaptureTranslateBtn" Tag="Capture" ToolTipService.ShowOnDisabled="True" Style="{StaticResource RailAction}" Click="CaptureTranslateBtn_Click" AutomationProperties.Name="截图翻译" AutomationProperties.AcceleratorKey="{Binding Text, ElementName=CaptureHotkeyText}">
+                            <Grid><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="88"/></Grid.ColumnDefinitions>
+                                <TextBlock Text="截图翻译" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+                                <TextBlock x:Name="CaptureHotkeyText" Grid.Column="1" Style="{StaticResource QuickToolHotkeyText}"/>
+                            </Grid>
+                        </Button>
+                        <Button x:Name="RealtimeQuickBtn" Tag="RealtimePause" Style="{StaticResource RailAction}" Click="RealtimeQuickBtn_Click" AutomationProperties.Name="持续翻译 / 暂停 / 恢复" AutomationProperties.AcceleratorKey="{Binding Text, ElementName=RealtimeHotkeyText}">
+                            <Grid><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="88"/></Grid.ColumnDefinitions>
+                                <TextBlock Text="持续翻译" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+                                <TextBlock x:Name="RealtimeHotkeyText" Grid.Column="1" Style="{StaticResource QuickToolHotkeyText}"/>
+                            </Grid>
+                        </Button>
+                        <Button x:Name="MainWindowBtn" Tag="TranslationWindow" Style="{StaticResource RailAction}" Click="MainWindowBtn_Click" AutomationProperties.Name="打开主窗口" AutomationProperties.AcceleratorKey="{Binding Text, ElementName=WindowHotkeyText}">
+                            <Grid><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="88"/></Grid.ColumnDefinitions>
+                                <TextBlock Text="打开主窗口" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+                                <TextBlock x:Name="WindowHotkeyText" Grid.Column="1" Style="{StaticResource QuickToolHotkeyText}"/>
+                            </Grid>
+                        </Button>
+                        <Button x:Name="QuickLibraryBtn" Tag="LibraryWindow" Style="{StaticResource RailAction}" Click="LibraryBtn_Click" AutomationProperties.Name="提示词与模型资料，打开独立窗口" AutomationProperties.AcceleratorKey="{Binding Text, ElementName=QuickLibraryHotkeyText}">
+                            <Grid><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="88"/></Grid.ColumnDefinitions>
+                                <TextBlock Text="提示词与资料" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+                                <TextBlock x:Name="QuickLibraryHotkeyText" Grid.Column="1" Style="{StaticResource QuickToolHotkeyText}"/>
+                            </Grid>
+                        </Button>
+                        <Button x:Name="QuickClipboardBtn" Tag="ClipboardHistory" Style="{StaticResource RailAction}" Click="ClipboardHistoryBtn_Click" AutomationProperties.Name="剪贴板历史，打开独立窗口" AutomationProperties.AcceleratorKey="{Binding Text, ElementName=QuickClipboardHotkeyText}">
+                            <Grid><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="88"/></Grid.ColumnDefinitions>
+                                <TextBlock Text="剪贴板历史" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+                                <TextBlock x:Name="QuickClipboardHotkeyText" Grid.Column="1" Style="{StaticResource QuickToolHotkeyText}"/>
+                            </Grid>
+                        </Button>
+                        <Button x:Name="ScreenshotBtn" Tag="Screenshot" ToolTipService.ShowOnDisabled="True" Style="{StaticResource RailAction}" Click="ScreenshotBtn_Click" AutomationProperties.Name="截图与标注" AutomationProperties.AcceleratorKey="{Binding Text, ElementName=ScreenshotHotkeyText}">
                             <Grid><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="88"/></Grid.ColumnDefinitions>
                                 <TextBlock Text="截图标注" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
                                 <TextBlock x:Name="ScreenshotHotkeyText" Grid.Column="1" Style="{StaticResource QuickToolHotkeyText}"/>
                             </Grid>
                         </Button>
-                        <Button x:Name="OcrExtractBtn" ToolTipService.ShowOnDisabled="True" Style="{StaticResource RailAction}" Click="OcrExtractBtn_Click" AutomationProperties.Name="提取文字并复制" AutomationProperties.AcceleratorKey="{Binding Text, ElementName=OcrHotkeyText}">
+                        <Button x:Name="OcrExtractBtn" Tag="OcrExtract" ToolTipService.ShowOnDisabled="True" Style="{StaticResource RailAction}" Click="OcrExtractBtn_Click" AutomationProperties.Name="提取文字并复制" AutomationProperties.AcceleratorKey="{Binding Text, ElementName=OcrHotkeyText}">
                             <Grid><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="88"/></Grid.ColumnDefinitions>
                                 <TextBlock Text="提取文字" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
                                 <TextBlock x:Name="OcrHotkeyText" Grid.Column="1" Style="{StaticResource QuickToolHotkeyText}"/>
                             </Grid>
                         </Button>
-                        <Button x:Name="PinImageBtn" Style="{StaticResource RailAction}" Click="PinImageBtn_Click" AutomationProperties.Name="贴图（剪贴板图片）" AutomationProperties.AcceleratorKey="{Binding Text, ElementName=PinImageHotkeyText}" ToolTip="将剪贴板图片贴到桌面">
+                        <Button x:Name="PinImageBtn" Tag="PinImage" Style="{StaticResource RailAction}" Click="PinImageBtn_Click" AutomationProperties.Name="贴图（剪贴板图片）" AutomationProperties.AcceleratorKey="{Binding Text, ElementName=PinImageHotkeyText}" ToolTip="将剪贴板图片贴到桌面">
                             <Grid><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="88"/></Grid.ColumnDefinitions>
                                 <TextBlock Text="贴图" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
                                 <TextBlock x:Name="PinImageHotkeyText" Grid.Column="1" Style="{StaticResource QuickToolHotkeyText}"/>
                             </Grid>
                         </Button>
+                        </StackPanel>
                     </StackPanel>
                 </ScrollViewer>
             </DockPanel>

@@ -15,7 +15,23 @@ public class ShellQuickToolLayoutTests
     private static readonly XNamespace P = "http://schemas.microsoft.com/winfx/2006/xaml/presentation";
     private static readonly XNamespace X = "http://schemas.microsoft.com/winfx/2006/xaml";
 
+    [Fact]
+    public void Quick_tools_cover_every_configurable_shortcut() => OnSta(() =>
+    {
+        var root = LoadRail("Light");
+        Layout(root);
+        var actions = Descendants<Button>(root)
+            .Where(button => button.Tag is string tag && Enum.TryParse<Services.HotkeyAction>(tag, out _))
+            .Select(button => Enum.Parse<Services.HotkeyAction>((string)button.Tag)).Order().ToArray();
+        Assert.Equal(Services.HotkeyBindings.Resolve(new Models.AppSettings()).Select(b => b.Action).Order(), actions);
+    });
+
     [Theory]
+    [InlineData("CaptureTranslateBtn", "CaptureHotkeyText", "Ctrl+Alt+A")]
+    [InlineData("RealtimeQuickBtn", "RealtimeHotkeyText", "Ctrl+Alt+S")]
+    [InlineData("MainWindowBtn", "WindowHotkeyText", "Ctrl+Alt+W")]
+    [InlineData("QuickLibraryBtn", "QuickLibraryHotkeyText", "Ctrl+Alt+P")]
+    [InlineData("QuickClipboardBtn", "QuickClipboardHotkeyText", "Ctrl+Alt+V")]
     [InlineData("ScreenshotBtn", "ScreenshotHotkeyText", "Ctrl+Alt+Q")]
     [InlineData("PinImageBtn", "PinImageHotkeyText", "Ctrl+Alt+I")]
     [InlineData("OcrExtractBtn", "OcrHotkeyText", "Ctrl+Alt+O")]
@@ -38,8 +54,12 @@ public class ShellQuickToolLayoutTests
                 label.Text = name;
                 hotkey.Text = text;
                 Layout(root);
+                var scroll = (ScrollViewer)root.FindName("ToolScroll");
+                scroll.ScrollToVerticalOffset(button.TranslatePoint(new Point(), (UIElement)scroll.Content).Y);
+                Layout(root);
                 var frame = (Border)button.Template.FindName("Root", button);
                 AssertInside(root, button);
+                AssertInside(scroll, button);
                 AssertInside(frame, label);
                 Assert.Equal(TextTrimming.CharacterEllipsis, label.TextTrimming);
                 if (text.Length == 0)

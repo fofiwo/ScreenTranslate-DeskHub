@@ -47,6 +47,61 @@ public sealed class ClipboardSourceTests
     }
 
     [Theory]
+    [InlineData("来自 fixture-A", "MouseWithoutBorders.exe", 0, "来自 fixture-A")]
+    [InlineData("来自 fixture-A", "MouseWithoutBorders.exe", 2000, "来自 fixture-A")]
+    [InlineData("MouseWithoutBorders.exe", "来自 fixture-A", 0, "来自 fixture-A")]
+    [InlineData("MouseWithoutBorders.exe", "来自 fixture-A", -2000, "来自 fixture-A")]
+    [InlineData("来自 fixture-A", "powertoys.mousewithoutborders.EXE", 500, "来自 fixture-A")]
+    [InlineData("来自 fixture-A", "MouseWithoutBorders.exe", 2001, "MouseWithoutBorders.exe")]
+    [InlineData("MouseWithoutBorders.exe", "来自 fixture-A", -2001, "MouseWithoutBorders.exe")]
+    [InlineData("来自 fixture-A", "notepad.exe", 1, "notepad.exe")]
+    [InlineData("来自 fixture-A", "来自 fixture-B", 1, "来自 fixture-B")]
+    [InlineData("来自 fixture-A", "notepad.exe", -1, "来自 fixture-A")]
+    [InlineData("来自 fixture-A", "", 1, "来自 fixture-A")]
+    [InlineData("来自 fixture-A", "FakeMouseWithoutBorders.exe", 1, "FakeMouseWithoutBorders.exe")]
+    public void Duplicate_sources_prefer_a_device_only_for_nearby_relay_copies(
+        string firstSource, string nextSource, int milliseconds, string expectedSource)
+    {
+        var root = Path.Combine(Path.GetTempPath(), "clipboard-source-merge-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            foreach (var withImage in new[] { false, true })
+            {
+                var folder = Path.Combine(root, withImage ? "image" : "text");
+                var store = new ClipboardHistoryStore(folder);
+                var time = DateTimeOffset.UtcNow;
+                byte[]? png = withImage ? [1, 2, 3] : null;
+                var first = store.Add(new() { Text = withImage ? "" : "same fixture", Source = firstSource, CopiedAt = time }, png);
+                store.SetPinned(first.Id, true);
+                var nextTime = time.AddMilliseconds(milliseconds);
+                store.Add(first with { Source = nextSource, CopiedAt = nextTime }, png);
+
+                var record = Assert.Single(new ClipboardHistoryStore(folder).Read());
+                Assert.Equal(expectedSource, record.Source);
+                Assert.Equal(first.Id, record.Id);
+                Assert.Equal(nextTime > time ? nextTime : time, record.CopiedAt);
+                Assert.Equal(nextTime < time ? nextTime : time, record.CreatedAt);
+                Assert.True(record.IsPinned);
+                Assert.Equal(withImage, record.HasImage);
+                if (withImage) Assert.Equal(png, store.ReadImage(record.Id));
+            }
+        }
+        finally { if (Directory.Exists(root)) Directory.Delete(root, true); }
+    }
+
+    [Theory]
+    [InlineData("MouseWithoutBorders.exe")]
+    [InlineData("PowerToys.MouseWithoutBorders.exe")]
+    [InlineData("mousewithoutborders.EXE")]
+    public void Relay_source_label_reports_unknown_device_without_changing_the_saved_source(string source)
+    {
+        var record = new ClipboardRecord { Source = source };
+        Assert.Equal("跨设备 · Mouse Without Borders（电脑名未知）", record.SourceLabel);
+        Assert.Equal(source, record.Source);
+        Assert.True(record.Matches("全部", source));
+    }
+
+    [Theory]
     [InlineData("bad\nname")]
     [InlineData(" ")]
     [InlineData(null)]

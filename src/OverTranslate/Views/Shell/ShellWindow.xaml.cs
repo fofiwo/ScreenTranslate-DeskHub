@@ -251,6 +251,9 @@ public partial class ShellWindow : Window
         // and a slot that only ever holds a shortcut should be empty when there is none.
         _homePage?.Reload();
         var bindings = HotkeyBindings.Resolve(settings);
+        foreach (var button in QuickToolsPanel.Children.OfType<System.Windows.Controls.Button>())
+            button.Visibility = bindings.Any(b => b.Action.ToString() == (string)button.Tag && b.Enabled)
+                ? Visibility.Visible : Visibility.Collapsed;
         string Hint(HotkeyAction action, string display) => bindings.Any(b => b.Action == action && b.IsActive)
             && !(System.Windows.Application.Current?.MainWindow is MainWindow owner && owner.HotkeyRegistrationFailures.Contains(action)) ? display : "";
         OcrHotkeyText.Text = Hint(HotkeyAction.OcrExtract, settings.OcrHotkeyDisplay);
@@ -258,6 +261,11 @@ public partial class ShellWindow : Window
         ClipboardHotkeyText.Text = Hint(HotkeyAction.ClipboardHistory, settings.ClipboardHotkeyDisplay);
         ScreenshotHotkeyText.Text = Hint(HotkeyAction.Screenshot, settings.ScreenshotHotkeyDisplay);
         PinImageHotkeyText.Text = Hint(HotkeyAction.PinImage, settings.PinImageHotkeyDisplay);
+        CaptureHotkeyText.Text = Hint(HotkeyAction.Capture, settings.HotkeyDisplay);
+        RealtimeHotkeyText.Text = Hint(HotkeyAction.RealtimePause, settings.RealtimePauseHotkeyDisplay);
+        WindowHotkeyText.Text = Hint(HotkeyAction.TranslationWindow, settings.TranslationWindowHotkeyDisplay);
+        QuickLibraryHotkeyText.Text = LibraryHotkeyText.Text;
+        QuickClipboardHotkeyText.Text = ClipboardHotkeyText.Text;
         RefreshQuickToolAvailability();
     }
 
@@ -299,6 +307,18 @@ public partial class ShellWindow : Window
 
     private void ClipboardHistoryBtn_Click(object sender, RoutedEventArgs e) => ClipboardHistory.ClipboardHistoryWindow.Open();
 
+    private void CaptureTranslateBtn_Click(object sender, RoutedEventArgs e)
+    {
+        if (System.Windows.Application.Current?.MainWindow is MainWindow main) main.StartCaptureFromShell(this);
+    }
+
+    private void RealtimeQuickBtn_Click(object sender, RoutedEventArgs e)
+    {
+        if (System.Windows.Application.Current?.MainWindow is MainWindow main) main.OnRealtimeShortcut(this);
+    }
+
+    private void MainWindowBtn_Click(object sender, RoutedEventArgs e) => ShowOrActivate(_translationMode);
+
     private void ScreenshotBtn_Click(object sender, RoutedEventArgs e)
     {
         if (System.Windows.Application.Current?.MainWindow is MainWindow main) main.StartScreenshotFromShell(this);
@@ -319,8 +339,14 @@ public partial class ShellWindow : Window
         var framing = running && !controller.IsTranslating;
 
         _homePage?.RefreshAvailability();
+        CaptureTranslateBtn.IsEnabled = !framing;
         ScreenshotBtn.IsEnabled = !framing;
         var blocked = LocalizationService.Get("S.Shell.CaptureBlockedByRealtimeFraming");
+        CaptureTranslateBtn.ToolTip = framing ? blocked : WithShortcut("框选屏幕区域并翻译", CaptureHotkeyText.Text);
+        RealtimeQuickBtn.ToolTip = WithShortcut("持续翻译 / 暂停 / 恢复", RealtimeHotkeyText.Text);
+        MainWindowBtn.ToolTip = WithShortcut("打开主窗口的翻译页面", WindowHotkeyText.Text);
+        QuickLibraryBtn.ToolTip = WithShortcut("打开提示词与模型资料独立窗口", QuickLibraryHotkeyText.Text);
+        QuickClipboardBtn.ToolTip = WithShortcut("打开剪贴板历史浮窗", QuickClipboardHotkeyText.Text);
         ScreenshotBtn.ToolTip = framing ? blocked : WithShortcut("框选、标注、取色与贴图", ScreenshotHotkeyText.Text);
         OcrExtractBtn.IsEnabled = !framing;
         OcrExtractBtn.ToolTip = framing ? blocked : WithShortcut("框选后提取文字并复制", OcrHotkeyText.Text);

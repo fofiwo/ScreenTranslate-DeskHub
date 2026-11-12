@@ -67,7 +67,12 @@ public sealed partial class ScreenTranslateShellTests
             Assert.Equal(Visibility.Visible, button.Visibility);
             Render(shell, "multitool-update-available", 1100, 680);
             var tools = (ScrollViewer)shell.FindName("ToolScroll");
-            Assert.True(tools.ScrollableHeight < 1, $"Update notice must not hide tools: extent {tools.ExtentHeight}, viewport {tools.ViewportHeight}.");
+            foreach (var entry in ((StackPanel)shell.FindName("QuickToolsPanel")).Children.OfType<Button>().Where(b => b.Visibility == Visibility.Visible))
+            {
+                tools.ScrollToVerticalOffset(entry.TranslatePoint(new Point(), (UIElement)tools.Content).Y);
+                shell.UpdateLayout();
+                AssertInside(tools, entry);
+            }
             AssertInside((FrameworkElement)shell.Content, button);
             Assert.Equal("安装新版", button.Content);
             Assert.Contains("9.9.9-test", Assert.IsType<string>(button.ToolTip));

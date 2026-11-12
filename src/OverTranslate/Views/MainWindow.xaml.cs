@@ -365,9 +365,9 @@ public partial class MainWindow : Window
     /// shortcut here keeps too.</para>
     /// </remarks>
     private void OnRealtimePauseHotkeyPressed(object? sender, EventArgs e) =>
-        Dispatcher.Invoke(OnRealtimeShortcut);
+        Dispatcher.Invoke(() => OnRealtimeShortcut());
 
-    private void OnRealtimeShortcut()
+    internal void OnRealtimeShortcut(ShellWindow? shell = null)
     {
         var controller = Views.Realtime.RealtimeSessionController.Instance;
         if (controller.IsActive)
@@ -383,7 +383,9 @@ public partial class MainWindow : Window
         if (quickStart.Request is not { } request)
         {
             Log.Info("Realtime shortcut did not start a session: {Reason}", quickStart.RefusalKey);
-            ShellWindow.ShowOrActivateFromShortcut(ShellPage.Realtime).ShowRealtimeShortcutRefusal(quickStart.RefusalKey!);
+            shell ??= ShellWindow.ShowOrActivateFromShortcut(ShellPage.Realtime);
+            shell.Navigate(ShellPage.Realtime);
+            shell.ShowRealtimeShortcutRefusal(quickStart.RefusalKey!);
             return;
         }
 

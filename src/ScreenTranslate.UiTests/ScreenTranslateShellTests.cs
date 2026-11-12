@@ -140,6 +140,7 @@ public sealed partial class ScreenTranslateShellTests
                 }
                 if (Environment.GetEnvironmentVariable("SCREEN_TRANSLATE_MULTITOOL_ONLY") == "1")
                 {
+                    VerifyQuickToolWindowMode();
                     VerifyShortcutHintsMatchBindings();
                     VerifyScreenshotToolActions();
                     VerifyMultitoolNavigation();
@@ -222,6 +223,7 @@ public sealed partial class ScreenTranslateShellTests
                 VerifyLibraryQuickAccess();
                 VerifyBorderlessShortcutShell();
                 Checkpoint("shell navigation start");
+                VerifyQuickToolWindowMode();
                 VerifyShortcutHintsMatchBindings();
                 VerifyScreenshotToolActions();
                 VerifyMultitoolNavigation();
@@ -492,6 +494,17 @@ public sealed partial class ScreenTranslateShellTests
         Assert.Equal(8, quickRows.Length);
         Assert.All(quickRows, row => Assert.Equal(Visibility.Visible, row.Visibility));
         Assert.Contains(quickRows, row => row.Children.OfType<TextBox>().Any(box => Equals(box.Tag, HotkeyAction.ClipboardHistory)));
+        var screenshotToggle = quickRows.SelectMany(row => row.Children.OfType<System.Windows.Controls.CheckBox>())
+            .Single(toggle => Equals(toggle.Tag, HotkeyAction.Screenshot));
+        var previousEnabled = screenshotToggle.IsChecked;
+        try
+        {
+            screenshotToggle.IsChecked = false;
+            Assert.Equal(Visibility.Collapsed, ((Button)shell.FindName("ScreenshotBtn")).Visibility);
+            screenshotToggle.IsChecked = true;
+            Assert.Equal(Visibility.Visible, ((Button)shell.FindName("ScreenshotBtn")).Visibility);
+        }
+        finally { screenshotToggle.IsChecked = previousEnabled; }
         Render(shell, "shortcuts", 1100, 680);
         Assert.Equal(FontWeights.Normal, ((TextBlock)quick.FindName("HotkeyStatus")).FontWeight);
         tabs.SelectedIndex = 3;
