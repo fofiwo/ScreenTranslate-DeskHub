@@ -197,7 +197,7 @@ public partial class ClipboardHistoryWindow : Window
         {
             if (ClipboardHistoryRuntime.LastError is { } error) StatusText.Text = error;
         };
-        Deactivated += (_, _) => ScheduleDismiss();
+        Deactivated += (_, _) => { Topmost = WindowPinned || HasIncomingFiles; ScheduleDismiss(); };
         MenuButton.ContextMenu.Closed += (_, _) => ScheduleDismiss();
         HistoryList.ContextMenu.Closed += (_, _) => ScheduleDismiss();
         Closing += Window_Closing;
@@ -253,9 +253,11 @@ public partial class ClipboardHistoryWindow : Window
         if (HasIncomingFiles) ShowReceivePage();
         else { SearchBox.Clear(); TypeFilter.SelectedIndex = 0; }
         RefreshViews();
+        Topmost = true;
         if (!IsVisible) Show();
         if (WindowState == WindowState.Minimized) WindowState = WindowState.Normal;
         if (_managePosition) PositionWindow();
+        if (Topmost) AlwaysOnTop.Reassert(this);
         KeyboardForeground.Activate(this); SearchBox.Focus();
     }
 

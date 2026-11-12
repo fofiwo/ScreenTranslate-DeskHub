@@ -92,7 +92,7 @@ public partial class LibraryWindow : Window
             try { await ReloadViewsAsync(); }
             catch (Exception ex) { if (!_shutdown) Notice(Error(ex), true); }
         };
-        Deactivated += (_, _) => { CancelPendingCopy(); ResetCopyFeedback(); };
+        Deactivated += (_, _) => { Topmost = false; CancelPendingCopy(); ResetCopyFeedback(); };
         IsVisibleChanged += (_, _) =>
         {
             if (!IsVisible) { CancelPendingCopy(); ResetCopyFeedback(); _rankTimer.Stop(); }
@@ -156,6 +156,7 @@ public partial class LibraryWindow : Window
             _current.RefreshShortcut();
             if (!_current.IsVisible) _current.Show();
             if (_current.WindowState == WindowState.Minimized) _current.WindowState = WindowState.Normal;
+            if (_current.Topmost) AlwaysOnTop.Reassert(_current);
             KeyboardForeground.Activate(_current);
         }
         catch when (version != _openVersion) { }
@@ -182,12 +183,14 @@ public partial class LibraryWindow : Window
             SetQuickAccess(true);
             if (!IsVisible) Show();
             if (WindowState == WindowState.Minimized) WindowState = WindowState.Normal;
+            if (Topmost) AlwaysOnTop.Reassert(this);
             KeyboardForeground.Activate(this);
         }
     }
 
     private void SetQuickAccess(bool quickAccess)
     {
+        Topmost = quickAccess;
         ManagementHeader.Visibility = quickAccess ? Visibility.Collapsed : Visibility.Visible;
         ManagementChrome.Visibility = quickAccess ? Visibility.Collapsed : Visibility.Visible;
         QuickWindowControls.Visibility = quickAccess ? Visibility.Visible : Visibility.Collapsed;

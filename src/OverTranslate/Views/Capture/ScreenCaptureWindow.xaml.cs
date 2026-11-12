@@ -80,6 +80,7 @@ public partial class ScreenCaptureWindow : Window
 
         Closed += (_, _) =>
         {
+            CompositionTarget.Rendering -= OnFirstFrameRendering;
             _selectionTcs.TrySetResult(false);
             CroppedBitmap?.Dispose();
             CroppedBitmap = null;
@@ -96,21 +97,28 @@ public partial class ScreenCaptureWindow : Window
     /// </summary>
     public event EventHandler<Rect>? SelectionAdjusted;
 
-    protected override void OnContentRendered(EventArgs e)
+    private void OnFirstFrameRendering(object? sender, EventArgs e)
     {
-        base.OnContentRendered(e);
+        if (!IsVisible) return;
+        CompositionTarget.Rendering -= OnFirstFrameRendering;
+        // 首帧提交后直接显示；ContentRendered 的 Input 优先级会被持续渲染拖延。
+        Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Render, new Action(RevealFirstFrame));
+    }
 
-        // The first frame has been drawn behind the cloak, so this puts up the frozen desktop in
-        // one step. See OnSourceInitialized.
+    private void RevealFirstFrame()
+    {
+        if (!IsVisible) return;
         if (_cloaked)
         {
             WindowScreenPresence.SetCloaked(new WindowInteropHelper(this).Handle, cloaked: false);
             _cloaked = false;
         }
 
-        // Claimed only once the first frame is on screen. Activating before that forces a
-        // foreground switch while the window is still empty, which flashes its black background.
-        if (!_snipRecoveryYielded) Activate();
+        if (Topmost && !_snipRecoveryYielded)
+        {
+            AlwaysOnTop.Reassert(this);
+            Activate();
+        }
     }
 
     // The dim layer's outer edge is the window's, so it is laid down with the first layout rather
@@ -156,12 +164,13 @@ public partial class ScreenCaptureWindow : Window
         base.OnSourceInitialized(e);
         _hwndSource = HwndSource.FromHwnd(new WindowInteropHelper(this).Handle);
 
-        // Hidden from the screen until OnContentRendered. Between being shown and presenting its
+        // Hidden from the screen until the first render completes. Between being shown and presenting its
         // first frame a window has nothing to put up but black, for somewhere between 40ms and, on
         // the first capture after launch, 100ms — the flash users see. Hiding it with Opacity does
         // not help: this window is not layered, so a transparent one is still a black one. Cloaked,
         // it goes through all of that off screen and appears already painted.
         _cloaked = WindowScreenPresence.SetCloaked(_hwndSource.Handle, cloaked: true);
+        CompositionTarget.Rendering += OnFirstFrameRendering;
 
         // Before the DPI is read: pinning the window settles which monitor it belongs to, and that
         // is what the DPI below describes.
