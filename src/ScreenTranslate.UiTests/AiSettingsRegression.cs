@@ -84,8 +84,10 @@ public sealed partial class ScreenTranslateShellTests
             { Left = -10000, Top = -10000, ShowActivated = false, Width = 1100, Height = 680 };
             try
             {
-                ((Button)shell.FindName("SettingsButton")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                Assert.Null(shell.FindName("SettingsButton"));
+                ((RadioButton)shell.FindName("SettingsNav")).IsChecked = true;
                 var preferences = Assert.IsType<ScreenTranslatePreferencesPage>(((Border)shell.FindName("ContentHost")).Child);
+                shell.ShowAiSettings();
                 var tabs = (TabControl)preferences.FindName("Tabs");
                 Assert.Equal("AI 与翻译", ((TabItem)tabs.SelectedItem).Header);
                 var ai = Assert.IsType<AiOrganizingSettingsPage>(((ContentControl)preferences.FindName("AiOrganizingHost")).Content);
@@ -104,7 +106,7 @@ public sealed partial class ScreenTranslateShellTests
                 Assert.Equal("unsaved prompt fixture", ((TextBox)library.FindName("PromptBody")).Text);
                 Assert.Equal(Visibility.Visible, ((FrameworkElement)library.FindName("PromptEditor")).Visibility);
                 Render(shell, "settings-ai-unified", 1100, 680);
-                AssertInside((FrameworkElement)shell.Content, (Button)shell.FindName("SettingsButton"));
+                AssertInside((FrameworkElement)shell.Content, (RadioButton)shell.FindName("SettingsNav"));
                 var scroll = (ScrollViewer)preferences.FindName("AiScroll");
                 scroll.ScrollToVerticalOffset(280);
                 Render(shell, "settings-ai-form", 1100, 680);

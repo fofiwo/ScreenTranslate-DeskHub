@@ -114,7 +114,6 @@
                 <TextBlock Text="ScreenTranslate" FontSize="12" Margin="12,0" Foreground="{DynamicResource AppTextSecondary}" VerticalAlignment="Center"/>
             </StackPanel>
             <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" WindowChrome.IsHitTestVisibleInChrome="True">
-                <Button x:Name="SettingsButton" Content="设置" Style="{StaticResource ProductSecondaryButton}" Height="30" MinWidth="64" Margin="0,0,12,0" Padding="12,0" Click="SettingsButton_Click" ToolTip="配置 AI、翻译与应用选项" AutomationProperties.Name="打开设置"/>
                 <Button x:Name="MinimizeBtn" Style="{StaticResource WindowCaptionButton}" Content="&#xE921;" Click="MinimizeBtn_Click"/>
                 <Button x:Name="MaximizeBtn" Style="{StaticResource WindowCaptionButton}" Content="&#xE922;" Click="MaximizeBtn_Click"/>
                 <Button x:Name="CloseBtn" Style="{StaticResource WindowCloseButton}" Content="&#xE8BB;" Click="CloseBtn_Click"/>
