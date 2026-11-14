@@ -25,6 +25,7 @@ public sealed partial class ScreenTranslateShellTests
             settings: new AppSettings(), saveSettings: () => true,
             syncActivities: new OverTranslate.Services.Lan.SyncActivityStore(Path.Combine(folder, "activity.json")))
         { Left = 80, Top = 80, ShowActivated = false };
+        InputMethod.SetIsInputMethodEnabled((TextBox)window.FindName("SearchBox"), false);
         var other = new Window { Width = 160, Height = 80, Left = 700, Top = 80,
             WindowStartupLocation = WindowStartupLocation.Manual, ShowInTaskbar = false };
         Assert.True(HoverGetCursorPos(out var cursor));

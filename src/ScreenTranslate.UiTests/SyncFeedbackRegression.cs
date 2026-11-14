@@ -143,12 +143,16 @@ public sealed partial class ScreenTranslateShellTests
             journal.Update(new("files", SyncKind.Files, false, "另一台电脑", SyncState.Rejected));
             Assert.Contains("文件：未被接收", summary.Text);
             Assert.Equal(Visibility.Collapsed, ((ProgressBar)window.FindName("SyncProgress")).Visibility);
+            journal.Update(new("clipboard-text", SyncKind.Clipboard, false, "另一台电脑", SyncState.Completed, ClipboardKind: "text"));
+            journal.Update(new("clipboard-image", SyncKind.Clipboard, true, "另一台电脑", SyncState.Completed, ClipboardKind: "image"));
             var restored = new SyncActivityStore(path);
             var history = new SyncActivityWindow(restored);
             history.Show(); history.UpdateLayout();
             try
             {
-                Assert.Equal(3, ((ListBox)history.FindName("ActivityList")).Items.Count);
+                Assert.Equal(5, ((ListBox)history.FindName("ActivityList")).Items.Count);
+                Assert.Contains(Visuals<TextBlock>(history), text => text.IsVisible && text.Text == "剪贴板 · 文本");
+                Assert.Contains(Visuals<TextBlock>(history), text => text.IsVisible && text.Text == "剪贴板 · 图片");
                 Assert.Contains(Visuals<TextBlock>(history), text => text.IsVisible && text.Text == "发送至");
                 Assert.Contains(Visuals<TextBlock>(history), text => text.IsVisible && text.Text == "接收自");
                 Render(history, "sync-history-light", 680, 560);

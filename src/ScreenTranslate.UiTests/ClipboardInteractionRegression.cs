@@ -27,6 +27,8 @@ public sealed partial class ScreenTranslateShellTests
             () => { pastes++; return Task.FromResult(pasteResult); }, settings: settings,
             saveSettings: () => saveResult && SettingsService.TrySave(settingsPath, settings))
         { Left = -10000, Top = -10000, ShowActivated = false };
+        // 该附加属性不继承；测试搜索框直接接收合成输入，不接入本机 IME。
+        System.Windows.Input.InputMethod.SetIsInputMethodEnabled((TextBox)window.FindName("SearchBox"), false);
         window.SetWindowPinned(true);
         try
         {
@@ -93,6 +95,7 @@ public sealed partial class ScreenTranslateShellTests
         VerifyClipboardFirstWake(click: false, slow: true);
         VerifyClipboardFirstWake(click: false, cancel: true);
         VerifyClipboardPointerActivation();
+        VerifyClipboardStorageDirectory();
     }
 
     private static void VerifyClipboardFirstWake(bool click, bool cancel = false, bool slow = false)
@@ -122,6 +125,7 @@ public sealed partial class ScreenTranslateShellTests
         current.SetValue(null, window);
         pending.SetValue(loader, Task.FromResult(store));
         var query = (TextBox)window.FindName("SearchBox");
+        System.Windows.Input.InputMethod.SetIsInputMethodEnabled(query, false);
         var list = (ListBox)window.FindName("HistoryList");
         var shown = false;
         window.ContentRendered += (_, _) => shown = true;

@@ -131,6 +131,8 @@ public partial class ClipboardHistoryWindow : Window
     private readonly Func<OriginalApplicationPaste.Target, Task<bool>> _paste;
     private readonly OverTranslate.Models.AppSettings _settings;
     private readonly Func<bool> _saveSettings;
+    private readonly Action<ClipboardHistoryStore, string> _changeDirectory;
+    private bool _relocating;
     private OriginalApplicationPaste.Target _pasteTarget;
     private readonly ISystemClipboardHistory _systemHistory;
     private readonly CancellationTokenSource _lifetime = new();
@@ -162,13 +164,15 @@ public partial class ClipboardHistoryWindow : Window
     internal ClipboardHistoryWindow(ClipboardHistoryStore store, Func<ClipboardRecord, Task>? copy = null,
         Func<Task<bool>>? paste = null, ISystemClipboardHistory? systemHistory = null, bool managePosition = false,
         OverTranslate.Models.AppSettings? settings = null, Func<bool>? saveSettings = null,
-        OverTranslate.Services.Lan.SyncActivityStore? syncActivities = null)
+        OverTranslate.Services.Lan.SyncActivityStore? syncActivities = null,
+        Action<ClipboardHistoryStore, string>? changeDirectory = null)
     {
         _store = store;
         _copy = copy ?? (record => ClipboardContent.CopyAsync(record, store));
         _paste = paste is null ? target => OriginalApplicationPaste.PasteAsync(this, target) : _ => paste();
         _settings = settings ?? SettingsService.Instance.Current;
         _saveSettings = saveSettings ?? SettingsService.Instance.TrySave;
+        _changeDirectory = changeDirectory ?? ClipboardHistoryStorage.ChangeDirectory;
         _systemHistory = systemHistory ?? new SystemClipboardHistory();
         _managePosition = managePosition;
         InitializeComponent();
@@ -235,7 +239,7 @@ public partial class ClipboardHistoryWindow : Window
             _current ??= new ClipboardHistoryWindow(store, managePosition: true);
             _current.ShowPanel();
         }
-        catch (Exception) { AppMessageWindow.ShowMessage("剪贴板历史暂时无法打开，请检查数据目录权限与磁盘空间。", "剪贴板", MessageBoxButton.OK, MessageBoxImage.Warning); }
+        catch (Exception) { AppMessageWindow.ShowMessage("剪贴板历史暂时无法打开，请检查保存位置、磁盘连接、目录权限与空间。已有记录和目录绑定未更改。", "剪贴板", MessageBoxButton.OK, MessageBoxImage.Warning); }
         finally { if (version == _openVersion) _opening = false; }
     }
 
@@ -256,7 +260,7 @@ public partial class ClipboardHistoryWindow : Window
         Topmost = true;
         if (!IsVisible) Show();
         if (WindowState == WindowState.Minimized) WindowState = WindowState.Normal;
-        if (_managePosition) PositionWindow();
+        if (_managePosition && !_relocating) PositionWindow();
         if (Topmost) AlwaysOnTop.Reassert(this);
         KeyboardForeground.Activate(this); SearchBox.Focus();
     }
@@ -625,6 +629,8 @@ public partial class ClipboardHistoryWindow : Window
         RecordHistoryMenuItem.IsChecked = _settings.ClipboardHistoryEnabled;
         ActionHint.Text = _settings.ClipboardAutoPaste ? "点击 / Enter 粘贴 · Esc 收起" : "点击 / Enter 复制 · Esc 收起";
         RecordingHint.Text = _settings.ClipboardHistoryEnabled ? "剪贴板历史" : "历史记录已暂停";
+        OpenFolderMenuItem.ToolTip = _store.Folder;
+        ChangeFolderMenuItem.ToolTip = $"当前目录：{_store.Folder}\n更改时复制已有历史，原目录保留。";
     }
 
     private void BehaviorSetting_Click(object sender, RoutedEventArgs e)
@@ -645,6 +651,62 @@ public partial class ClipboardHistoryWindow : Window
         RefreshBehaviorSettings();
     }
     private void ShortcutSettings_Click(object sender, RoutedEventArgs e) { Dismiss(); ShellWindow.ShowOrActivate(ShellPage.Settings).ShowQuickToolSettings(); }
+    private async void ChangeFolder_Click(object sender, RoutedEventArgs e)
+    {
+        if (_busy || _importing) return;
+        var dialog = new Microsoft.Win32.OpenFolderDialog
+        {
+            Title = "选择保存位置（将在其中建立 clipboard-history 子目录）",
+            InitialDirectory = Path.GetDirectoryName(_store.Folder) ?? ""
+        };
+        // 原生目录选择器会使窗口失焦；在选择和确认结束前保持面板可见。
+        _busy = true;
+        string? selected = null;
+        try
+        {
+            if (dialog.ShowDialog(this) != true) return;
+            if (AppMessageWindow.ShowMessage(this,
+                $"保存到：{Path.Combine(dialog.FolderName, "clipboard-history")}\n\n已有历史将复制过去，完成后立即生效。原目录及原有恢复副本保留，仍占用磁盘空间；其他软件资料和 Windows 系统历史不受影响。",
+                "设置剪贴板保存目录", MessageBoxButton.OKCancel, MessageBoxImage.Information) == MessageBoxResult.OK)
+                selected = dialog.FolderName;
+        }
+        catch (Exception) { StatusText.Text = "目录选择失败，请选择可写的本地文件夹。"; }
+        finally { _busy = false; }
+        if (selected is not null) await ChangeStorageDirectoryAsync(selected);
+    }
+
+    internal async Task ChangeStorageDirectoryAsync(string parent)
+    {
+        if (_busy || _importing || _closed) return;
+        _busy = _relocating = true;
+        MenuButton.IsEnabled = false;
+        StatusText.Text = "正在复制历史并切换保存目录…";
+        try
+        {
+            await ClipboardHistoryRuntime.DrainPendingAsync(_store);
+            var previousFolder = _store.Folder;
+            await Task.Run(() => _changeDirectory(_store, parent));
+            if (string.Equals(previousFolder, _store.Folder, StringComparison.OrdinalIgnoreCase))
+            {
+                if (!_closed) StatusText.Text = $"保存目录未改变：{_store.Folder}。";
+                return;
+            }
+            ClipboardHistoryRuntime.ClearStorageError();
+            if (!_closed)
+            {
+                RefreshBehaviorSettings();
+                StatusText.Text = $"保存目录：{_store.Folder}。已立即生效，原目录副本保留。";
+            }
+        }
+        catch (Exception ex)
+        {
+            if (!_closed) StatusText.Text = ex is IOException or ArgumentException
+                ? $"目录未切换：{ex.Message} 原目录仍在使用；新位置可能留有未启用的副本。"
+                : "目录未切换，请检查权限、磁盘空间及文件占用。原目录仍在使用；新位置可能留有未启用的副本。";
+        }
+        finally { _busy = _relocating = false; if (!_closed) MenuButton.IsEnabled = true; }
+    }
+
     private void OpenFolder_Click(object sender, RoutedEventArgs e)
     {
         try { Directory.CreateDirectory(_store.Folder); Process.Start(new ProcessStartInfo(_store.Folder) { UseShellExecute = true }); }
@@ -671,7 +733,7 @@ public partial class ClipboardHistoryWindow : Window
     private void PositionWindow(bool useSaved = true)
     {
         ClipboardWindowPlacement? saved = null;
-        if (useSaved)
+        if (useSaved && !_relocating)
         {
             try { saved = _store.ReadPlacement(); }
             catch (Exception) { StatusText.Text = "窗口位置设置无法读取，已使用右下角默认位置。"; }
@@ -691,7 +753,7 @@ public partial class ClipboardHistoryWindow : Window
     }
     private void SavePlacement()
     {
-        if (!_rememberPlacement || _closed || WindowState != WindowState.Normal) return;
+        if (!_rememberPlacement || _closed || _relocating || WindowState != WindowState.Normal) return;
         var bounds = ScreenGeometry.PhysicalBounds(this); if (bounds.IsEmpty) return;
         var screen = System.Windows.Forms.Screen.FromRectangle(bounds);
         try { _store.SavePlacement(new(bounds.Left, bounds.Top, Width, Height, screen.DeviceName)); }

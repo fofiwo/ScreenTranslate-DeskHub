@@ -94,7 +94,9 @@
        <MenuItem Header="快捷键设置" Click="ShortcutSettings_Click"/>
        <MenuItem Header="设备与同步…" Click="SyncSettings_Click"/>
        <MenuItem Header="同步记录…" Click="SyncHistory_Click"/>
-       <Separator/><MenuItem Header="恢复默认位置与大小" Click="ResetPlacement_Click"/><MenuItem Header="打开历史数据目录" Click="OpenFolder_Click"/>
+       <Separator/><MenuItem Header="恢复默认位置与大小" Click="ResetPlacement_Click"/>
+       <MenuItem x:Name="ChangeFolderMenuItem" Header="设置保存目录…" Click="ChangeFolder_Click"/>
+       <MenuItem x:Name="OpenFolderMenuItem" Header="打开历史数据目录" Click="OpenFolder_Click"/>
       </ContextMenu></Button.ContextMenu>
      </Button>
      <Button Style="{StaticResource IconButton}" Content="&#xE8BB;" Click="Hide_Click" ToolTip="收起（Esc）" AutomationProperties.Name="收起剪贴板"/>

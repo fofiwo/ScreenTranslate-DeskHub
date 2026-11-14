@@ -79,12 +79,12 @@ internal sealed record ClipboardWindowPlacement(int X, int Y, double Width, doub
 internal sealed class ClipboardHistoryStore
 {
     private readonly object _gate = new();
-    private readonly InstalledDataRecovery? _recovery;
+    private InstalledDataRecovery? _recovery;
     private readonly Dictionary<string, ClipboardRecord> _records = new(StringComparer.Ordinal);
     private readonly HashSet<string> _unreadableIds = new(StringComparer.OrdinalIgnoreCase);
     private IReadOnlyList<ClipboardRecord>? _snapshot;
-    public static string DefaultFolder => Path.Combine(AppDataPaths.Root, "clipboard-history");
-    public string Folder { get; }
+    public static string DefaultFolder => ClipboardHistoryStorage.ResolveFolder(AppDataPaths.Root);
+    public string Folder { get; private set; }
     public int UnreadableCount { get; private set; }
     public event EventHandler? Changed;
 
@@ -112,6 +112,85 @@ internal sealed class ClipboardHistoryStore
     {
         lock (_gate) return _snapshot ??= Array.AsReadOnly(_records.Values.OrderByDescending(r => r.IsPinned).ThenByDescending(r => r.CopiedAt)
             .ThenByDescending(r => r.PinnedAt).ToArray());
+    }
+
+    internal void Relocate(string folder, Action<string> saveFolder, InstalledDataRecovery? recovery = null)
+    {
+        if (!Path.IsPathFullyQualified(folder) || folder.StartsWith(@"\\"))
+            throw new ArgumentException("请选择本机的完整目录。");
+        folder = Path.TrimEndingDirectorySeparator(Path.GetFullPath(folder));
+        lock (_gate)
+        {
+            var source = Path.TrimEndingDirectorySeparator(Folder);
+            if (string.Equals(folder, source, StringComparison.OrdinalIgnoreCase)) return;
+            if (folder.StartsWith(source + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)
+                || source.StartsWith(folder + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+                throw new IOException("新旧保存目录不能互相包含。");
+            RejectLinks(source);
+            RejectLinks(folder);
+            if (File.Exists(folder) || (Directory.Exists(folder) && Directory.EnumerateFileSystemEntries(folder).Any()))
+                throw new IOException("目标 clipboard-history 目录已有内容，请选择其他位置，避免覆盖已有资料。");
+            foreach (var record in _records.Values.Where(record => record.HasImage))
+                if (!File.Exists(ImagePath(record.Id)))
+                    throw new IOException("部分历史图片已被外部删除，无法完整迁移。请先在面板中移除失效记录。");
+
+            var parent = Path.GetDirectoryName(folder) ?? throw new IOException("不能使用磁盘根目录。");
+            Directory.CreateDirectory(parent);
+            var staging = Path.Combine(parent, ".clipboard-history-migrating-" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(staging);
+            // 与写入、删除共用锁；完整复制并保存绑定后，所有现有调用方同时切换。
+            if (Directory.Exists(source))
+                foreach (var file in Directory.EnumerateFiles(source))
+                {
+                    var name = Path.GetFileName(file);
+                    if (name.StartsWith(".env", StringComparison.OrdinalIgnoreCase)
+                        || !(name.Equals("window.json", StringComparison.OrdinalIgnoreCase) || name.EndsWith(".clip", StringComparison.OrdinalIgnoreCase)
+                            || (name.EndsWith(".png", StringComparison.OrdinalIgnoreCase) && ValidId(Path.GetFileNameWithoutExtension(name).ToLowerInvariant())))) continue;
+                    RejectLinks(file);
+                    using var input = new FileStream(file, FileMode.Open, FileAccess.Read, FileShare.Read);
+                    using var output = new FileStream(Path.Combine(staging, name), FileMode.CreateNew, FileAccess.Write, FileShare.None);
+                    input.CopyTo(output); output.Flush(true);
+                }
+            foreach (var record in _records.Values)
+            {
+                var path = Path.Combine(staging, record.Id + ".clip");
+                // 外部删除不清空内存；仍在会话中的文字可在切换目录时重新保存。
+                if (!File.Exists(path))
+                {
+                    using var output = new FileStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.None);
+                    output.Write(Encoding.UTF8.GetBytes(LocalSecretStore.Protect(JsonSerializer.Serialize(record))));
+                    output.Flush(true);
+                }
+            }
+            if (Directory.Exists(folder)) Directory.Delete(folder); // 仅移除空目录，竞争写入时拒绝切换。
+            Directory.Move(staging, folder);
+            try
+            {
+                recovery?.ReplaceFolderBackup(folder);
+                saveFolder(folder);
+            }
+            catch (Exception failure)
+            {
+                // 保留本次副本供排查，但腾出正式目标，修复权限或占用后可原位重试。
+                try { Directory.Move(folder, staging); }
+                catch (Exception rollback)
+                {
+                    throw new IOException($"目录切换失败，且未启用的副本被占用，仍保留在 {folder}。请解除占用或选择其他位置。",
+                        new AggregateException(failure, rollback));
+                }
+                throw;
+            }
+            Folder = folder;
+            _recovery = recovery;
+        }
+        Changed?.Invoke(this, EventArgs.Empty);
+    }
+
+    private static void RejectLinks(string path)
+    {
+        for (string? entry = path; entry is not null; entry = Path.GetDirectoryName(entry))
+            if ((File.Exists(entry) || Directory.Exists(entry)) && (File.GetAttributes(entry) & FileAttributes.ReparsePoint) != 0)
+                throw new IOException("保存目录不能包含链接或目录联接，请选择普通本地文件夹。");
     }
 
     public ClipboardRecord Add(ClipboardRecord value, byte[]? png = null)
@@ -256,27 +335,36 @@ internal sealed class ClipboardHistoryStore
         }
         finally { foreach (var handle in handles) handle.Dispose(); }
     }
-    public byte[] ReadImage(string id) { RequireId(id); return File.ReadAllBytes(ImagePath(id)); }
+    public byte[] ReadImage(string id) { RequireId(id); lock (_gate) return File.ReadAllBytes(ImagePath(id)); }
     private string ImagePath(string id) => Path.Combine(Folder, id + ".png");
     private void Save(ClipboardRecord record) => AtomicWrite(Path.Combine(Folder, record.Id + ".clip"),
         Encoding.UTF8.GetBytes(LocalSecretStore.Protect(JsonSerializer.Serialize(record))));
 
     public ClipboardWindowPlacement? ReadPlacement()
     {
-        var path = Path.Combine(Folder, "window.json");
-        if (!File.Exists(path)) return null;
-        return JsonSerializer.Deserialize<ClipboardWindowPlacement>(File.ReadAllText(path));
+        lock (_gate)
+        {
+            var path = Path.Combine(Folder, "window.json");
+            if (!File.Exists(path)) return null;
+            return JsonSerializer.Deserialize<ClipboardWindowPlacement>(File.ReadAllText(path));
+        }
     }
     public void SavePlacement(ClipboardWindowPlacement placement)
     {
-        Directory.CreateDirectory(Folder);
-        AtomicWrite(Path.Combine(Folder, "window.json"), JsonSerializer.SerializeToUtf8Bytes(placement));
+        lock (_gate)
+        {
+            Directory.CreateDirectory(Folder);
+            AtomicWrite(Path.Combine(Folder, "window.json"), JsonSerializer.SerializeToUtf8Bytes(placement));
+        }
     }
     public void ClearPlacement()
     {
-        var path = Path.Combine(Folder, "window.json");
-        File.Delete(path);
-        _recovery?.BackupFile(path);
+        lock (_gate)
+        {
+            var path = Path.Combine(Folder, "window.json");
+            File.Delete(path);
+            _recovery?.BackupFile(path);
+        }
     }
 
     private static bool ValidId(string? id) => id is { Length: 64 } && id.All(c => c is >= '0' and <= '9' or >= 'a' and <= 'f');

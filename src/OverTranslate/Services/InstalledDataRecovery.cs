@@ -4,7 +4,7 @@ using System.Text;
 
 namespace OverTranslate.Services;
 
-/// <summary>主数据在安装目录，恢复副本在安装器不会删除的用户目录；文件始终原样复制。</summary>
+/// <summary>恢复副本在安装器不会删除的用户目录；文件始终原样复制。</summary>
 internal sealed class InstalledDataRecovery(string dataRoot, string backupRoot)
 {
     internal string DataRoot { get; } = Path.TrimEndingDirectorySeparator(Path.GetFullPath(dataRoot));
@@ -37,6 +37,31 @@ internal sealed class InstalledDataRecovery(string dataRoot, string backupRoot)
         AtomicCopy(path, destination);
     }
 
+    internal void RestoreFolder(string folder)
+    {
+        var backup = GetBackupPath(folder);
+        // 自定义剪贴板位置只恢复自己的子目录，不复制用户所选父目录中的其他资料。
+        if (!Directory.Exists(folder) && backup is not null && Directory.Exists(backup))
+            CopyDirectory(backup, folder, personalOnly: false);
+    }
+
+    internal void ReplaceFolderBackup(string folder)
+    {
+        // 完整替换快照；旧副本隔离保留，恢复时不合并旧位置遗留的记录。
+        var destination = GetBackupPath(folder);
+        if (destination is null) return;
+        var staged = destination + ".snapshot-" + Guid.NewGuid().ToString("N");
+        CopyDirectory(folder, staged, personalOnly: false);
+        var previous = destination + ".previous-" + Guid.NewGuid().ToString("N");
+        if (Directory.Exists(destination)) Directory.Move(destination, previous);
+        try { Directory.Move(staged, destination); }
+        catch
+        {
+            if (!Directory.Exists(destination) && Directory.Exists(previous)) Directory.Move(previous, destination);
+            throw;
+        }
+    }
+
     internal string? GetBackupPath(string path)
     {
         path = Path.GetFullPath(path);
@@ -51,7 +76,7 @@ internal sealed class InstalledDataRecovery(string dataRoot, string backupRoot)
 
     private static bool IsWithin(string path, string root) =>
         string.Equals(path, root, StringComparison.OrdinalIgnoreCase)
-        || path.StartsWith(root + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase);
+        || path.StartsWith(Path.EndsInDirectorySeparator(root) ? root : root + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase);
 
     private static bool IsPersonalFile(string relative)
     {

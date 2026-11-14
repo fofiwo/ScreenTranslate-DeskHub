@@ -154,7 +154,7 @@ internal static class ClipboardContent
 internal sealed class ClipboardHistoryRuntime : IDisposable
 {
     private static ClipboardHistoryRuntime? _current;
-    private static readonly ClipboardHistoryStoreLoader StoreLoader = new(() => new ClipboardHistoryStore(ClipboardHistoryStore.DefaultFolder));
+    private static readonly ClipboardHistoryStoreLoader StoreLoader = new(ClipboardHistoryStorage.Open);
     private readonly HwndSource _source;
     private readonly DispatcherTimer _timer;
     private readonly ClipboardHistoryWriteQueue _writes;
@@ -168,6 +168,10 @@ internal sealed class ClipboardHistoryRuntime : IDisposable
     private bool _disposed;
     public static string? LastError { get; private set; }
     public static Task<ClipboardHistoryStore> StoreAsync => StoreLoader.OpenAsync();
+    internal static void ClearStorageError()
+    {
+        if (LastError?.StartsWith("有一条剪贴板内容未能保存", StringComparison.Ordinal) == true) LastError = null;
+    }
 
     public static void Start(Dispatcher dispatcher)
     {

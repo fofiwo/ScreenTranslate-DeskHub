@@ -311,7 +311,8 @@ internal sealed class LanNode : IAsyncDisposable
                 if ((isFile ? 1 : header.Kind == "library" ? 2 : 0) != channel) throw new InvalidDataException("传输通道与内容不匹配。");
                 var activity = new SyncActivity(header.Id, isFile ? SyncKind.Files : header.Kind == "library" ? SyncKind.Library : SyncKind.Clipboard,
                     true, name, header.Kind == "file-offer" ? SyncState.Waiting : SyncState.Running,
-                    isFile ? header.Name : "", Total: header.Length);
+                    isFile ? header.Name : "", Total: header.Length,
+                    ClipboardKind: header.Kind is "text" or "image" ? header.Kind : "");
                 RecordActivity(activity);
                 try
                 {
@@ -558,7 +559,7 @@ internal sealed class LanNode : IAsyncDisposable
         var header = new LanHeader(kind, existing?.Id ?? Guid.NewGuid().ToString("N"), name, body.Length, hash, Origin: origin);
         var activity = existing ?? new SyncActivity(header.Id, isFile ? SyncKind.Files : kind == "library" ? SyncKind.Library : SyncKind.Clipboard,
             false, PeerName, SyncState.Running, isFile ? name : "");
-        activity = activity with { Total = body.Length };
+        activity = activity with { Total = body.Length, ClipboardKind = kind is "text" or "image" ? kind : "" };
         var completed = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
         session.Pending[header.Id] = completed;
         var safeCancellation = false;

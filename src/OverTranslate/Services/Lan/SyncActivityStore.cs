@@ -8,10 +8,14 @@ internal enum SyncState { Preparing, Waiting, Running, Completed, Rejected, Fail
 internal enum SyncIssue { None, Permission, FileOrDisk, InvalidContent, Timeout, Connection, Paused, Unsupported }
 internal sealed record SyncActivity(string Id, SyncKind Kind, bool Incoming, string Peer, SyncState State,
     string Name = "", long Completed = 0, long Total = 0, string Folder = "", string[]? Sources = null,
-    DateTimeOffset Updated = default, SyncIssue Issue = SyncIssue.None, string DeviceId = "")
+    DateTimeOffset Updated = default, SyncIssue Issue = SyncIssue.None, string DeviceId = "", string ClipboardKind = "")
 {
     public bool Active => State is SyncState.Preparing or SyncState.Waiting or SyncState.Running or SyncState.Confirming;
-    public string KindLabel => Kind switch { SyncKind.Files => "文件", SyncKind.Library => "资料库", SyncKind.Connection => "设备连接", _ => "剪贴板" };
+    public string KindLabel => Kind switch
+    {
+        SyncKind.Files => "文件", SyncKind.Library => "资料库", SyncKind.Connection => "设备连接",
+        _ => ClipboardKind switch { "text" => "剪贴板 · 文本", "image" => "剪贴板 · 图片", _ => "剪贴板" }
+    };
     public string StateLabel => Kind == SyncKind.Connection ? State switch
     {
         SyncState.Completed => "已连接", SyncState.Waiting => "正在自动重连", SyncState.Cancelled => "已断开 · 自动重连已暂停",
