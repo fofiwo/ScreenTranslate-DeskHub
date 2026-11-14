@@ -41,9 +41,9 @@ public partial class MainWindow
                 if (shell is not null && !_exitingApplication) { shell.Show(); }
                 if (!_exitingApplication) RealtimeSessionController.Instance.ResumeAfterCapture();
             };
-            // Show 可能泵送关闭事件；先安装钩子，让 Closed 始终能成对释放。
-            _snipEscape = GlobalEscapeHook.Install(() => { if (ReferenceEquals(_snipCapture, window)) window.Close(); });
-            _snipRecovery = SystemRecoveryYield.Install(ApplyScreenshotTopmost);
+            window.IsVisibleChanged += (_, _) => {
+                if (ReferenceEquals(_snipCapture, window)) RefreshScreenshotHooks();
+            };
             window.Show();
             ApplyScreenshotTopmost();
         }
@@ -53,6 +53,23 @@ public partial class MainWindow
             if (shell is not null && !_exitingApplication) shell.Show();
             RealtimeSessionController.Instance.ResumeAfterCapture();
             ShowTrayNotification("截图失败", "无法读取当前屏幕，请稍后重试。");
+        }
+    }
+
+    private void RefreshScreenshotHooks()
+    {
+        if (_snipCapture is { IsVisible: true } capture)
+        {
+            _snipEscape ??= GlobalEscapeHook.Install(() => {
+                if (ReferenceEquals(_snipCapture, capture) && capture.IsVisible) capture.Close();
+            });
+            _snipRecovery ??= SystemRecoveryYield.Install(ApplyScreenshotTopmost);
+            ApplyScreenshotTopmost();
+        }
+        else
+        {
+            _snipEscape?.Dispose(); _snipEscape = null;
+            _snipRecovery?.Dispose(); _snipRecovery = null;
         }
     }
 

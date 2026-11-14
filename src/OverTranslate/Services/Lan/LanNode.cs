@@ -29,6 +29,7 @@ internal sealed class LanNode : IAsyncDisposable
     private int _disposed;
     private bool _fullyDisposed;
     internal long ConnectionVersion => Interlocked.Read(ref _connectionVersion);
+    internal string ClipboardPeerKey => _session?.PeerKey ?? "";
     internal Exception? LastConnectionError { get; private set; }
     public bool IsConnected => _session is { } session && !session.Closed.IsCancellationRequested;
     public bool IsListening => _listener is not null;
@@ -44,7 +45,7 @@ internal sealed class LanNode : IAsyncDisposable
     public event EventHandler<string>? Changed;
     public event EventHandler<string>? ClipboardNotice;
     public event EventHandler<LanProgress>? Progress;
-    internal Func<string, bool>? AcceptClipboardMessage { get; set; }
+    internal Func<string, Func<Task>, CancellationToken, Task<bool>>? ApplyClipboardMessageAsync { get; set; }
     internal Func<LanClipboardPayload, string>? ClipboardMessageId { get; set; }
     internal event Action<string>? ClipboardSending;
     internal event Action<LanClipboardMessage>? ClipboardReceived;
@@ -107,6 +108,15 @@ internal sealed class LanNode : IAsyncDisposable
         if (string.IsNullOrWhiteSpace(value) || value.Length > 80 || value.Any(char.IsControl))
             throw new InvalidDataException("设备名称无效。");
         return value;
+    }
+
+    internal static void ConfigureSocket(TcpClient client)
+    {
+        client.NoDelay = true;
+        client.Client.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.KeepAlive, true);
+        client.Client.SetSocketOption(SocketOptionLevel.Tcp, SocketOptionName.TcpKeepAliveTime, 5);
+        client.Client.SetSocketOption(SocketOptionLevel.Tcp, SocketOptionName.TcpKeepAliveInterval, 1);
+        client.Client.SetSocketOption(SocketOptionLevel.Tcp, SocketOptionName.TcpKeepAliveRetryCount, 3);
     }
 
     internal sealed record ListenIdentity(byte[] Certificate, byte[] Secret);
@@ -177,7 +187,7 @@ internal sealed class LanNode : IAsyncDisposable
             try
             {
                 client = await listener.AcceptTcpClientAsync(token).ConfigureAwait(false);
-                client.NoDelay = true;
+                ConfigureSocket(client);
                 using var timeout = CancellationTokenSource.CreateLinkedTokenSource(token);
                 timeout.CancelAfter(TimeSpan.FromSeconds(60));
                 using var ssl = new SslStream(client.GetStream(), false);
@@ -202,7 +212,8 @@ internal sealed class LanNode : IAsyncDisposable
                     && await confirm(new(name, remote.ToString()), timeout.Token).WaitAsync(timeout.Token).ConfigureAwait(false);
                 await LanProtocol.WriteHeaderAsync(ssl, new("paired", Name: _name, Accepted: accepted, FileOffers: true, Reconnect: true, FileCancellation: true), timeout.Token).ConfigureAwait(false);
                 if (!accepted) { ssl.Dispose(); client.Dispose(); client = null; await Task.Delay(500, token).ConfigureAwait(false); continue; }
-                var session = new Session(client, ssl, hello.FileOffers, hello.Reconnect, hello.FileCancellation);
+                var session = new Session(client, ssl, hello.FileOffers, hello.Reconnect, hello.FileCancellation)
+                { PeerKey = LanProtocol.Hash(Encoding.UTF8.GetBytes(PairCode.Replace("-", "") + "\0" + name)) };
                 client = null;
                 await RunSessionAsync(session, name, token).ConfigureAwait(false);
             }
@@ -232,10 +243,11 @@ internal sealed class LanNode : IAsyncDisposable
 
     private async Task ConnectCoreAsync(IPAddress address, int port, string normalized, CancellationToken runToken, CancellationToken connectToken)
     {
-        var client = new TcpClient { NoDelay = true };
+        var client = new TcpClient();
         SslStream? ssl = null;
         try
         {
+            ConfigureSocket(client);
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(runToken, connectToken);
             timeout.CancelAfter(TimeSpan.FromSeconds(60));
             await client.ConnectAsync(address, port, timeout.Token).ConfigureAwait(false);
@@ -261,7 +273,8 @@ internal sealed class LanNode : IAsyncDisposable
             if (response.Kind != "paired" || !response.Accepted) throw new IOException("对方未接受配对。");
             var name = ValidateDeviceName(response.Name);
             runToken.ThrowIfCancellationRequested();
-            var session = new Session(client, ssl, response.FileOffers, response.Reconnect, response.FileCancellation);
+            var session = new Session(client, ssl, response.FileOffers, response.Reconnect, response.FileCancellation)
+            { PeerKey = LanProtocol.Hash(Encoding.UTF8.GetBytes(normalized + "\0" + name)) };
             _clientTask = RunSessionAsync(session, name, runToken);
         }
         catch { ssl?.Dispose(); client.Dispose(); throw; }
@@ -324,7 +337,7 @@ internal sealed class LanNode : IAsyncDisposable
                         continue;
                     }
                     var applied = true;
-                    using var receiveTimeout = CancellationTokenSource.CreateLinkedTokenSource(token);
+                    using var receiveTimeout = CancellationTokenSource.CreateLinkedTokenSource(token, session.Closed);
                     receiveTimeout.CancelAfter(isFile ? TimeSpan.FromHours(24) : TimeSpan.FromSeconds(30));
                     if (isFile)
                     {
@@ -388,13 +401,28 @@ internal sealed class LanNode : IAsyncDisposable
                             catch (Exception ex) when (!receiveTimeout.IsCancellationRequested) { applied = false; activity = activity with { Issue = SyncActivityStore.IssueFor(ex) }; }
                             finally { CryptographicOperations.ZeroMemory(bytes); }
                         }
-                        else if (ClipboardEnabled && (AcceptClipboardMessage?.Invoke(header.Id) ?? true))
+                        else if (ClipboardEnabled)
                         {
-                            if (ApplyClipboardAsync is not { } apply) throw new InvalidOperationException("剪贴板接收尚未启用。");
-                            var payload = new LanClipboardPayload(header.Kind, bytes, Origin: header.Origin.Length == 0 ? name : header.Origin);
-                            await apply(payload, receiveTimeout.Token).ConfigureAwait(false);
-                            ClipboardReceived?.Invoke(new(header.Id, payload));
-                            ClipboardNotice?.Invoke(this, $"已接收来自 {payload.Origin} 的{(header.Kind == "text" ? "文本" : "图片")}。");
+                            try
+                            {
+                                if (ApplyClipboardAsync is not { } apply) throw new InvalidOperationException("剪贴板接收尚未启用。");
+                                var payload = new LanClipboardPayload(header.Kind, bytes, Origin: header.Origin.Length == 0 ? name : header.Origin);
+                                var fresh = true;
+                                if (ApplyClipboardMessageAsync is { } applyMessage)
+                                    fresh = await applyMessage(header.Id, () => apply(payload, receiveTimeout.Token), receiveTimeout.Token).ConfigureAwait(false);
+                                else await apply(payload, receiveTimeout.Token).ConfigureAwait(false);
+                                if (fresh)
+                                {
+                                    ClipboardReceived?.Invoke(new(header.Id, payload));
+                                    ClipboardNotice?.Invoke(this, $"已接收来自 {payload.Origin} 的{(header.Kind == "text" ? "文本" : "图片")}。");
+                                }
+                            }
+                            // 消息已完整校验；本机剪贴板暂时不可写只拒绝本条，不破坏共享连接。
+                            catch (Exception ex) when (!receiveTimeout.IsCancellationRequested)
+                            {
+                                applied = false; activity = activity with { Issue = SyncActivityStore.IssueFor(ex) };
+                                ClipboardNotice?.Invoke(this, "本次剪贴板内容未写入，连接保持可用。");
+                            }
                         }
                         else if (!ClipboardEnabled)
                         {
@@ -441,10 +469,10 @@ internal sealed class LanNode : IAsyncDisposable
         }
     }
 
-    public async Task<bool> SendClipboardAsync(LanClipboardPayload payload, CancellationToken token = default)
-        => await SendClipboardAsync(payload, ClipboardMessageId?.Invoke(payload) ?? Guid.NewGuid().ToString("N"), token).ConfigureAwait(false);
+    public async Task<bool> SendClipboardAsync(LanClipboardPayload payload, CancellationToken token = default, Func<bool>? canSend = null)
+        => await SendClipboardAsync(payload, ClipboardMessageId?.Invoke(payload) ?? Guid.NewGuid().ToString("N"), token, canSend).ConfigureAwait(false);
 
-    internal async Task<bool> SendClipboardAsync(LanClipboardPayload payload, string id, CancellationToken token = default)
+    internal async Task<bool> SendClipboardAsync(LanClipboardPayload payload, string id, CancellationToken token = default, Func<bool>? canSend = null)
     {
         if (payload.Kind is not ("text" or "image") || payload.Bytes.Length > LanProtocol.MaxClipboard)
             throw new InvalidDataException("剪贴板内容类型或大小无效。");
@@ -453,7 +481,7 @@ internal sealed class LanNode : IAsyncDisposable
         ClipboardSending?.Invoke(id);
         return await SendAsync(session, payload.Kind, "", stream, LanProtocol.Hash(payload.Bytes), token,
             new(id, SyncKind.Clipboard, false, PeerName, SyncState.Running),
-            payload.Origin.Length == 0 ? _name : ValidateDeviceName(payload.Origin)).ConfigureAwait(false);
+            payload.Origin.Length == 0 ? _name : ValidateDeviceName(payload.Origin), canSend).ConfigureAwait(false);
     }
 
     internal async Task<bool> SendLibraryAsync(byte[] bytes, CancellationToken token = default)
@@ -509,7 +537,7 @@ internal sealed class LanNode : IAsyncDisposable
     }
 
     private async Task<bool> SendAsync(Session session, string kind, string name, Stream body, string hash, CancellationToken token,
-        SyncActivity? existing = null, string origin = "")
+        SyncActivity? existing = null, string origin = "", Func<bool>? canSend = null)
     {
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(session.Closed, token);
         // 每个方向的每条逻辑通道仅允许一个待确认请求；文件和剪贴板分别排队。
@@ -517,6 +545,11 @@ internal sealed class LanNode : IAsyncDisposable
         var isFile = kind is "file" or "bundle";
         var gate = isFile ? session.FileSendGate : kind == "library" ? session.LibrarySendGate : session.SendGate;
         await gate.WaitAsync(linked.Token).ConfigureAwait(false);
+        if (canSend is not null && !canSend())
+        {
+            gate.Release();
+            throw new OperationCanceledException("复制内容或接收设备已变化，未发送排队内容。", token);
+        }
         if (kind == "library" && !LibraryEnabled || (kind is "text" or "image") && !ClipboardEnabled)
         {
             gate.Release();
@@ -561,8 +594,11 @@ internal sealed class LanNode : IAsyncDisposable
                 sentAll = await session.WriteFileAsync(header, body, ReportProgress, linked.Token).ConfigureAwait(false);
             else await session.WriteAsync(header, body, ReportProgress, linked.Token).ConfigureAwait(false);
             if (isFile && sentAll) RecordActivity(activity with { State = SyncState.Confirming, Completed = body.Length });
-            var accepted = await WaitForReceiptAsync(completed.Task, () => session.LastActivity,
-                isFile ? TimeSpan.FromMinutes(5) : TimeSpan.FromSeconds(60), isFile && session.FileCancellation ? session.Closed : linked.Token).ConfigureAwait(false);
+            // 剪贴板确认只等本条结果，文件或资料库的进展不能延长它的等待。
+            var accepted = kind is "text" or "image"
+                ? await completed.Task.WaitAsync(TimeSpan.FromSeconds(5), linked.Token).ConfigureAwait(false)
+                : await WaitForReceiptAsync(completed.Task, () => session.LastActivity,
+                    isFile ? TimeSpan.FromMinutes(5) : TimeSpan.FromSeconds(60), isFile && session.FileCancellation ? session.Closed : linked.Token).ConfigureAwait(false);
             safeCancellation = true;
             if (!sentAll) throw new OperationCanceledException(token);
             RecordActivity(activity with { State = accepted ? SyncState.Completed : SyncState.Rejected, Completed = body.Length });
@@ -639,6 +675,7 @@ internal sealed class LanNode : IAsyncDisposable
 
     private sealed class Session(TcpClient client, SslStream stream, bool fileOffers, bool reconnect, bool fileCancellation) : IDisposable
     {
+        public string PeerKey { get; init; } = "";
         public bool FileCancellation { get; } = fileCancellation;
         private readonly object _confirmationGate = new();
         private string _cancelledConfirmation = "";
@@ -720,25 +757,32 @@ internal sealed class LanNode : IAsyncDisposable
             var target = channel == 1 ? FileStream : channel == 2 ? LibraryStream : Stream;
             var gate = channel == 1 ? _fileWriteGate : channel == 2 ? _libraryWriteGate : _writeGate;
             await gate.WaitAsync(token).ConfigureAwait(false);
+            using var idle = header.Kind is "text" or "image" ? CancellationTokenSource.CreateLinkedTokenSource(token) : null;
+            var writeToken = idle?.Token ?? token;
+            idle?.CancelAfter(TimeSpan.FromSeconds(3));
             try
             {
-                await LanProtocol.WriteHeaderAsync(target, header, token).ConfigureAwait(false);
+                await LanProtocol.WriteHeaderAsync(target, header, writeToken).ConfigureAwait(false);
+                idle?.CancelAfter(TimeSpan.FromSeconds(3));
                 Touch();
                 if (body is not null)
                 {
-                    var buffer = new byte[65536];
+                    var buffer = new byte[idle is null ? 65536 : LanMultiplexStream.MaxChunk];
                     long total = 0;
                     while (true)
                     {
-                        var count = await body.ReadAsync(buffer, token).ConfigureAwait(false);
+                        var count = await body.ReadAsync(buffer, writeToken).ConfigureAwait(false);
                         if (count == 0) break;
-                        await target.WriteAsync(buffer.AsMemory(0, count), token).AsTask()
-                            .WaitAsync(TimeSpan.FromSeconds(30), token).ConfigureAwait(false);
+                        await target.WriteAsync(buffer.AsMemory(0, count), writeToken).AsTask()
+                            .WaitAsync(TimeSpan.FromSeconds(30), writeToken).ConfigureAwait(false);
+                        idle?.CancelAfter(TimeSpan.FromSeconds(3));
                         Touch(); total += count; progress?.Invoke(total);
                     }
                 }
-                await target.FlushAsync(token).ConfigureAwait(false);
+                await target.FlushAsync(writeToken).ConfigureAwait(false);
             }
+            catch (OperationCanceledException ex) when (idle?.IsCancellationRequested == true && !token.IsCancellationRequested)
+            { throw new TimeoutException("剪贴板传输连续 3 秒没有读取进展。", ex); }
             finally { gate.Release(); }
         }
 

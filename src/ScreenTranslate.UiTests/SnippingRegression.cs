@@ -15,6 +15,7 @@ public sealed partial class ScreenTranslateShellTests
 {
     private static void VerifySnippingTools()
     {
+        VerifyCaptureEdgeResize();
         VerifySnipCopyResponsiveness();
         VerifySnipCopyAdversarial();
         VerifySnipImeAndReadableHud();
@@ -91,7 +92,10 @@ public sealed partial class ScreenTranslateShellTests
             var failed = capture.CopySnipAsync(_ => throw new InvalidOperationException("fixture failure"));
             PumpUntil(() => failed.IsCompleted); failed.GetAwaiter().GetResult();
             Assert.Contains("复制失败", ((TextBlock)Get("_snipStatus")!).Text);
+            Assert.True(capture.IsVisible, "复制失败应恢复截图界面。");
             Assert.True(capture.HasSelection); Assert.Equal(5, document.Marks.Count);
+            Assert.Equal(SnipTool.Text, Get("_snipTool"));
+            Assert.True(((Button)Get("_snipCopy")!).IsEnabled);
             Assert.False((bool)Get("_snipClosed")!);
 
             var success = capture.CopySnipAsync(image => copied = image);

@@ -17,7 +17,13 @@ internal sealed class LanReconnectLoop(Func<bool> available, Func<CancellationTo
             {
                 if (available()) { attempts = 0; await wait(TimeSpan.FromSeconds(2), _stop.Token); continue; }
                 status("正在自动重连…");
-                try { await connect(_stop.Token); attempts = 0; await wait(TimeSpan.FromSeconds(2), _stop.Token); }
+                try
+                {
+                    using var attempt = CancellationTokenSource.CreateLinkedTokenSource(_stop.Token);
+                    attempt.CancelAfter(TimeSpan.FromSeconds(5));
+                    await connect(attempt.Token);
+                    attempts = 0; await wait(TimeSpan.FromSeconds(2), _stop.Token);
+                }
                 catch (OperationCanceledException) when (_stop.IsCancellationRequested) { break; }
                 catch (Exception exception)
                 {

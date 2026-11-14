@@ -500,6 +500,18 @@ public partial class ScreenCaptureWindow : Window
         SelectionBody.Height = _selectionWpfRect.Height;
 
         const double halfHandle = 7;
+        System.Windows.Controls.Canvas.SetLeft(TopEdgeHandle, _selectionWpfRect.Left);
+        System.Windows.Controls.Canvas.SetTop(TopEdgeHandle, _selectionWpfRect.Top - halfHandle);
+        TopEdgeHandle.Width = _selectionWpfRect.Width;
+        System.Windows.Controls.Canvas.SetLeft(BottomEdgeHandle, _selectionWpfRect.Left);
+        System.Windows.Controls.Canvas.SetTop(BottomEdgeHandle, _selectionWpfRect.Bottom - halfHandle);
+        BottomEdgeHandle.Width = _selectionWpfRect.Width;
+        System.Windows.Controls.Canvas.SetLeft(LeftEdgeHandle, _selectionWpfRect.Left - halfHandle);
+        System.Windows.Controls.Canvas.SetTop(LeftEdgeHandle, _selectionWpfRect.Top);
+        LeftEdgeHandle.Height = _selectionWpfRect.Height;
+        System.Windows.Controls.Canvas.SetLeft(RightEdgeHandle, _selectionWpfRect.Right - halfHandle);
+        System.Windows.Controls.Canvas.SetTop(RightEdgeHandle, _selectionWpfRect.Top);
+        RightEdgeHandle.Height = _selectionWpfRect.Height;
         System.Windows.Controls.Canvas.SetLeft(TopLeftHandle, _selectionWpfRect.Left - halfHandle);
         System.Windows.Controls.Canvas.SetTop(TopLeftHandle, _selectionWpfRect.Top - halfHandle);
         System.Windows.Controls.Canvas.SetLeft(TopRightHandle, _selectionWpfRect.Right - halfHandle);
@@ -521,6 +533,10 @@ public partial class ScreenCaptureWindow : Window
         TopRightHandle.Visibility = handleVisibility;
         BottomLeftHandle.Visibility = handleVisibility;
         BottomRightHandle.Visibility = handleVisibility;
+        TopEdgeHandle.Visibility = handleVisibility;
+        BottomEdgeHandle.Visibility = handleVisibility;
+        LeftEdgeHandle.Visibility = handleVisibility;
+        RightEdgeHandle.Visibility = handleVisibility;
         // Movable exactly as long as it is resizable: once translation has started the window goes
         // click-through and the box is no longer the user's to rearrange.
         SelectionBody.Visibility = handleVisibility;
@@ -552,6 +568,22 @@ public partial class ScreenCaptureWindow : Window
         UpdateSelectionVisuals();
         SelectionAdjusted?.Invoke(this, Selection);
     }
+
+    private void TopEdgeHandle_DragDelta(object sender, DragDeltaEventArgs e) =>
+        ResizeSelectionCorner(_selectionWpfRect.BottomRight,
+            new WPoint(_selectionWpfRect.Left, _selectionWpfRect.Top + e.VerticalChange));
+
+    private void BottomEdgeHandle_DragDelta(object sender, DragDeltaEventArgs e) =>
+        ResizeSelectionCorner(_selectionWpfRect.TopLeft,
+            new WPoint(_selectionWpfRect.Right, _selectionWpfRect.Bottom + e.VerticalChange));
+
+    private void LeftEdgeHandle_DragDelta(object sender, DragDeltaEventArgs e) =>
+        ResizeSelectionCorner(_selectionWpfRect.BottomRight,
+            new WPoint(_selectionWpfRect.Left + e.HorizontalChange, _selectionWpfRect.Top));
+
+    private void RightEdgeHandle_DragDelta(object sender, DragDeltaEventArgs e) =>
+        ResizeSelectionCorner(_selectionWpfRect.TopLeft,
+            new WPoint(_selectionWpfRect.Right + e.HorizontalChange, _selectionWpfRect.Bottom));
 
     private void TopLeftHandle_DragDelta(object sender, DragDeltaEventArgs e) =>
         ResizeSelectionCorner(

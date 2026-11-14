@@ -14,6 +14,7 @@ namespace OverTranslate.Services.Lan;
 internal sealed class ClipboardLoopGuard
 {
     private string? _last;
+    private long _sequence;
     private long _connection;
     private void UseConnection(long connection)
     {
@@ -24,12 +25,12 @@ internal sealed class ClipboardLoopGuard
     {
         UseConnection(connection);
         var fingerprint = payload.Kind + LanProtocol.Hash(payload.Bytes);
-        if (fingerprint == _last) return false;
-        _last = fingerprint;
+        if (fingerprint == _last && (payload.Sequence == 0 || payload.Sequence == _sequence)) return false;
+        _last = fingerprint; _sequence = payload.Sequence;
         return true;
     }
     public void Received(LanClipboardPayload payload, long connection = 0)
-    { UseConnection(connection); _last = payload.Kind + LanProtocol.Hash(payload.Bytes); }
+    { UseConnection(connection); _last = payload.Kind + LanProtocol.Hash(payload.Bytes); _sequence = payload.Sequence; }
     public void Reset() => _last = null;
 }
 
@@ -40,6 +41,8 @@ internal sealed class LanClipboardSync : IDisposable
         && device != "received" && !string.IsNullOrWhiteSpace(device) && !device.Any(char.IsControl) ? "来自 " + device : "局域网";
     private readonly Dispatcher _dispatcher;
     private readonly LanNode _node;
+    private readonly Func<Task<LanClipboardPayload?>> _capture;
+    private readonly Func<uint> _sequence;
     private readonly ClipboardLoopGuard _loop = new();
     private readonly DispatcherTimer _timer;
     private HwndSource? _source;
@@ -47,6 +50,9 @@ internal sealed class LanClipboardSync : IDisposable
     private bool _dirty;
     private bool _disposed;
     private bool _enabled = true;
+    private uint _pendingSequence;
+    private string _pendingPeer = "";
+    private long _retryUntil;
     private CancellationTokenSource? _publishRequest;
     public bool Enabled
     {
@@ -60,17 +66,20 @@ internal sealed class LanClipboardSync : IDisposable
     }
     public event EventHandler<string>? Notice;
 
-    public LanClipboardSync(Dispatcher dispatcher, LanNode node)
+    public LanClipboardSync(Dispatcher dispatcher, LanNode node, Func<Task<LanClipboardPayload?>>? capture = null,
+        Func<uint>? sequence = null, bool listen = true)
     {
         _dispatcher = dispatcher;
         _node = node;
+        _capture = capture ?? CaptureAsync;
+        _sequence = sequence ?? GetClipboardSequenceNumber;
         _timer = new DispatcherTimer(TimeSpan.FromMilliseconds(120), DispatcherPriority.Background,
             async (_, _) => { _timer!.Stop(); await PublishAsync(); }, dispatcher);
         _timer.Stop();
         _source = new HwndSource(new HwndSourceParameters("ScreenTranslate LAN clipboard")
         { ParentWindow = new IntPtr(-3), Width = 0, Height = 0, WindowStyle = 0 });
         _source.AddHook(WndProc);
-        if (!AddClipboardFormatListener(_source.Handle))
+        if (listen && !AddClipboardFormatListener(_source.Handle))
         {
             _source.Dispose(); _source = null;
             throw new InvalidOperationException("无法监听系统剪贴板，请重新打开局域网功能。");
@@ -79,9 +88,20 @@ internal sealed class LanClipboardSync : IDisposable
 
     private IntPtr WndProc(IntPtr hwnd, int message, IntPtr wParam, IntPtr lParam, ref bool handled)
     {
-        if (message == 0x031D && !_disposed && Enabled && _node.IsConnected)
-        { _dirty = true; _timer.Stop(); _timer.Start(); }
+        if (message == 0x031D) NotifyClipboardChanged();
         return IntPtr.Zero;
+    }
+
+    internal void NotifyClipboardChanged()
+    {
+        if (!_disposed && Enabled && _node.IsConnected)
+        {
+            var sequence = _sequence();
+            if (_pendingPeer.Length > 0 && sequence == _pendingSequence) return;
+            _pendingSequence = sequence; _pendingPeer = _node.ClipboardPeerKey;
+            _retryUntil = Environment.TickCount64 + 20_000;
+            _dirty = true; _timer.Stop(); _timer.Start();
+        }
     }
 
     private async Task PublishAsync()
@@ -92,24 +112,10 @@ internal sealed class LanClipboardSync : IDisposable
         _publishRequest = request;
         try
         {
-            while (_dirty && !_disposed && Enabled && _node.IsConnected)
+            while (_dirty && !_disposed && Enabled && !request.IsCancellationRequested)
             {
                 _dirty = false;
-                LanClipboardPayload? payload = null;
-                var sequence = GetClipboardSequenceNumber();
-                for (var attempt = 0; attempt < 4; attempt++)
-                {
-                    try { payload = await CaptureAsync(); break; }
-                    catch (ExternalException) when (attempt < 3) { await Task.Delay(60); }
-                }
-                if (sequence != GetClipboardSequenceNumber()) { _dirty = true; continue; }
-                if (payload is null || !_loop.ShouldSend(payload, _node.ConnectionVersion)) continue;
-                payload = payload with { Sequence = sequence };
-                if (!Enabled || request.IsCancellationRequested) return;
-                Notice?.Invoke(this, payload.Kind == "text" ? "正在同步新复制的文本…" : "正在同步新复制的图片…");
-                if (await _node.SendClipboardAsync(payload, request.Token))
-                    Notice?.Invoke(this, payload.Kind == "text" ? "新复制的文本已同步。" : "新复制的图片已同步。");
-                else { _loop.Reset(); Notice?.Invoke(this, "对方已暂停自动同步，内容未写入对方剪贴板。"); }
+                await PublishCurrentAsync(_pendingSequence, _pendingPeer, _retryUntil, request.Token);
             }
         }
         catch (OperationCanceledException) when (request.IsCancellationRequested) { _loop.Reset(); }
@@ -119,26 +125,109 @@ internal sealed class LanClipboardSync : IDisposable
             if (!_disposed) _node.ReportPreparationFailure(SyncKind.Clipboard, ex);
             if (!_disposed) Notice?.Invoke(this, "剪贴板同步失败，请检查连接；本机复制不受影响。");
         }
-        finally { _sending = false; _publishRequest = null; }
+        finally
+        {
+            _sending = false; _publishRequest = null;
+            if (_dirty && !_disposed && Enabled) { _timer.Stop(); _timer.Start(); }
+        }
     }
 
-    private static async Task<LanClipboardPayload?> CaptureAsync()
+    private async Task PublishCurrentAsync(uint sequence, string peer, long retryUntil, CancellationToken token)
     {
-        var data = Clipboard.GetDataObject();
-        if (data is null || data.GetDataPresent(OriginFormat)
-            || data.GetDataPresent("ExcludeClipboardContentFromMonitorProcessing")
-            || data.GetDataPresent(DataFormats.FileDrop)) return null;
+        bool Latest() => !_disposed && Enabled && !token.IsCancellationRequested
+            && sequence == _sequence() && sequence == _pendingSequence && peer == _pendingPeer;
+        bool Current() => Latest() && Environment.TickCount64 < retryUntil;
+        Exception? failure = null;
+        var attempt = 0;
+        while (Current())
+        {
+            try
+            {
+                if (!_node.IsConnected) throw new IOException("等待原设备恢复连接。");
+                if (_node.ClipboardPeerKey != peer)
+                {
+                    Notice?.Invoke(this, "接收设备已变化，已取消上一次复制的同步。");
+                    return;
+                }
+                LanClipboardPayload? payload;
+                var connection = _node.ConnectionVersion;
+                try { payload = await _capture(); }
+                finally
+                {
+                    // 延迟渲染可能改变序号却没有新通知；沿用本次预算重读，避免无限续期。
+                    var renderedSequence = _sequence();
+                    if (!_disposed && Enabled && renderedSequence != sequence && _pendingSequence == sequence
+                        && _node.IsConnected && _node.ConnectionVersion == connection && _node.ClipboardPeerKey == peer)
+                    { _pendingSequence = renderedSequence; _dirty = true; }
+                }
+                if (!Current() || _node.ClipboardPeerKey != peer) continue;
+                if (payload is null) return;
+                payload = payload with { Sequence = sequence };
+                if (!_loop.ShouldSend(payload, _node.ConnectionVersion)) return;
+                Notice?.Invoke(this, payload.Kind == "text" ? "正在同步新复制的文本…" : "正在同步新复制的图片…");
+                if (await _node.SendClipboardAsync(payload, token, () => Current() && _node.ClipboardPeerKey == peer))
+                {
+                    Notice?.Invoke(this, payload.Kind == "text" ? "新复制的文本已同步。" : "新复制的图片已同步。");
+                    return;
+                }
+                throw new IOException("对方尚未接收剪贴板内容。");
+            }
+            catch (Exception ex) when (ex is InvalidDataException or NotSupportedException or FormatException)
+            {
+                if (!Latest() || _node.ClipboardPeerKey != peer) return;
+                _loop.Reset(); _node.ReportPreparationFailure(SyncKind.Clipboard, ex);
+                Notice?.Invoke(this, "剪贴板内容格式或大小不符合要求，未同步。");
+                return;
+            }
+            catch (Exception ex) when (ex is ExternalException or IOException or TimeoutException or OperationCanceledException or InvalidOperationException)
+            {
+                _loop.Reset(); failure = ex;
+                if (!Latest()) return;
+                if (!Current()) break;
+                Notice?.Invoke(this, "本次复制暂未同步，正在自动重试…");
+            }
+            await Task.Delay(Math.Min(1000, 100 * (1 << Math.Min(attempt++, 4))), token);
+        }
+        if (Latest())
+        {
+            _node.ReportPreparationFailure(SyncKind.Clipboard, failure ?? new TimeoutException());
+            Notice?.Invoke(this, "本次复制未同步，自动重试已结束；请检查连接或重新复制。");
+        }
+    }
+
+    private static Task<LanClipboardPayload?> CaptureAsync() => CaptureAsync(Clipboard.GetDataObject());
+
+    internal static async Task<LanClipboardPayload?> CaptureAsync(System.Windows.IDataObject? data)
+    {
+        if (data is null) throw new ExternalException("剪贴板尚未就绪。");
+        if (data.GetDataPresent(OriginFormat) || data.GetDataPresent("ExcludeClipboardContentFromMonitorProcessing")) return null;
+        if (data.GetFormats(false).Length == 0) throw new ExternalException("剪贴板尚未就绪。");
+        foreach (var format in new[] { "PNG", "image/png" })
+        {
+            if (!data.GetDataPresent(format, false)) continue;
+            var value = data.GetData(format, false);
+            byte[] bytes = value switch
+            {
+                MemoryStream stream when stream.Length <= LanProtocol.MaxClipboard => stream.ToArray(),
+                byte[] buffer when buffer.Length <= LanProtocol.MaxClipboard => buffer,
+                null => throw new ExternalException("图片尚未就绪。"),
+                _ => throw new InvalidDataException("图片格式或大小不符合要求。")
+            };
+            if (bytes.Length == 0) throw new ExternalException("图片尚未就绪。");
+            await Task.Run(() => DecodeImage(bytes));
+            return new("image", bytes);
+        }
         if (data.GetDataPresent(DataFormats.Bitmap))
         {
-            var image = Clipboard.GetImage();
-            if (image is null || (long)image.PixelWidth * image.PixelHeight > 32 * 1024 * 1024)
-                throw new InvalidDataException("图片过大。");
+            var image = data.GetData(DataFormats.Bitmap) as BitmapSource;
+            if (image is null) throw new ExternalException("图片尚未就绪。");
+            if ((long)image.PixelWidth * image.PixelHeight > 32 * 1024 * 1024) throw new InvalidDataException("图片过大。");
             var frozen = (BitmapSource)image.GetAsFrozen();
             var bytes = await Task.Run(() => ClipboardHistory.ClipboardContent.EncodeImage(frozen));
             if (bytes.Length > LanProtocol.MaxClipboard) throw new InvalidDataException("图片超过同步大小上限。");
             return new("image", bytes);
         }
-        if (!data.GetDataPresent(DataFormats.UnicodeText)) return null;
+        if (data.GetDataPresent(DataFormats.FileDrop) || !data.GetDataPresent(DataFormats.UnicodeText)) return null;
         var text = data.GetData(DataFormats.UnicodeText) as string;
         if (string.IsNullOrEmpty(text)) return null;
         if (Encoding.UTF8.GetByteCount(text) > LanProtocol.MaxClipboard) throw new InvalidDataException("文本过大。");

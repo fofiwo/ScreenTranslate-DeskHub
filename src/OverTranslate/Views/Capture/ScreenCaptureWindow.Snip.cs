@@ -76,7 +76,7 @@ public partial class ScreenCaptureWindow
 
         InitializeSnipChrome();
         HintHost.Visibility = Visibility.Collapsed;
-        Loaded += (_, _) => { HintHost.Visibility = Visibility.Collapsed; LayoutSnipToolbar(); SetSnipTool(SnipTool.Select); };
+        Loaded += (_, _) => { HintHost.Visibility = Visibility.Collapsed; LayoutSnipToolbar(); if (!_hasSelection) SetSnipTool(SnipTool.Select); };
         SizeChanged += (_, _) => LayoutSnipToolbar();
         PreviewMouseMove += SnipPreviewMove;
         PreviewMouseLeftButtonDown += SnipPickerDown;
@@ -91,7 +91,7 @@ public partial class ScreenCaptureWindow
         foreach (var (kind, button) in _snipTools) button.IsChecked = kind == tool;
         RefreshSnipSelection();
         SetSnipStatus(tool switch {
-            SnipTool.Select => "拖动移动选区，四角调整大小 · 双击 / Enter 复制 · C 复制色值",
+            SnipTool.Select => "拖动移动选区，边框或四角调整大小 · 双击 / Enter 复制 · C 复制色值",
             SnipTool.Picker => "移动鼠标实时取色 · C / 单击复制色值 · Shift 切换 HEX/RGB · 双击选区复制截图",
             SnipTool.Text => "在选区单击输入文字 · Enter 确认 · Shift+Enter 换行",
             _ => "在选区拖动标注 · Ctrl+Z 撤销 · Ctrl+Y 重做" });
@@ -329,8 +329,7 @@ public partial class ScreenCaptureWindow
     {
         if (_snipClosed || _snipWriting || !_hasSelection || !_selectionWpfRect.Contains(point) || IsSnipToolbarTarget(source)) return false;
         for (var current = source; current is not null; current = current is Visual ? VisualTreeHelper.GetParent(current) : LogicalTreeHelper.GetParent(current))
-            if (current is TextBox || ReferenceEquals(current, TopLeftHandle) || ReferenceEquals(current, TopRightHandle)
-                || ReferenceEquals(current, BottomLeftHandle) || ReferenceEquals(current, BottomRightHandle)) return false;
+            if (current is TextBox || (current is Thumb && !ReferenceEquals(current, SelectionBody))) return false;
         return true;
     }
 
@@ -368,8 +367,11 @@ public partial class ScreenCaptureWindow
         if (_snipSource is null) { SetSnipStatus("请先拖动框选截图区域。"); return; }
         FinishSnipStroke(); CommitSnipText(); SetSnipWriting(true);
         var elapsed = System.Diagnostics.Stopwatch.StartNew();
+        var restoreWindow = IsVisible;
         try
         {
+            // 隐藏不触发 Closed，后台复制仍持有选区，失败时可恢复编辑。
+            Hide();
             var source = _snipSource;
             var document = new SnipDocument();
             foreach (var mark in _snipDocument.Marks) document.Add(mark);
@@ -389,7 +391,12 @@ public partial class ScreenCaptureWindow
         {
             SnipLog.Warn("Screenshot copy failed: type={Type}, hresult={HResult:X8}, elapsedMs={Elapsed}",
                 ex.GetType().Name, ex.HResult, elapsed.ElapsedMilliseconds);
-            if (!_snipClosed) SetSnipStatus("截图复制失败，选区和标注已保留，请重试。");
+            if (!_snipClosed)
+            {
+                SetSnipWriting(false);
+                if (restoreWindow) { Show(); Activate(); }
+                SetSnipStatus("截图复制失败，选区和标注已保留，请重试。");
+            }
         }
         finally { SetSnipWriting(false); }
     }

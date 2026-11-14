@@ -18,6 +18,18 @@
 
         <!-- Absolute-positioned canvas for selection rect -->
         <Canvas x:Name="OverlayCanvas">
+            <Canvas.Resources>
+                <Style x:Key="SelectionEdgeHandleStyle" TargetType="Thumb">
+                    <Setter Property="Visibility" Value="Collapsed"/>
+                    <Setter Property="Template">
+                        <Setter.Value>
+                            <ControlTemplate TargetType="Thumb">
+                                <Border Background="Transparent"/>
+                            </ControlTemplate>
+                        </Setter.Value>
+                    </Setter>
+                </Style>
+            </Canvas.Resources>
             <!-- The tint over the framed content, light enough to read as a wash rather than as a
                  filter — the whole point of cutting the dim away here is that this area is legible. -->
             <Rectangle x:Name="SelectionFill"
@@ -69,6 +81,23 @@
                     </ControlTemplate>
                 </Thumb.Template>
             </Thumb>
+
+            <Thumb x:Name="TopEdgeHandle" Height="14" Cursor="SizeNS"
+                   Style="{StaticResource SelectionEdgeHandleStyle}"
+                   AutomationProperties.Name="调整选区上边界"
+                   DragDelta="TopEdgeHandle_DragDelta"/>
+            <Thumb x:Name="BottomEdgeHandle" Height="14" Cursor="SizeNS"
+                   Style="{StaticResource SelectionEdgeHandleStyle}"
+                   AutomationProperties.Name="调整选区下边界"
+                   DragDelta="BottomEdgeHandle_DragDelta"/>
+            <Thumb x:Name="LeftEdgeHandle" Width="14" Cursor="SizeWE"
+                   Style="{StaticResource SelectionEdgeHandleStyle}"
+                   AutomationProperties.Name="调整选区左边界"
+                   DragDelta="LeftEdgeHandle_DragDelta"/>
+            <Thumb x:Name="RightEdgeHandle" Width="14" Cursor="SizeWE"
+                   Style="{StaticResource SelectionEdgeHandleStyle}"
+                   AutomationProperties.Name="调整选区右边界"
+                   DragDelta="RightEdgeHandle_DragDelta"/>
 
             <Thumb x:Name="TopLeftHandle"
                    Width="14" Height="14"

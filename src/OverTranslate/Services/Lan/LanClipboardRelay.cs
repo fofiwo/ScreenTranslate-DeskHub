@@ -6,6 +6,7 @@ internal sealed record LanClipboardMessage(string Id, LanClipboardPayload Payloa
 internal sealed class LanClipboardRelay : IDisposable
 {
     private readonly object _gate = new();
+    private readonly SemaphoreSlim _applyGate = new(1, 1);
     private readonly Dictionary<LanNode, Action<LanClipboardMessage>> _nodes = [];
     private readonly HashSet<string> _seen = [];
     private readonly Queue<string> _order = new();
@@ -34,6 +35,19 @@ internal sealed class LanClipboardRelay : IDisposable
         }
     }
     private void Sent(string id) => Remember(id);
+    private async Task<bool> ApplyAsync(string id, Func<Task> apply, CancellationToken token)
+    {
+        // 多路收到同一消息时，必须等首次写入成功才能确认重复消息。
+        await _applyGate.WaitAsync(token).ConfigureAwait(false);
+        try
+        {
+            lock (_gate) { if (_seen.Contains(id)) return false; }
+            await apply().ConfigureAwait(false);
+            Remember(id);
+            return true;
+        }
+        finally { _applyGate.Release(); }
+    }
     public void Add(LanNode node)
     {
         lock (_gate)
@@ -41,7 +55,7 @@ internal sealed class LanClipboardRelay : IDisposable
             if (_nodes.ContainsKey(node)) return;
             Action<LanClipboardMessage> received = message => Forward(node, message);
             _nodes[node] = received;
-            node.AcceptClipboardMessage = Remember;
+            node.ApplyClipboardMessageAsync = ApplyAsync;
             node.ClipboardMessageId = MessageId;
             node.ClipboardSending += Sent;
             node.ClipboardReceived += received;
@@ -63,7 +77,7 @@ internal sealed class LanClipboardRelay : IDisposable
         lock (_gate)
         {
             if (!_nodes.Remove(node, out var received)) return;
-            node.ClipboardReceived -= received; node.ClipboardSending -= Sent; node.AcceptClipboardMessage = null; node.ClipboardMessageId = null;
+            node.ClipboardReceived -= received; node.ClipboardSending -= Sent; node.ApplyClipboardMessageAsync = null; node.ClipboardMessageId = null;
         }
     }
     public void Dispose() { lock (_gate) { foreach (var node in _nodes.Keys.ToArray()) Remove(node); } }
