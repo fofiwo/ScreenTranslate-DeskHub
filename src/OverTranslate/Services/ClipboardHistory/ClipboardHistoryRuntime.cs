@@ -166,7 +166,18 @@ internal sealed class ClipboardHistoryRuntime : IDisposable
     private bool _capturePending;
     private bool _stopping;
     private bool _disposed;
-    public static string? LastError { get; private set; }
+    private static string? _lastError;
+    public static event EventHandler? StatusChanged;
+    public static string? LastError
+    {
+        get => _lastError;
+        private set
+        {
+            if (_lastError == value) return;
+            _lastError = value;
+            StatusChanged?.Invoke(null, EventArgs.Empty);
+        }
+    }
     public static Task<ClipboardHistoryStore> StoreAsync => StoreLoader.OpenAsync();
     internal static void ClearStorageError()
     {
@@ -195,7 +206,11 @@ internal sealed class ClipboardHistoryRuntime : IDisposable
         {
             var store = await _openStore().ConfigureAwait(false);
             await Task.Run(() => store.Add(captured.Record, captured.Png)).ConfigureAwait(false);
-        }, error => LastError = error is null ? null : "有一条剪贴板内容未能保存，请检查数据目录可写及磁盘空间；已有记录不会自动清理。");
+        }, error =>
+        {
+            if (error is not null) LogFailure("storage", error);
+            LastError = error is null ? null : "有一条剪贴板内容未能保存：历史文件写入失败，请检查保存目录权限与磁盘空间；后续复制仍会尝试保存。";
+        });
         _timer = new DispatcherTimer(TimeSpan.FromMilliseconds(80), DispatcherPriority.Background, OnTick, dispatcher);
         _timer.Stop();
         _source = new HwndSource(new HwndSourceParameters("ScreenTranslate clipboard history")
@@ -225,7 +240,11 @@ internal sealed class ClipboardHistoryRuntime : IDisposable
         if (_captures.Count > 0) { _capturePending = true; return; }
         var task = CaptureAsync(); _captures.Add(task); _ = ObserveCaptureAsync(task);
     }
-    private async Task ObserveCaptureAsync(Task task) { await task; _captures.Remove(task); }
+    private async Task ObserveCaptureAsync(Task task)
+    {
+        try { await task; }
+        finally { _captures.Remove(task); }
+    }
 
     private async Task CaptureAsync()
     {
@@ -253,8 +272,16 @@ internal sealed class ClipboardHistoryRuntime : IDisposable
             if (_disposed || !_recordingEnabled() || sequence != _sequence() || captured is null) return;
             _writes.Enqueue(captured);
         }
-        catch (Exception) { LastError = "有一条剪贴板内容未能保存，请检查数据目录可写及磁盘空间；已有记录不会自动清理。"; }
+        catch (Exception ex)
+        {
+            LogFailure("capture", ex);
+            LastError = "有一条剪贴板内容未能保存：剪贴板读取或内容转换失败（可能被占用、格式不支持或图片过大）；后续复制仍会尝试保存。";
+        }
     }
+
+    private static void LogFailure(string stage, Exception error) =>
+        NLog.LogManager.GetCurrentClassLogger().Warn("Clipboard history failed: stage={Stage}, type={Type}, hresult={HResult:X8}",
+            stage, error.GetType().Name, error.HResult);
 
     private static string ReadSource()
     {

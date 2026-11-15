@@ -133,6 +133,7 @@ public partial class ClipboardHistoryWindow : Window
     private readonly Func<bool> _saveSettings;
     private readonly Action<ClipboardHistoryStore, string> _changeDirectory;
     private bool _relocating;
+    private string? _storageStatus;
     private OriginalApplicationPaste.Target _pasteTarget;
     private readonly ISystemClipboardHistory _systemHistory;
     private readonly CancellationTokenSource _lifetime = new();
@@ -186,6 +187,7 @@ public partial class ClipboardHistoryWindow : Window
         };
         Icon = AppIconService.CreateCompactIcon();
         _store.Changed += Store_Changed;
+        ClipboardHistoryRuntime.StatusChanged += Store_Changed;
         _timeTimer.Tick += (_, _) => RefreshVisibleTimes(HistoryList);
         Loaded += (_, _) => SearchBox.Focus();
         MouseEnter += (_, _) => Dispatcher.BeginInvoke(DispatcherPriority.Input, () =>
@@ -197,10 +199,7 @@ public partial class ClipboardHistoryWindow : Window
             if (IsVisible) { _timeTimer.Start(); RefreshVisibleTimes(HistoryList); RefreshViews(); }
             else { ++_previewVersion; _timeTimer.Stop(); PreviewPanel.Visibility = Visibility.Collapsed; PreviewImage.Source = null; PreviewText.Clear(); }
         };
-        Activated += (_, _) =>
-        {
-            if (ClipboardHistoryRuntime.LastError is { } error) StatusText.Text = error;
-        };
+        Activated += (_, _) => RefreshStorageStatus();
         Deactivated += (_, _) => { Topmost = WindowPinned || HasIncomingFiles; ScheduleDismiss(); };
         MenuButton.ContextMenu.Closed += (_, _) => ScheduleDismiss();
         HistoryList.ContextMenu.Closed += (_, _) => ScheduleDismiss();
@@ -208,12 +207,13 @@ public partial class ClipboardHistoryWindow : Window
         Closed += (_, _) =>
         {
             _closed = true; _lifetime.Cancel(); _timeTimer.Stop(); _store.Changed -= Store_Changed;
+            ClipboardHistoryRuntime.StatusChanged -= Store_Changed;
             foreach (var card in IncomingRequestsPanel.Children.OfType<FileReceiveCard>()) card.Reject();
             _placementSource?.RemoveHook(PlacementMessage); _placementSource = null;
             HistoryList.ItemsSource = null; PreviewImage.Source = null; PreviewText.Clear(); _lifetime.Dispose();
             if (ReferenceEquals(_current, this)) _current = null;
         };
-        StatusText.Text = store.UnreadableCount > 0 ? $"{store.UnreadableCount} 条记录无法读取，原文件已保留。" : ClipboardHistoryRuntime.LastError ?? "";
+        RefreshStorageStatus();
         RefreshViews();
     }
 
@@ -294,11 +294,25 @@ public partial class ClipboardHistoryWindow : Window
     {
         if (_closed || Dispatcher.HasShutdownStarted) return;
         if (Interlocked.Exchange(ref _changeQueued, 1) != 0) return;
-        Dispatcher.BeginInvoke(DispatcherPriority.Background, () =>
+        try { Dispatcher.BeginInvoke(DispatcherPriority.Background, () =>
         {
             Interlocked.Exchange(ref _changeQueued, 0);
-            if (!_closed && IsVisible) RefreshViews();
-        });
+            if (!_closed)
+            {
+                RefreshStorageStatus();
+                if (IsVisible) RefreshViews();
+            }
+        }); }
+        catch (InvalidOperationException) { Interlocked.Exchange(ref _changeQueued, 0); }
+    }
+
+    internal void RefreshStorageStatus()
+    {
+        var status = ClipboardHistoryRuntime.LastError ?? _store.BackupWarning
+            ?? (_store.UnreadableCount > 0 ? $"{_store.UnreadableCount} 条记录无法读取，原文件已保留。" : null);
+        if (status is not null) StatusText.Text = status;
+        else if (_storageStatus is not null && StatusText.Text == _storageStatus) StatusText.Text = "";
+        _storageStatus = status;
     }
 
     private void ScheduleDismiss() => Dispatcher.BeginInvoke(DispatcherPriority.Background, () =>

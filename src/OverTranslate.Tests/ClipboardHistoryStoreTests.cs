@@ -7,6 +7,105 @@ namespace OverTranslate.Tests;
 public sealed class ClipboardHistoryStoreTests : IDisposable
 {
     [Theory]
+    [InlineData(".clip")]
+    [InlineData(".png")]
+    public void FailedRecoveryBackupKeepsCommittedImageAndLaterCopiesWork(string extension)
+    {
+        var data = Path.Combine(_folder, "data");
+        var backup = Path.Combine(_folder, "backup");
+        var folder = Path.Combine(data, "clipboard-history");
+        var recovery = new InstalledDataRecovery(data, backup);
+        var store = new ClipboardHistoryStore(folder, recovery);
+        byte[] png = [1, 2, 3];
+        var original = store.Add(new() { Text = "backup failure fixture" }, png);
+        store.Delete(original.Id);
+        var blocked = Path.Combine(backup, "clipboard-history", original.Id + extension);
+        Directory.CreateDirectory(blocked);
+
+        var saved = store.Add(new() { Text = original.Text }, png);
+        Assert.NotNull(store.BackupWarning);
+        Assert.Equal(original.Id, Assert.Single(store.Read()).Id);
+        Assert.Equal(png, store.ReadImage(saved.Id));
+        Assert.Equal(saved.Id, Assert.Single(new ClipboardHistoryStore(folder, recovery).Read()).Id);
+        Assert.Equal(saved.Id, store.Add(new() { Text = original.Text }, png).Id);
+        store.Add(new() { Text = "next text" });
+        store.Add(new() { Text = "next image" }, [4, 5, 6]);
+        Assert.Equal(3, store.Read().Count);
+        Assert.NotNull(store.BackupWarning);
+
+        Directory.Delete(blocked);
+        store.Add(new() { Text = "after recovery" });
+        Assert.Null(store.BackupWarning);
+        var restored = new ClipboardHistoryStore(Path.Combine(backup, "clipboard-history"));
+        Assert.Equal(4, restored.Read().Count);
+        Assert.Equal(png, restored.ReadImage(saved.Id));
+    }
+
+    [Fact]
+    public void PendingBackupUsesLatestPinAndCopyTimeAndDoesNotResurrectDeletedRecords()
+    {
+        var data = Path.Combine(_folder, "data");
+        var backup = Path.Combine(_folder, "backup");
+        Directory.CreateDirectory(_folder);
+        File.WriteAllText(backup, "block backup directory");
+        var recovery = new InstalledDataRecovery(data, backup);
+        var store = new ClipboardHistoryStore(Path.Combine(data, "clipboard-history"), recovery);
+        var kept = store.Add(new() { Text = "keep" });
+        var deleted = store.Add(new() { Text = "delete" });
+        store.SetPinned(kept.Id, true);
+        var now = DateTimeOffset.UtcNow.AddMinutes(1);
+        store.MarkCopied(kept.Id, now);
+        Assert.True(store.Read().Single(r => r.Id == kept.Id).IsPinned);
+
+        File.Delete(backup);
+        store.Delete(deleted.Id);
+        store.Add(new() { Text = "next" });
+        Assert.Null(store.BackupWarning);
+        var restored = new ClipboardHistoryStore(Path.Combine(backup, "clipboard-history"));
+        Assert.DoesNotContain(restored.Read(), r => r.Id == deleted.Id);
+        var saved = restored.Read().Single(r => r.Id == kept.Id);
+        Assert.True(saved.IsPinned);
+        Assert.Equal(now, saved.CopiedAt);
+    }
+
+    [Fact]
+    public void RelocationCompletesPendingBackupsInTheNewLocation()
+    {
+        var data = Path.Combine(_folder, "data");
+        var backup = Path.Combine(_folder, "backup");
+        Directory.CreateDirectory(_folder);
+        File.WriteAllText(backup, "block old backup");
+        var store = new ClipboardHistoryStore(Path.Combine(data, "clipboard-history"), new InstalledDataRecovery(data, backup));
+        var record = store.Add(new() { Text = "move pending image" }, [1, 2, 3]);
+        Assert.NotNull(store.BackupWarning);
+        var target = Path.Combine(_folder, "new-data");
+        var newBackup = Path.Combine(_folder, "new-backup");
+        store.Relocate(Path.Combine(target, "clipboard-history"), _ => { }, new InstalledDataRecovery(target, newBackup));
+        Assert.Null(store.BackupWarning);
+        store.Add(new() { Text = "after move" });
+        var restored = new ClipboardHistoryStore(Path.Combine(newBackup, "clipboard-history"));
+        Assert.Equal(2, restored.Read().Count);
+        Assert.Equal(new byte[] { 1, 2, 3 }, restored.ReadImage(record.Id));
+        Assert.Equal("block old backup", File.ReadAllText(backup));
+    }
+
+    [Fact]
+    public void RecopyAndPinDoNotRewriteAnAlreadyBackedUpImage()
+    {
+        var data = Path.Combine(_folder, "data");
+        var backup = Path.Combine(_folder, "backup");
+        var store = new ClipboardHistoryStore(Path.Combine(data, "clipboard-history"), new InstalledDataRecovery(data, backup));
+        byte[] png = [1, 2, 3];
+        var record = store.Add(new() { Text = "reuse backup" }, png);
+        using var locked = new FileStream(Path.Combine(backup, "clipboard-history", record.Id + ".png"), FileMode.Open, FileAccess.Read, FileShare.Read);
+        store.Add(new() { Text = record.Text }, png);
+        store.SetPinned(record.Id, true);
+        store.MarkCopied(record.Id, DateTimeOffset.UtcNow.AddMinutes(1));
+        Assert.Null(store.BackupWarning);
+        Assert.True(Assert.Single(new ClipboardHistoryStore(Path.Combine(backup, "clipboard-history")).Read()).IsPinned);
+    }
+
+    [Theory]
     [InlineData(false)]
     [InlineData(true)]
     public void RawContentDeletionRemovesSavedContentAndItsRecoveryCopies(bool withImage)

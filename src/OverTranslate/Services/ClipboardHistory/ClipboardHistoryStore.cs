@@ -82,6 +82,10 @@ internal sealed class ClipboardHistoryStore
     private InstalledDataRecovery? _recovery;
     private readonly Dictionary<string, ClipboardRecord> _records = new(StringComparer.Ordinal);
     private readonly HashSet<string> _unreadableIds = new(StringComparer.OrdinalIgnoreCase);
+    // shortcut: 待备份集合仅保留到进程退出；需要跨重启补齐时再持久化重试清单。
+    private readonly Dictionary<string, bool> _pendingBackups = new(StringComparer.Ordinal);
+    private volatile string? _backupWarning;
+    public string? BackupWarning => _backupWarning;
     private IReadOnlyList<ClipboardRecord>? _snapshot;
     public static string DefaultFolder => ClipboardHistoryStorage.ResolveFolder(AppDataPaths.Root);
     public string Folder { get; private set; }
@@ -182,6 +186,8 @@ internal sealed class ClipboardHistoryStore
             }
             Folder = folder;
             _recovery = recovery;
+            _pendingBackups.Clear();
+            _backupWarning = null;
         }
         Changed?.Invoke(this, EventArgs.Empty);
     }
@@ -226,6 +232,7 @@ internal sealed class ClipboardHistoryStore
                 throw;
             }
             _records[id] = record; _snapshot = null;
+            BackupCommittedRecord(id, record.HasImage && (addedImage || existing is null));
         }
         Changed?.Invoke(this, EventArgs.Empty);
         return record;
@@ -252,6 +259,7 @@ internal sealed class ClipboardHistoryStore
             if (!_records.TryGetValue(id, out var record)) return;
             record = record with { PinnedAt = pinned ? DateTimeOffset.UtcNow : null };
             Save(record); _records[id] = record; _snapshot = null;
+            BackupCommittedRecord(id);
         }
         Changed?.Invoke(this, EventArgs.Empty);
     }
@@ -264,6 +272,7 @@ internal sealed class ClipboardHistoryStore
             if (!_records.TryGetValue(id, out var record) || copiedAt <= record.CopiedAt) return;
             record = record with { CopiedAt = copiedAt };
             Save(record); _records[id] = record; _snapshot = null;
+            BackupCommittedRecord(id);
         }
         Changed?.Invoke(this, EventArgs.Empty);
     }
@@ -330,8 +339,14 @@ internal sealed class ClipboardHistoryStore
         {
             foreach (var path in paths)
                 if (ReserveDelete(path) is { } handle) handles.Add(handle);
-            foreach (var path in paths) File.Delete(path);
+            foreach (var path in paths)
+            {
+                try { File.Delete(path); }
+                catch (DirectoryNotFoundException) { } // 备份尚未创建时仍允许删除已提交的主记录。
+            }
             _records.Remove(id); _snapshot = null;
+            _pendingBackups.Remove(id);
+            if (_pendingBackups.Count == 0) _backupWarning = null;
         }
         finally { foreach (var handle in handles) handle.Dispose(); }
     }
@@ -400,8 +415,31 @@ internal sealed class ClipboardHistoryStore
             using (var stream = new FileStream(temporary, FileMode.CreateNew, FileAccess.Write, FileShare.None))
             { stream.Write(bytes); stream.Flush(true); }
             File.Move(temporary, path, true);
-            _recovery?.BackupFile(path);
         }
         finally { if (File.Exists(temporary)) File.Delete(temporary); }
+    }
+
+    private void BackupCommittedRecord(string id, bool includeImage = false)
+    {
+        if (_recovery is null) return;
+        _pendingBackups[id] = includeImage || _pendingBackups.GetValueOrDefault(id);
+        // 主记录已提交；备份故障不能撤销图片或把本条内容变成不可再次保存的孤立文件。
+        foreach (var pending in _pendingBackups.ToArray())
+        {
+            try
+            {
+                if (pending.Value) _recovery.BackupFile(ImagePath(pending.Key));
+                _recovery.BackupFile(Path.Combine(Folder, pending.Key + ".clip"));
+                _pendingBackups.Remove(pending.Key);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Security.SecurityException)
+            {
+                _backupWarning = "剪贴板内容已保存，但恢复备份未完成；请检查备份目录权限与空间。本次运行中后续保存会重试。";
+                NLog.LogManager.GetCurrentClassLogger().Warn("Clipboard history backup failed: type={Type}, hresult={HResult:X8}",
+                    ex.GetType().Name, ex.HResult);
+                return;
+            }
+        }
+        _backupWarning = null;
     }
 }

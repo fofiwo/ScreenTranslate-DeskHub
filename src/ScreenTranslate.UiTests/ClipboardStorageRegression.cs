@@ -9,8 +9,67 @@ namespace OverTranslate.Tests;
 
 public sealed partial class ScreenTranslateShellTests
 {
+    private static void VerifyClipboardFailureRecovery()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "clipboard-failure-ui-" + Guid.NewGuid().ToString("N"));
+        var data = Path.Combine(root, "data");
+        var backup = Path.Combine(root, "backup");
+        var folder = Path.Combine(data, "clipboard-history");
+        Directory.CreateDirectory(data);
+        var store = new ClipboardHistoryStore(folder, new OverTranslate.Services.InstalledDataRecovery(data, backup));
+        var window = new ClipboardHistoryWindow(store, settings: new AppSettings(), saveSettings: () => true);
+        var status = (TextBlock)window.FindName("StatusText");
+        var failCapture = true;
+        var captured = new CapturedClipboard(new() { Text = "image fixture" }, [1, 2, 3]);
+        using var runtime = new ClipboardHistoryRuntime(System.Windows.Threading.Dispatcher.CurrentDispatcher,
+            Task.FromResult(store), listen: false, sequence: () => 1,
+            capture: () => failCapture ? throw new InvalidDataException("fixture unsupported image") : captured);
+        void Capture()
+        {
+            runtime.TrackCapture();
+            var drain = runtime.DrainPendingAsync();
+            PumpUntil(() => drain.IsCompleted);
+            drain.GetAwaiter().GetResult();
+        }
+        try
+        {
+            Capture();
+            PumpUntil(() => status.Text.Contains("读取或内容转换失败"));
+            Assert.Empty(store.Read());
+            failCapture = false;
+            File.WriteAllText(folder, "block primary directory");
+            Capture();
+            PumpUntil(() => status.Text.Contains("历史文件写入失败"));
+            Assert.Empty(store.Read());
+            File.Delete(folder);
+            File.WriteAllText(backup, "block backup directory");
+            Capture();
+            PumpUntil(() => status.Text.Contains("已保存，但恢复备份未完成"));
+            Assert.Single(store.Read());
+            Assert.Null(ClipboardHistoryRuntime.LastError);
+            captured = new(new() { Text = "next text" }, null);
+            Capture();
+            Assert.Equal(2, store.Read().Count);
+            File.Delete(backup);
+            captured = new(new() { Text = "after recovery" }, null);
+            Capture();
+            PumpUntil(() => status.Text == "");
+            Assert.Equal(3, new ClipboardHistoryStore(Path.Combine(backup, "clipboard-history")).Read().Count);
+            status.Text = "已复制。";
+            window.RefreshStorageStatus();
+            Assert.Equal("已复制。", status.Text);
+        }
+        finally
+        {
+            window.Close();
+            ClipboardHistoryRuntime.ClearStorageError();
+            if (Directory.Exists(root)) Directory.Delete(root, true);
+        }
+    }
+
     private static void VerifyClipboardStorageDirectory()
     {
+        VerifyClipboardFailureRecovery();
         var root = Path.Combine(Path.GetTempPath(), "clipboard-storage-ui-" + Guid.NewGuid().ToString("N"));
         var source = Path.Combine(root, "old", "clipboard-history");
         var targetParent = Path.Combine(root, "new");
