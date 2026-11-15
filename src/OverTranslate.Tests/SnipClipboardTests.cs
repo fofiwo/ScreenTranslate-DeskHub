@@ -9,6 +9,16 @@ namespace OverTranslate.Tests;
 public class SnipClipboardTests
 {
     [Fact]
+    public async Task NativeImageRejectsMissingOwnerBeforeOpeningClipboard()
+    {
+        await SnipClipboard.RunStaAsync(() =>
+        {
+            Assert.Throws<InvalidOperationException>(() => OverTranslate.Services.ScreenshotClipboardImage.SetImage(Image(10, 20, 30), IntPtr.Zero));
+            return Task.CompletedTask;
+        });
+    }
+
+    [Fact]
     public async Task SyntheticPreparationDoesNotWaitForAnUnrelatedClipboardWrite()
     {
         var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);

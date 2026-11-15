@@ -67,6 +67,7 @@ public sealed partial class ScreenTranslateShellTests
             PumpUntil(() => !window.IsCopyPending);
             Assert.Equal(1, store.Read().Prompts.Single(p => p.Id == second.Id).CopyCount);
             Assert.Equal(1, list.Items.Cast<LibraryPrompt>().Single(p => p.Id == second.Id).CopyCount);
+            window.Show(); window.UpdateLayout();
             PumpUntil(() => ((LibraryPrompt)list.Items[0]).Id == second.Id);
         }
         finally { hold.TrySetResult(); window.CloseForTests(); }
@@ -86,6 +87,7 @@ public sealed partial class ScreenTranslateShellTests
             list.SelectedIndex = 1;
             window.UpdateLayout();
             ((System.Windows.Controls.Button)window.FindName("PromptCopyButton")).RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Button.ClickEvent));
+            Assert.False(window.IsVisible, "Successful prompt copy must hide the library before history is saved.");
             PumpUntil(() => !window.IsCopyPending);
             window.Hide();
             window.Show(); window.UpdateLayout();
@@ -146,6 +148,8 @@ public sealed partial class ScreenTranslateShellTests
                 hold.SetResult();
                 PumpUntil(() => !window.IsCopyPending);
                 Assert.Single(copied);
+                Assert.False(window.IsVisible);
+                window.Show(); window.UpdateLayout();
                 Assert.Contains("已复制", ((TextBlock)window.FindName("Status")).Text);
                 Assert.Contains("未能保存复制次数", ((TextBlock)window.FindName("Status")).Text);
             }

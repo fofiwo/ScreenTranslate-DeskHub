@@ -372,6 +372,7 @@ public partial class ScreenCaptureWindow
         {
             // 隐藏不触发 Closed，后台复制仍持有选区，失败时可恢复编辑。
             Hide();
+            var owner = write is null ? new System.Windows.Interop.WindowInteropHelper(this).EnsureHandle() : IntPtr.Zero;
             var source = _snipSource;
             var document = new SnipDocument();
             foreach (var mark in _snipDocument.Marks) document.Add(mark);
@@ -380,7 +381,7 @@ public partial class ScreenCaptureWindow
                 cancellationToken.ThrowIfCancellationRequested();
                 var image = document.Marks.Count == 0 ? source : document.Render(source);
                 if (write is not null) await SnipClipboard.WriteAsync(() => write(image), cancellationToken);
-                else await SnipClipboard.WriteImageAsync(image, cancellationToken);
+                else await SnipClipboard.WriteImageAsync(image, cancellationToken, owner: owner);
             });
             SnipLog.Info("Screenshot copy verified: {Width}x{Height}, elapsedMs={Elapsed}",
                 source.PixelWidth, source.PixelHeight, elapsed.ElapsedMilliseconds);
@@ -459,7 +460,7 @@ public partial class ScreenCaptureWindow
 
 internal static class SnipClipboard
 {
-    // 已进入 OLE 的写入无法中断；后续截图、色值和贴图复制须等它结束。
+    // 已进入系统调用的写入无法中断；后续截图、色值和贴图复制须等它结束。
     private static readonly SemaphoreSlim Writer = new(1, 1);
 
     internal static Task PrepareAsync() => RunStaAsync(() =>
@@ -474,21 +475,17 @@ internal static class SnipClipboard
     });
 
     internal static Task WriteImageAsync(BitmapSource image, CancellationToken cancellationToken,
-        Action? write = null, Func<BitmapSource?>? read = null) => WriteCoreAsync(async () =>
+        Action? write = null, Func<BitmapSource?>? read = null, IntPtr owner = default) => WriteCoreAsync(async () =>
     {
         if (write is not null) write();
-        else
-        {
-            var data = new DataObject(); data.SetImage(image);
-            System.Windows.Clipboard.SetDataObject(data, true);
-        }
-        // OLE 发布与持久化之间可被其他进程替换；调用返回不代表剪贴板仍是本次截图。
+        else ScreenshotClipboardImage.SetImage(image, owner);
+        // 发布后仍可被其他进程替换；调用返回不代表剪贴板仍是本次截图。
         for (var attempt = 0; ; attempt++)
         {
             cancellationToken.ThrowIfCancellationRequested();
             try
             {
-                var actual = read is not null ? read() : System.Windows.Clipboard.GetImage();
+                var actual = read is not null ? read() : ScreenshotClipboardImage.ReadImage();
                 if (!SameImage(image, actual))
                     throw new ExternalException("剪贴板图片已被替换或无法读取。", unchecked((int)0x800401D3));
                 return;

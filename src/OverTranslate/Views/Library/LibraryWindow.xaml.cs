@@ -534,7 +534,9 @@ public partial class LibraryWindow : Window
             {
                 try
                 {
-                    var count = await SaveCopyHistory(() => _store.RememberCopiedPrompt(item.Id));
+                    var history = SaveCopyHistory(() => _store.RememberCopiedPrompt(item.Id));
+                    Hide();
+                    var count = await history;
                     ++_reloadVersion;
                     item.CopyCount = Math.Max(item.CopyCount, count);
                     // 搜索或筛选可能已替换列表对象，按 ID 更新当前快照。
@@ -544,7 +546,7 @@ public partial class LibraryWindow : Window
                 }
                 catch (Exception)
                 {
-                    if (IsVisible && version == _promptCopyVersion && (PromptList.SelectedItem as LibraryPrompt)?.Id == item.Id)
+                    if (!_shutdown && version == _promptCopyVersion && (PromptList.SelectedItem as LibraryPrompt)?.Id == item.Id)
                         Notice("提示词已复制，但未能保存复制次数，请检查资料文件后重试。", true);
                 }
             }

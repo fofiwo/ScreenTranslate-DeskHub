@@ -33,7 +33,7 @@ public sealed partial class ScreenTranslateShellTests
             Assert.Equal(3, attempts);
             Assert.Equal("仅用于测试的完整正文\n中文 😀", copied.Single());
             PumpUntil(() => store.Read().Prompts.Single().CopyCount == 1);
-            Assert.Equal("已复制", button.Content);
+            Assert.False(window.IsVisible);
         }
         finally { window.CloseForTests(); }
         VerifyCopyCancellation(directory);
@@ -70,7 +70,8 @@ public sealed partial class ScreenTranslateShellTests
             button.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Button.ClickEvent));
             PumpUntil(() => !window.IsCopyPending);
             Assert.Equal(["fixture-B"], copied);
-            Assert.Contains("B", ((TextBlock)window.FindName("PromptCopyFeedback")).Text);
+            Assert.False(window.IsVisible);
+            window.Show(); window.UpdateLayout();
             Assert.Equal(0, store.Read().Prompts.Single(p => p.Title == "A").CopyCount);
             busy = true;
             button.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Button.ClickEvent));
@@ -84,6 +85,7 @@ public sealed partial class ScreenTranslateShellTests
             PumpUntil(() => !window.IsCopyPending);
             Assert.Equal(8, attempts - before);
             Assert.Equal("重试复制", button.Content);
+            Assert.True(window.IsVisible, "Failed copy must keep the library open for retry.");
             Assert.Equal(1, store.Read().Prompts.Single(p => p.Title == "B").CopyCount);
             Assert.Single(copied);
         }
@@ -116,15 +118,21 @@ public sealed partial class ScreenTranslateShellTests
             var timer = Stopwatch.StartNew();
             button.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Button.ClickEvent));
             Assert.True(timer.ElapsedMilliseconds < 150, "Click must return before the store lock is released.");
-            Assert.Equal("已复制", button.Content);
+            Assert.False(window.IsVisible, "History lock must not delay hiding after a successful copy.");
             Assert.True(window.IsCopyPending);
             for (var i = 0; i < 12; i++)
+            {
+                window.Show(); window.UpdateLayout();
                 button.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Button.ClickEvent));
+                Assert.False(window.IsVisible);
+            }
+            window.Show(); window.UpdateLayout();
             var heartbeat = false;
             window.Dispatcher.BeginInvoke(() => heartbeat = true);
             PumpUntil(() => heartbeat);
             release.Set();
             PumpUntil(() => !window.IsCopyPending);
+            Assert.True(window.IsVisible, "Finishing old history writes must not hide a reopened library.");
             Assert.Equal(13, store.Read().Prompts.Single().CopyCount);
         }
         finally { release.Set(); holder.GetAwaiter().GetResult(); window.CloseForTests(); }
@@ -183,7 +191,7 @@ public sealed partial class ScreenTranslateShellTests
                 // 由界面线程解除独立进程的占用，验证消息泵仍能执行。
                 window.Dispatcher.BeginInvoke(() => clipboardLock.Release());
                 PumpUntil(() => !window.IsCopyPending);
-                Assert.Equal("已复制", button.Content);
+                Assert.False(window.IsVisible);
                 AssertFixtureClipboard(text);
                 Assert.Equal(1, store.Read().Prompts.Single().CopyCount);
             }
@@ -191,11 +199,12 @@ public sealed partial class ScreenTranslateShellTests
             var repeatButton = (System.Windows.Controls.Button)window.FindName("PromptCopyButton");
             for (var i = 0; i < 40; i++)
             {
+                window.Show(); window.UpdateLayout();
                 var timer = Stopwatch.StartNew();
                 repeatButton.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Button.ClickEvent));
                 clickTimings.Add(timer.Elapsed.TotalMilliseconds);
                 PumpUntil(() => !window.IsCopyPending);
-                Assert.Equal("已复制", repeatButton.Content);
+                Assert.False(window.IsVisible);
                 AssertFixtureClipboard(text);
             }
             Assert.Equal(41, store.Read().Prompts.Single().CopyCount);

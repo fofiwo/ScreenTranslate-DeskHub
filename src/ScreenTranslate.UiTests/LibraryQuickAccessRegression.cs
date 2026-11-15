@@ -98,6 +98,7 @@ public sealed partial class ScreenTranslateShellTests
                 .RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Button.ClickEvent));
             PumpUntil(() => !window.IsCopyPending);
             Assert.Equal("仅用于测试的完整正文", Assert.Single(copied));
+            Assert.False(window.IsVisible, "Quick-access prompt copy must dismiss the library.");
             tabs.SelectedIndex = 1;
             window.Hide();
             window.ToggleVisibility();

@@ -47,6 +47,14 @@ public sealed partial class ScreenTranslateShellTests
                     Source = new Uri("pack://application:,,,/ScreenTranslate;component/Resources/Strings.zh-Hans.xaml", UriKind.Absolute)
                 };
                 ApplyTheme(app, "Light");
+                if (Environment.GetEnvironmentVariable("SCREEN_TRANSLATE_SNIP_COPY_ONLY") == "1")
+                {
+                    VerifySnipCopyResponsiveness();
+                    VerifySnipCopyAdversarial();
+                    VerifySnipImagePublication();
+                    VerifySnipImageCompatibility();
+                    return;
+                }
                 if (Environment.GetEnvironmentVariable("SCREEN_TRANSLATE_HOTKEY_RECOVERY_ONLY") == "1")
                 {
                     VerifyHotkeyRecovery();
@@ -755,9 +763,9 @@ public sealed partial class ScreenTranslateShellTests
             list.RaiseEvent(new System.Windows.Input.MouseButtonEventArgs(System.Windows.Input.Mouse.PrimaryDevice, 0, System.Windows.Input.MouseButton.Left) { RoutedEvent = UIElement.PreviewMouseLeftButtonUpEvent, Source = title });
             PumpUntil(() => !window.IsCopyPending);
             Assert.Equal("请检查这段 WPF 代码。\n保留完整换行。", copied.Last());
-            Assert.Equal("已复制", ((System.Windows.Controls.Button)window.FindName("PromptCopyButton")).Content);
-            Assert.Equal("已复制", ((TextBlock)window.FindName("CopyToastText")).Text);
-            Assert.True(((System.Windows.Controls.Primitives.Popup)window.FindName("CopyToast")).IsOpen);
+            Assert.False(window.IsVisible);
+            Assert.False(((System.Windows.Controls.Primitives.Popup)window.FindName("CopyToast")).IsOpen);
+            window.Show(); window.UpdateLayout();
             var beforeViewing = copied.Count;
             preview.Select(0, 2);
             Assert.Equal(beforeViewing, copied.Count);
@@ -1031,15 +1039,14 @@ public sealed partial class ScreenTranslateShellTests
             button.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Button.ClickEvent));
             PumpUntil(() => !window.IsCopyPending);
             Assert.StartsWith("第 2 条", copied.Last());
-            Assert.Contains("02 ·", feedback.Text);
-            Assert.Equal("已复制", button.Content);
-            Assert.True(popup.IsOpen);
+            Assert.False(window.IsVisible);
+            Assert.False(popup.IsOpen);
             Assert.Equal(1, secondPrompt.CopyCount);
             Assert.Same(secondPrompt, list.SelectedItem);
+            window.Show(); window.UpdateLayout();
             PumpUntil(() => ReferenceEquals(secondPrompt, list.Items[0]));
             Assert.Same(secondPrompt, list.Items[0]);
             Assert.Equal(1, store.Read().Prompts.Single(p => p.Id == secondPrompt.Id).CopyCount);
-            RenderCopyFeedback(popup, "compact-copy-feedback");
             Render(window, "compact-prompts-copied", 1120, 760);
             list.SelectedIndex = 2;
             var thirdPrompt = (LibraryPrompt)list.SelectedItem;
@@ -1052,13 +1059,14 @@ public sealed partial class ScreenTranslateShellTests
             PumpUntil(() => !window.IsCopyPending);
             Assert.Equal(2, copied.Count);
             Assert.StartsWith("第 3 条", copied.Last());
+            Assert.False(window.IsVisible);
+            window.Show(); window.UpdateLayout();
             PumpUntil(() => ReferenceEquals(secondPrompt, list.Items[0]));
             Assert.Same(secondPrompt, list.Items[0]);
             PumpUntil(() => ReferenceEquals(thirdPrompt, list.Items[1]));
             Assert.Same(thirdPrompt, list.Items[1]);
             Assert.Same(thirdPrompt, list.SelectedItem);
             Assert.Equal(1, thirdPrompt.CopyCount);
-            Assert.Equal("已复制", ((TextBlock)window.FindName("CopyToastText")).Text);
             window.UpdateLayout();
             row = (ListBoxItem)list.ItemContainerGenerator.ContainerFromItem(thirdPrompt);
             row.RaiseEvent(new System.Windows.Input.KeyEventArgs(System.Windows.Input.Keyboard.PrimaryDevice,
@@ -1066,6 +1074,8 @@ public sealed partial class ScreenTranslateShellTests
             PumpUntil(() => !window.IsCopyPending);
             Assert.Equal(3, copied.Count);
             Assert.Equal(2, thirdPrompt.CopyCount);
+            Assert.False(window.IsVisible);
+            window.Show(); window.UpdateLayout();
             PumpUntil(() => ReferenceEquals(thirdPrompt, list.Items[0]));
             Assert.Same(thirdPrompt, list.Items[0]);
             failCopy = true;
@@ -1074,6 +1084,7 @@ public sealed partial class ScreenTranslateShellTests
             Assert.Equal(3, copied.Count);
             Assert.Equal(2, store.Read().Prompts.Single(p => p.Id == thirdPrompt.Id).CopyCount);
             Assert.Equal("重试复制", button.Content);
+            Assert.True(window.IsVisible, "Failed prompt copy must leave the library open.");
             Assert.Contains("03 ·", feedback.Text);
             Assert.Contains("失败", feedback.Text);
             Assert.Contains("失败", ((TextBlock)window.FindName("CopyToastText")).Text);
@@ -1086,8 +1097,9 @@ public sealed partial class ScreenTranslateShellTests
             PumpUntil(() => !popup.IsOpen);
             Assert.Equal("复制全文", button.Content);
             Assert.DoesNotContain("已复制", ((TextBlock)window.FindName("Status")).Text);
+            Assert.False(window.IsVisible);
+            window.Show(); window.UpdateLayout();
             var rowCopy = Visuals<System.Windows.Controls.Button>((ListBoxItem)list.ItemContainerGenerator.ContainerFromIndex(2)).Single();
-            Assert.True(window.IsVisible, "Copy feedback expiry must not hide the library window.");
             var copiedBeforeButton = copied.Count;
             list.RaiseEvent(new System.Windows.Input.MouseButtonEventArgs(System.Windows.Input.Mouse.PrimaryDevice, 0, System.Windows.Input.MouseButton.Left) { RoutedEvent = UIElement.PreviewMouseLeftButtonUpEvent, Source = rowCopy });
             PumpUntil(() => !window.IsCopyPending);
@@ -1095,7 +1107,8 @@ public sealed partial class ScreenTranslateShellTests
             rowCopy.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Button.ClickEvent));
             PumpUntil(() => !window.IsCopyPending);
             Assert.Equal(copiedBeforeButton + 1, copied.Count);
-            Assert.Equal("已复制", rowCopy.Content);
+            Assert.False(window.IsVisible);
+            window.Show(); window.UpdateLayout();
             window.UpdateLayout();
             var copiedPrompt = (LibraryPrompt)list.SelectedItem;
             var copiedRow = (ListBoxItem)list.ItemContainerGenerator.ContainerFromItem(copiedPrompt);
