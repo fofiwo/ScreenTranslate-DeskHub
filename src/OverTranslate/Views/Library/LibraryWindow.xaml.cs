@@ -324,11 +324,11 @@ public partial class LibraryWindow : Window
             _copySourceContent = null;
         }
         PromptCopyButton.Content = "复制全文";
-        PromptCopyFeedback.Text = "单击查看 · ↑↓ 选择 · 按钮或 Enter 复制";
+        PromptCopyFeedback.Text = "单击复制 · ↑↓ 查看详情 · Enter 复制";
         PromptCopyFeedback.SetResourceReference(TextBlock.ForegroundProperty, "AppTextSecondary");
         if (_copyNoticeActive)
         {
-            Status.Text = Tabs.SelectedIndex == 0 ? "单击查看详情；↑↓ 选择，按钮或 Enter 复制。" : "选择连接查看详情，模型列表下拉选择即复制。";
+            Status.Text = Tabs.SelectedIndex == 0 ? "单击复制；↑↓ 查看详情，按钮或 Enter 复制。" : "选择连接查看详情，模型列表下拉选择即复制。";
             Status.SetResourceReference(TextBlock.ForegroundProperty, "AppTextSecondary");
             _copyNoticeActive = false;
         }
@@ -517,6 +517,21 @@ public partial class LibraryWindow : Window
 
     private void CopyPrompt_Click(object sender, RoutedEventArgs e)
     { if (((Button)sender).Tag is LibraryPrompt p) CopyPrompt(p, (Button)sender); }
+
+    private void PromptList_PreviewMouseLeftButtonUp(object sender, MouseButtonEventArgs e)
+    {
+        for (var source = e.OriginalSource as DependencyObject; source is not null && source != PromptList;
+            source = source is Visual ? VisualTreeHelper.GetParent(source) : LogicalTreeHelper.GetParent(source))
+        {
+            if (source is System.Windows.Controls.Primitives.ButtonBase or System.Windows.Controls.Primitives.ScrollBar) return;
+            if (source is ListBoxItem { DataContext: LibraryPrompt item } row)
+            {
+                CopyPrompt(item, row);
+                e.Handled = true;
+                return;
+            }
+        }
+    }
 
     private async void CopyPrompt(LibraryPrompt item, FrameworkElement anchor)
     {

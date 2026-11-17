@@ -766,10 +766,8 @@ public sealed partial class ScreenTranslateShellTests
             var row = (ListBoxItem)list.ItemContainerGenerator.ContainerFromIndex(0);
             var title = Visuals<TextBlock>(row).First(x => x.Text == "开发助手");
             list.RaiseEvent(new System.Windows.Input.MouseButtonEventArgs(System.Windows.Input.Mouse.PrimaryDevice, 0, System.Windows.Input.MouseButton.Left) { RoutedEvent = UIElement.PreviewMouseLeftButtonUpEvent, Source = title });
-            Assert.Empty(copied);
-            Assert.True(window.IsVisible);
-            ((System.Windows.Controls.Button)window.FindName("PromptCopyButton")).RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Button.ClickEvent));
             PumpUntil(() => !window.IsCopyPending);
+            Assert.Single(copied);
             Assert.Equal("请检查这段 WPF 代码。\n保留完整换行。", copied.Last());
             Assert.False(window.IsVisible);
             Assert.False(((System.Windows.Controls.Primitives.Popup)window.FindName("CopyToast")).IsOpen);
@@ -1057,20 +1055,17 @@ public sealed partial class ScreenTranslateShellTests
             Assert.Same(secondPrompt, list.Items[0]);
             Assert.Equal(1, store.Read().Prompts.Single(p => p.Id == secondPrompt.Id).CopyCount);
             Render(window, "compact-prompts-copied", 1120, 760);
-            list.SelectedIndex = 2;
-            var thirdPrompt = (LibraryPrompt)list.SelectedItem;
+            var thirdPrompt = (LibraryPrompt)list.Items[2];
             window.UpdateLayout();
             Assert.False(popup.IsOpen);
             Assert.Equal("复制全文", button.Content);
             var row = (ListBoxItem)list.ItemContainerGenerator.ContainerFromIndex(2);
             var rowTitle = Visuals<TextBlock>(row).First(t => t.Text.StartsWith("03 ·"));
             list.RaiseEvent(new System.Windows.Input.MouseButtonEventArgs(System.Windows.Input.Mouse.PrimaryDevice, 0, System.Windows.Input.MouseButton.Left) { RoutedEvent = UIElement.PreviewMouseLeftButtonUpEvent, Source = rowTitle });
-            Assert.Single(copied);
-            Assert.True(window.IsVisible);
-            Visuals<System.Windows.Controls.Button>(row).Single().RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Button.ClickEvent));
             PumpUntil(() => !window.IsCopyPending);
             Assert.Equal(2, copied.Count);
             Assert.StartsWith("第 3 条", copied.Last());
+            Assert.Same(thirdPrompt, list.SelectedItem);
             Assert.False(window.IsVisible);
             window.Show(); window.UpdateLayout();
             PumpUntil(() => ReferenceEquals(secondPrompt, list.Items[0]));
@@ -1091,7 +1086,10 @@ public sealed partial class ScreenTranslateShellTests
             PumpUntil(() => ReferenceEquals(thirdPrompt, list.Items[0]));
             Assert.Same(thirdPrompt, list.Items[0]);
             failCopy = true;
-            button.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Button.ClickEvent));
+            row = (ListBoxItem)list.ItemContainerGenerator.ContainerFromItem(thirdPrompt);
+            var summary = Visuals<TextBlock>(row).Single(t => t.Inlines.Count > 1);
+            list.RaiseEvent(new System.Windows.Input.MouseButtonEventArgs(System.Windows.Input.Mouse.PrimaryDevice, 0, System.Windows.Input.MouseButton.Left)
+                { RoutedEvent = UIElement.PreviewMouseLeftButtonUpEvent, Source = summary.Inlines.FirstInline });
             PumpUntil(() => !window.IsCopyPending);
             Assert.Equal(3, copied.Count);
             Assert.Equal(2, store.Read().Prompts.Single(p => p.Id == thirdPrompt.Id).CopyCount);
