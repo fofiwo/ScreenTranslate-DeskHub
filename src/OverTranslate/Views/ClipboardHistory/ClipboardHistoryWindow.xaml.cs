@@ -129,6 +129,12 @@ public partial class ClipboardHistoryWindow : Window
     private readonly ClipboardHistoryStore _store;
     private readonly Func<ClipboardRecord, Task> _copy;
     private readonly Func<OriginalApplicationPaste.Target, Task<bool>> _paste;
+    private readonly Func<System.Windows.IDataObject, System.Windows.DragDropEffects, System.Windows.DragDropEffects> _drag;
+    private readonly string _dragFolder = Path.Combine(Path.GetTempPath(), "ScreenTranslate-drag-" + Guid.NewGuid().ToString("N"));
+    private System.Windows.Point _historyDragStart;
+    private ClipboardRecordView? _historyDragCandidate;
+    private bool _suppressHistoryClick;
+    private int _historyDragVersion;
     private readonly OverTranslate.Models.AppSettings _settings;
     private readonly Func<bool> _saveSettings;
     private readonly Action<ClipboardHistoryStore, string> _changeDirectory;
@@ -167,11 +173,13 @@ public partial class ClipboardHistoryWindow : Window
         Func<Task<bool>>? paste = null, ISystemClipboardHistory? systemHistory = null, bool managePosition = false,
         OverTranslate.Models.AppSettings? settings = null, Func<bool>? saveSettings = null,
         OverTranslate.Services.Lan.SyncActivityStore? syncActivities = null,
-        Action<ClipboardHistoryStore, string>? changeDirectory = null)
+        Action<ClipboardHistoryStore, string>? changeDirectory = null,
+        Func<System.Windows.IDataObject, System.Windows.DragDropEffects, System.Windows.DragDropEffects>? drag = null)
     {
         _store = store;
         _copy = copy ?? (record => ClipboardContent.CopyAsync(record, store));
         _paste = paste is null ? target => OriginalApplicationPaste.PasteAsync(this, target) : _ => paste();
+        _drag = drag ?? ((data, effects) => System.Windows.DragDrop.DoDragDrop(HistoryList, data, effects));
         _settings = settings ?? SettingsService.Instance.Current;
         _saveSettings = saveSettings ?? SettingsService.Instance.TrySave;
         _changeDirectory = changeDirectory ?? ClipboardHistoryStorage.ChangeDirectory;
@@ -198,7 +206,7 @@ public partial class ClipboardHistoryWindow : Window
         IsVisibleChanged += (_, _) =>
         {
             if (IsVisible) { _timeTimer.Start(); RefreshVisibleTimes(HistoryList); RefreshViews(); }
-            else { ++_previewVersion; _timeTimer.Stop(); PreviewPanel.Visibility = Visibility.Collapsed; PreviewImage.Source = null; PreviewText.Clear(); }
+            else { ++_previewVersion; ++_historyDragVersion; _historyDragCandidate = null; _timeTimer.Stop(); PreviewPanel.Visibility = Visibility.Collapsed; PreviewImage.Source = null; PreviewText.Clear(); }
         };
         Activated += (_, _) => RefreshStorageStatus();
         Deactivated += (_, _) => { Topmost = KeepOpenOnDeactivate; ScheduleDismiss(); };
@@ -212,6 +220,7 @@ public partial class ClipboardHistoryWindow : Window
             foreach (var card in IncomingRequestsPanel.Children.OfType<FileReceiveCard>()) card.Reject();
             _placementSource?.RemoveHook(PlacementMessage); _placementSource = null;
             HistoryList.ItemsSource = null; PreviewImage.Source = null; PreviewText.Clear(); _lifetime.Dispose();
+            _ = CleanupDragFilesAsync();
             if (ReferenceEquals(_current, this)) _current = null;
         };
         RefreshStorageStatus();
@@ -435,6 +444,7 @@ public partial class ClipboardHistoryWindow : Window
 
     private void Filter_Changed(object sender, RoutedEventArgs e)
     {
+        ++_historyDragVersion; _historyDragCandidate = null;
         if (SyncPanel is not null && HistoryPanel is not null && HistoryFooter is not null)
         {
             var syncing = SyncTab.IsSelected;
@@ -489,10 +499,58 @@ public partial class ClipboardHistoryWindow : Window
 
     private async void History_Click(object sender, MouseButtonEventArgs e)
     {
+        ++_historyDragVersion; _historyDragCandidate = null;
+        if (_suppressHistoryClick) { e.Handled = true; return; }
         if (_busy || e.ChangedButton != MouseButton.Left || e.OriginalSource is not DependencyObject source || InsideAction(source)) return;
         if (ItemsControl.ContainerFromElement(HistoryList, source) is not ListBoxItem item || item.DataContext is not ClipboardRecordView) return;
         HistoryList.SelectedItem = item.DataContext; e.Handled = true; await ActivateSelectedAsync();
     }
+
+    private void History_MouseDown(object sender, MouseButtonEventArgs e)
+    {
+        ++_historyDragVersion; _historyDragCandidate = null; _suppressHistoryClick = false;
+        if (_busy || _filterPending || e.OriginalSource is not DependencyObject source || InsideAction(source)) return;
+        if (ItemsControl.ContainerFromElement(HistoryList, source) is not ListBoxItem { DataContext: ClipboardRecordView view }) return;
+        _historyDragStart = e.GetPosition(HistoryList); _historyDragCandidate = view;
+    }
+
+    private async void History_MouseMove(object sender, System.Windows.Input.MouseEventArgs e)
+    {
+        if (e.LeftButton != MouseButtonState.Pressed) { _historyDragCandidate = null; return; }
+        if (_busy || _filterPending || _historyDragCandidate is not { } view) return;
+        var point = e.GetPosition(HistoryList);
+        if (Math.Abs(point.X - _historyDragStart.X) < SystemParameters.MinimumHorizontalDragDistance &&
+            Math.Abs(point.Y - _historyDragStart.Y) < SystemParameters.MinimumVerticalDragDistance) return;
+        _historyDragCandidate = null; _suppressHistoryClick = true; e.Handled = true;
+        HistoryList.SelectedItem = view;
+        var version = _historyDragVersion;
+        _busy = true;
+        try
+        {
+            var data = await ClipboardContent.BuildDragDataAsync(view.Record, _store, _dragFolder);
+            if (_closed || !IsVisible || _filterPending || version != _historyDragVersion || Mouse.LeftButton != MouseButtonState.Pressed) return;
+            Mouse.Capture(null);
+            var result = _drag(data, System.Windows.DragDropEffects.Copy);
+            if (_closed) return;
+            StatusText.Text = result == System.Windows.DragDropEffects.Copy ? "已拖出副本。" : "已取消拖拽，未执行粘贴。";
+            if (result == System.Windows.DragDropEffects.Copy && !KeepOpenOnDeactivate) Dismiss();
+        }
+        catch (IOException) { if (!_closed) StatusText.Text = "原文件或图片无法读取，未能拖出。"; }
+        catch (Exception) { if (!_closed) StatusText.Text = "拖拽失败，请稍后重试；未执行粘贴。"; }
+        finally
+        {
+            _busy = false;
+            if (_closed) await CleanupDragFilesAsync(); else ScheduleDismiss();
+        }
+    }
+
+    private Task CleanupDragFilesAsync() => Task.Run(() =>
+    {
+        // 目标应用可能在 Drop 返回后读取文件；副本保留到窗口关闭，不暴露历史附件路径。
+        try { if (Directory.Exists(_dragFolder)) Directory.Delete(_dragFolder, true); }
+        catch (IOException) { }
+        catch (UnauthorizedAccessException) { }
+    });
 
     private static bool InsideAction(DependencyObject? element)
     {
@@ -647,7 +705,7 @@ public partial class ClipboardHistoryWindow : Window
     {
         AutoPasteMenuItem.IsChecked = _settings.ClipboardAutoPaste;
         RecordHistoryMenuItem.IsChecked = _settings.ClipboardHistoryEnabled;
-        ActionHint.Text = _settings.ClipboardAutoPaste ? "点击 / Enter 粘贴 · Esc 收起" : "点击 / Enter 复制 · Esc 收起";
+        ActionHint.Text = _settings.ClipboardAutoPaste ? "点击 / Enter 粘贴 · 拖动导出 · Esc 收起" : "点击 / Enter 复制 · 拖动导出 · Esc 收起";
         RecordingHint.Text = _settings.ClipboardHistoryEnabled ? "剪贴板历史" : "历史记录已暂停";
         OpenFolderMenuItem.ToolTip = _store.Folder;
         ChangeFolderMenuItem.ToolTip = $"当前目录：{_store.Folder}\n更改时复制已有历史，原目录保留。";

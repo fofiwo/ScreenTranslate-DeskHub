@@ -237,6 +237,7 @@
    <Grid x:Name="HistoryPanel" Grid.Row="4">
     <ListBox x:Name="HistoryList" IsEnabled="False" Background="{DynamicResource AppListBg}" BorderThickness="0" Padding="6" ScrollViewer.HorizontalScrollBarVisibility="Disabled"
      ScrollViewer.CanContentScroll="True" VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling"
+     PreviewMouseLeftButtonDown="History_MouseDown" PreviewMouseMove="History_MouseMove"
      PreviewMouseLeftButtonUp="History_Click" AutomationProperties.Name="剪贴板历史记录">
      <ListBox.ContextMenu><ContextMenu Style="{StaticResource ClipboardMenu}" Opened="RecordMenu_Opened">
       <MenuItem Header="复制并收起" Click="CopyMenu_Click"/><MenuItem Header="粘贴到原应用" Click="Paste_Click"/>
@@ -296,7 +297,7 @@
     </StackPanel>
    </Grid>
    <Grid x:Name="HistoryFooter" Grid.Row="5" Height="19" Margin="4,5,4,0"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-    <TextBlock x:Name="ActionHint" Text="点击 / Enter 粘贴 · Esc 收起" FontSize="11" Foreground="{DynamicResource AppTextSecondary}" VerticalAlignment="Center"/>
+    <TextBlock x:Name="ActionHint" Text="点击 / Enter 粘贴 · 拖动导出 · Esc 收起" FontSize="11" Foreground="{DynamicResource AppTextSecondary}" VerticalAlignment="Center"/>
     <TextBlock x:Name="CountText" Grid.Column="1" FontSize="11" Foreground="{DynamicResource AppTextSecondary}" VerticalAlignment="Center"/>
    </Grid>
    <Border x:Name="PreviewPanel" Grid.Row="1" Grid.RowSpan="5" Visibility="Collapsed" Background="{DynamicResource AppCardBg}" BorderBrush="{DynamicResource AppBorder}" BorderThickness="1" CornerRadius="10" Padding="14">

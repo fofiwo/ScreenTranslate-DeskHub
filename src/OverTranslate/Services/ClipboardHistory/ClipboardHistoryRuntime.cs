@@ -140,6 +140,23 @@ internal static class ClipboardContent
         return CreateData(record, image);
     }
 
+    internal static async Task<DataObject> BuildDragDataAsync(ClipboardRecord record, ClipboardHistoryStore store, string exportFolder)
+    {
+        if (!record.HasImage || record.Files.Length > 0) return await BuildDataAsync(record, store);
+        var (image, path) = await Task.Run(() =>
+        {
+            var png = store.ReadImage(record.Id);
+            var image = DecodeImage(png, false);
+            Directory.CreateDirectory(exportFolder);
+            var path = Path.Combine(exportFolder, $"ScreenTranslate-{Guid.NewGuid():N}.png");
+            File.WriteAllBytes(path, png);
+            return (image, path);
+        });
+        var data = CreateData(record, image);
+        var files = new StringCollection(); files.Add(path); data.SetFileDropList(files);
+        return data;
+    }
+
     public static async Task CopyAsync(ClipboardRecord record, ClipboardHistoryStore store)
     {
         var data = await BuildDataAsync(record, store);

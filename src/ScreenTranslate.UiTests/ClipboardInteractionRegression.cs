@@ -95,6 +95,7 @@ public sealed partial class ScreenTranslateShellTests
         VerifyClipboardFirstWake(click: false, cancel: true);
         VerifyClipboardPointerActivation();
         VerifyClipboardStorageDirectory();
+        VerifyClipboardDragOut();
     }
 
     private static void VerifyClipboardFirstWake(bool click, bool cancel = false, bool slow = false)

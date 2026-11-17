@@ -173,6 +173,11 @@ public sealed partial class ScreenTranslateShellTests
                     VerifyClipboardStorageDirectory();
                     return;
                 }
+                if (Environment.GetEnvironmentVariable("SCREEN_TRANSLATE_CLIPBOARD_DRAG_ONLY") == "1")
+                {
+                    VerifyClipboardDragOut();
+                    return;
+                }
                 if (Environment.GetEnvironmentVariable("SCREEN_TRANSLATE_CLIPBOARD_INTERACTION_ONLY") == "1")
                 {
                     VerifyClipboardClickPaste();
