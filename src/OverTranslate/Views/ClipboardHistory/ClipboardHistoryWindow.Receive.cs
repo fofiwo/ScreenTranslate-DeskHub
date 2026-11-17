@@ -58,7 +58,7 @@ public partial class ClipboardHistoryWindow
     private void UpdateReceiveAttention()
     {
         var count = IncomingRequestsPanel.Children.Count;
-        Topmost = WindowPinned || count > 0;
+        Topmost = KeepOpenOnDeactivate;
         ShowInTaskbar = count > 0 || _receiveWasInTaskbar;
         ReceivePageTitle.Text = count > 0 ? $"接收文件（{count} 待处理）" : "接收文件";
         ViewReceivedFilesButton.Content = count > 0 ? $"查看接收文件（{count} 待处理）" : "查看接收文件";

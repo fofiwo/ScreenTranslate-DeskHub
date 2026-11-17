@@ -158,6 +158,7 @@ public partial class ClipboardHistoryWindow : Window
     private readonly bool _managePosition;
     private System.Windows.Interop.HwndSource? _placementSource;
     internal bool WindowPinned { get; private set; }
+    private bool KeepOpenOnDeactivate => WindowPinned || HasIncomingFiles || SyncTab.IsSelected;
     internal bool IsBusy => _busy;
     internal ClipboardHistoryStore Store => _store;
     internal ClipboardRecord? SelectedRecord => (HistoryList.SelectedItem as ClipboardRecordView)?.Record;
@@ -200,7 +201,7 @@ public partial class ClipboardHistoryWindow : Window
             else { ++_previewVersion; _timeTimer.Stop(); PreviewPanel.Visibility = Visibility.Collapsed; PreviewImage.Source = null; PreviewText.Clear(); }
         };
         Activated += (_, _) => RefreshStorageStatus();
-        Deactivated += (_, _) => { Topmost = WindowPinned || HasIncomingFiles; ScheduleDismiss(); };
+        Deactivated += (_, _) => { Topmost = KeepOpenOnDeactivate; ScheduleDismiss(); };
         MenuButton.ContextMenu.Closed += (_, _) => ScheduleDismiss();
         HistoryList.ContextMenu.Closed += (_, _) => ScheduleDismiss();
         Closing += Window_Closing;
@@ -270,7 +271,7 @@ public partial class ClipboardHistoryWindow : Window
 
     internal void ToggleVisibility()
     {
-        if (IsVisible && WindowState != WindowState.Minimized && IsActive) Dismiss(); else ShowPanel();
+        if (IsVisible && WindowState != WindowState.Minimized && (IsActive || SyncTab.IsSelected)) Dismiss(); else ShowPanel();
     }
 
     internal void Dismiss()
@@ -320,7 +321,7 @@ public partial class ClipboardHistoryWindow : Window
 
     private void ScheduleDismiss() => Dispatcher.BeginInvoke(DispatcherPriority.Background, () =>
     {
-        if (!_closed && IsVisible && !IsActive && !WindowPinned && !HasIncomingFiles && !_busy
+        if (!_closed && IsVisible && !IsActive && !KeepOpenOnDeactivate && !_busy
             && !MenuButton.ContextMenu.IsOpen && !HistoryList.ContextMenu.IsOpen) Dismiss();
     });
 
@@ -437,6 +438,8 @@ public partial class ClipboardHistoryWindow : Window
         if (SyncPanel is not null && HistoryPanel is not null && HistoryFooter is not null)
         {
             var syncing = SyncTab.IsSelected;
+            // 取文件时必须先切到来源窗口，不能在拖入事件到达前收起同步页。
+            if (syncing || SyncPanel.Visibility == Visibility.Visible) Topmost = KeepOpenOnDeactivate;
             SyncPanel.Visibility = syncing ? Visibility.Visible : Visibility.Collapsed;
             StatusText.Visibility = syncing ? Visibility.Collapsed : Visibility.Visible;
             SearchPanel.Visibility = HistoryPanel.Visibility = HistoryFooter.Visibility = syncing ? Visibility.Collapsed : Visibility.Visible;
@@ -621,7 +624,7 @@ public partial class ClipboardHistoryWindow : Window
 
     internal void SetWindowPinned(bool pinned)
     {
-        WindowPinned = pinned; Topmost = pinned || HasIncomingFiles;
+        WindowPinned = pinned; Topmost = KeepOpenOnDeactivate;
         WindowPinButton.Content = pinned ? "\uE77A" : "\uE718";
         if (pinned) WindowPinButton.SetResourceReference(BackgroundProperty, "AppAccentSubtle");
         else WindowPinButton.Background = Brushes.Transparent;

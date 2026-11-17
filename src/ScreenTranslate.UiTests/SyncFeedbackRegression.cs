@@ -28,6 +28,8 @@ public sealed partial class ScreenTranslateShellTests
             paste: () => Task.FromResult(false),
             settings: new(), saveSettings: () => true, syncActivities: journal)
         { Left = -10000, Top = -10000, ShowActivated = false };
+        var sourceWindow = new Window { Width = 160, Height = 80, Left = -10000, Top = -10000,
+            WindowStartupLocation = WindowStartupLocation.Manual, ShowInTaskbar = false };
         try
         {
             window.Show(); window.UpdateLayout();
@@ -81,6 +83,10 @@ public sealed partial class ScreenTranslateShellTests
             var droppedFolder = System.IO.Path.Combine(root, "dropped-folder");
             System.IO.Directory.CreateDirectory(droppedFolder);
             var payload = new System.Windows.DataObject(System.Windows.DataFormats.FileDrop, new[] { droppedFolder });
+            window.Activate(); PumpUntil(() => window.IsActive);
+            sourceWindow.Show(); sourceWindow.Activate(); PumpUntil(() => !window.IsActive);
+            System.Windows.Threading.Dispatcher.CurrentDispatcher.Invoke(() => { }, System.Windows.Threading.DispatcherPriority.ApplicationIdle);
+            Assert.True(window.IsVisible); Assert.True(window.Topmost); Assert.False(window.WindowPinned);
             System.Windows.DragEventArgs RaiseDrop(RoutedEvent routedEvent)
             {
                 var args = (System.Windows.DragEventArgs)Activator.CreateInstance(typeof(System.Windows.DragEventArgs),
@@ -216,6 +222,7 @@ public sealed partial class ScreenTranslateShellTests
         }
         finally
         {
+            sourceWindow.Close();
             window.Close();
             System.IO.Directory.Delete(root, true);
         }

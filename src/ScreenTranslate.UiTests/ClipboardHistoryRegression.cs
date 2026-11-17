@@ -129,6 +129,30 @@ public sealed partial class ScreenTranslateShellTests
             button.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
             Assert.False(window.WindowPinned);
             other.Activate(); PumpUntil(() => !window.IsVisible);
+
+            window.Show(); window.Activate(); PumpUntil(() => window.IsActive);
+            var syncTab = (ListBoxItem)window.FindName("SyncTab");
+            syncTab.IsSelected = true;
+            other.Activate(); PumpUntil(() => !window.IsActive);
+            System.Windows.Threading.Dispatcher.CurrentDispatcher.Invoke(() => { }, System.Windows.Threading.DispatcherPriority.ApplicationIdle);
+            Assert.True(window.IsVisible, "选择同步页后，切回文件来源窗口不能收起拖放目标。");
+            Assert.True(window.Topmost);
+            Assert.False(window.WindowPinned);
+            window.SetWindowPinned(true); window.SetWindowPinned(false);
+            Assert.True(window.Topmost);
+            window.ToggleVisibility();
+            Assert.False(window.IsVisible, "同步页失焦后，再按快捷键应直接收起面板。");
+            window.Show(); window.Activate(); PumpUntil(() => window.IsActive);
+            syncTab.IsSelected = true;
+            ((ListBox)window.FindName("TypeFilter")).SelectedIndex = 0;
+            Assert.False(window.Topmost);
+            window.Activate(); PumpUntil(() => window.IsActive);
+            other.Activate(); PumpUntil(() => !window.IsVisible);
+
+            window.Show(); window.Activate(); PumpUntil(() => window.IsActive);
+            syncTab.IsSelected = true;
+            window.ToggleVisibility();
+            Assert.False(window.IsVisible);
         }
         finally { other.Close(); }
         window.Show(); window.UpdateLayout();

@@ -101,7 +101,7 @@ public sealed partial class ScreenTranslateShellTests
                     PumpUntil(() => ((ItemsControl)window.FindName("ReceivedFilesList")).Items.Count == 1);
                     var saved = Assert.IsType<SyncActivity>(((ItemsControl)window.FindName("ReceivedFilesList")).Items[0]);
                     Assert.Equal("inline receive fixture", File.ReadAllText(Path.Combine(saved.Folder, "receive-fixture.txt")));
-                    // 请求完成后恢复失焦收起；固定历史窗口，避免资源管理器抢焦点影响目录验证。
+                    // 固定历史窗口，避免资源管理器抢焦点影响目录验证。
                     window.SetWindowPinned(true); window.ShowPanel(); Click(window, "ViewReceivedFilesButton");
                     PumpUntil(() => window.IsVisible && Visuals<Button>(window).Any(b => Equals(b.Content, "打开保存文件夹") && b.IsVisible));
                     VerifyReceivedFolderOpens(window, saved.Folder);
@@ -123,7 +123,8 @@ public sealed partial class ScreenTranslateShellTests
                     Assert.ThrowsAny<OperationCanceledException>(() => sending.GetAwaiter().GetResult());
                 }
                 PumpUntil(() => pending.Children.Count == 0);
-                Assert.False(window.Topmost); Assert.False(window.ShowInTaskbar);
+                // 目录验证会重新打开普通历史页；其他场景仍停留在同步页。
+                Assert.Equal(state != "visible", window.Topmost); Assert.False(window.ShowInTaskbar);
             }
             window.SetWindowPinned(true);
             using var cancelled = new CancellationTokenSource();
