@@ -6,7 +6,6 @@ using System.Windows.Interop;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 using Clipboard = System.Windows.Clipboard;
-using DataObject = System.Windows.DataObject;
 using DataFormats = System.Windows.DataFormats;
 
 namespace OverTranslate.Services.Lan;
@@ -37,8 +36,18 @@ internal sealed class ClipboardLoopGuard
 internal sealed class LanClipboardSync : IDisposable
 {
     internal const string OriginFormat = "ScreenTranslate.LanOrigin.v1";
-    internal static string DescribeOrigin(object? value) => value is string { Length: > 0 and <= 80 } device
-        && device != "received" && !string.IsNullOrWhiteSpace(device) && !device.Any(char.IsControl) ? "来自 " + device : "局域网";
+    internal static string DescribeOrigin(object? value)
+    {
+        // 原生发布的自定义格式由 WPF 读作流；继续兼容旧版的托管字符串标记。
+        var bytes = value switch { MemoryStream stream when stream.Length <= 320 => stream.ToArray(), byte[] data when data.Length <= 320 => data, _ => null };
+        if (bytes is not null)
+        {
+            try { value = new UTF8Encoding(false, true).GetString(bytes).TrimEnd('\0'); }
+            catch (DecoderFallbackException) { return "局域网"; }
+        }
+        return value is string { Length: > 0 and <= 80 } device && device != "received"
+            && !string.IsNullOrWhiteSpace(device) && !device.Any(char.IsControl) ? "来自 " + device : "局域网";
+    }
     private readonly Dispatcher _dispatcher;
     private readonly LanNode _node;
     private readonly Func<Task<LanClipboardPayload?>> _capture;
@@ -48,8 +57,9 @@ internal sealed class LanClipboardSync : IDisposable
     private HwndSource? _source;
     private bool _sending;
     private bool _dirty;
-    private bool _disposed;
-    private bool _enabled = true;
+    private volatile bool _disposed;
+    private volatile bool _enabled = true;
+    private int _receiveVersion;
     private uint _pendingSequence;
     private string _pendingPeer = "";
     private long _retryUntil;
@@ -59,6 +69,7 @@ internal sealed class LanClipboardSync : IDisposable
         get => _enabled;
         set
         {
+            if (_enabled != value) Interlocked.Increment(ref _receiveVersion);
             _enabled = value;
             if (!value) { _dirty = false; _timer.Stop(); _publishRequest?.Cancel(); }
             else _loop.Reset();
@@ -237,25 +248,13 @@ internal sealed class LanClipboardSync : IDisposable
     public async Task ApplyAsync(LanClipboardPayload payload, CancellationToken token)
     {
         if (_disposed || !Enabled) throw new InvalidOperationException("自动同步已暂停。");
+        var version = Volatile.Read(ref _receiveVersion);
+        var connection = _node.ConnectionVersion;
+        payload = payload with { Origin = payload.Origin.Length == 0 ? _node.PeerName : payload.Origin };
         var image = payload.Kind == "image" ? await Task.Run(() => DecodeImage(payload.Bytes), token).ConfigureAwait(false) : null;
-        await _dispatcher.InvokeAsync(async () =>
-        {
-            var data = new DataObject();
-            data.SetData(OriginFormat, payload.Origin.Length == 0 ? _node.PeerName : payload.Origin);
-            if (payload.Kind == "text") data.SetText(new UTF8Encoding(false, true).GetString(payload.Bytes));
-            else if (payload.Kind == "image")
-            {
-                data.SetImage(image!);
-            }
-            else throw new InvalidDataException("不支持的剪贴板内容。");
-            for (var attempt = 0; ; attempt++)
-            {
-                token.ThrowIfCancellationRequested();
-                if (_disposed || !Enabled) throw new InvalidOperationException("自动同步已暂停。");
-                try { Clipboard.SetDataObject(data, true); _loop.Received(payload, _node.ConnectionVersion); return; }
-                catch (ExternalException) when (attempt < 5) { await Task.Delay(60, token); }
-            }
-        }, DispatcherPriority.Normal, token).Task.Unwrap().ConfigureAwait(false);
+        await LanClipboardWriter.ApplyAsync(payload, image, token,
+            () => !_disposed && Enabled && version == Volatile.Read(ref _receiveVersion) && connection == _node.ConnectionVersion).ConfigureAwait(false);
+        await _dispatcher.InvokeAsync(() => _loop.Received(payload, connection), DispatcherPriority.Normal, token).Task.ConfigureAwait(false);
     }
 
     internal static BitmapSource DecodeImage(byte[] bytes)

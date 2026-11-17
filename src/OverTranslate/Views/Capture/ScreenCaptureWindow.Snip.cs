@@ -499,7 +499,7 @@ internal static class SnipClipboard
         }
     }, cancellationToken);
 
-    private static bool SameImage(BitmapSource expected, BitmapSource? actual)
+    internal static bool SameImage(BitmapSource expected, BitmapSource? actual)
     {
         if (actual is null || expected.PixelWidth != actual.PixelWidth || expected.PixelHeight != actual.PixelHeight) return false;
         // 系统位图可能丢弃 alpha；截图核对可见 RGB，并分块比较以避免再分配整张大图。

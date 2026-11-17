@@ -6,7 +6,7 @@ namespace OverTranslate.Services.Library;
 internal static class LibraryClipboard
 {
     // 直接提交 Unicode 文本，避免 OLE 延迟渲染及 Flush 的同步等待。
-    public static void SetText(string text, IntPtr owner)
+    public static void SetText(string text, IntPtr owner, Action? writeAdditionalFormats = null)
     {
         var bytes = System.Text.Encoding.Unicode.GetBytes(text + '\0');
         var memory = GlobalAlloc(0x42, (nuint)bytes.Length);
@@ -20,7 +20,9 @@ internal static class LibraryClipboard
             if (!OpenClipboard(owner)) throw new COMException("Clipboard busy", unchecked((int)0x800401D0));
             try
             {
-                if (!EmptyClipboard() || SetClipboardData(13, memory) == IntPtr.Zero)
+                if (!EmptyClipboard()) throw new Win32Exception(Marshal.GetLastWin32Error());
+                writeAdditionalFormats?.Invoke();
+                if (SetClipboardData(13, memory) == IntPtr.Zero)
                     throw new Win32Exception(Marshal.GetLastWin32Error());
                 memory = IntPtr.Zero; // 成功后由系统持有内存，不能再次释放。
             }

@@ -7,6 +7,17 @@ namespace OverTranslate.Tests;
 
 public sealed class LanClipboardRecoveryTests
 {
+    [Theory]
+    [InlineData(unchecked((int)0x800401D0))]
+    [InlineData(unchecked((int)0x800401D3))]
+    public void Clipboard_errors_are_not_reported_as_broken_networks(int hresult)
+    {
+        var issue = SyncActivityStore.IssueFor(new COMException("fixture", hresult));
+        var activity = new SyncActivity("fixture", SyncKind.Clipboard, true, "fixture", SyncState.Failed, Issue: issue);
+        Assert.Contains("剪贴板", activity.IssueLabel);
+        Assert.DoesNotContain("连接中断", activity.IssueLabel);
+    }
+
     [Fact]
     public async Task Failed_apply_keeps_connection_and_same_message_can_retry_without_false_success()
     {

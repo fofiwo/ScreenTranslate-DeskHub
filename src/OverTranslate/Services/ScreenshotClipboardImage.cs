@@ -24,7 +24,7 @@ internal static class ScreenshotClipboardImage
         finally { CloseClipboard(); }
     }
 
-    internal static void SetImage(BitmapSource image, IntPtr owner)
+    internal static void SetImage(BitmapSource image, IntPtr owner, Action? writeAdditionalFormats = null)
     {
         if (owner == IntPtr.Zero || !IsWindow(owner)) throw new InvalidOperationException("截图窗口已关闭。");
         var stride = checked(image.PixelWidth * 4);
@@ -46,7 +46,9 @@ internal static class ScreenshotClipboardImage
             if (!OpenClipboard(owner)) throw new COMException("Clipboard busy", unchecked((int)0x800401D0));
             try
             {
-                if (!EmptyClipboard() || SetClipboardData(BitmapFormat, bitmap) == IntPtr.Zero)
+                if (!EmptyClipboard()) throw new Win32Exception(Marshal.GetLastWin32Error());
+                writeAdditionalFormats?.Invoke();
+                if (SetClipboardData(BitmapFormat, bitmap) == IntPtr.Zero)
                     throw new Win32Exception(Marshal.GetLastWin32Error());
                 bitmap = IntPtr.Zero; // CF_BITMAP 成功交给系统后，窗口/工作线程退出也不释放它。
             }

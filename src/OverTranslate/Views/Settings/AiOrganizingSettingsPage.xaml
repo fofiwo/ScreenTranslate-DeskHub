@@ -4,7 +4,7 @@
              Foreground="{DynamicResource AppTextPrimary}" FontSize="13" FontWeight="Normal">
     <StackPanel>
         <TextBlock Text="提示词 AI 整理" Style="{StaticResource ProductSectionTitle}"/>
-        <TextBlock Text="整理资料库中提示词的标题、描述和标签，保留完整正文。可使用与翻译不同的模型。" Style="{StaticResource ProductHint}" Margin="0,0,0,20"/>
+        <TextBlock Text="为资料库中的提示词分类，并可整理标题、描述和标签，保留完整正文。可使用与翻译不同的模型。" Style="{StaticResource ProductHint}" Margin="0,0,0,20"/>
         <StackPanel x:Name="FormPanel" IsEnabled="False">
             <TextBlock Text="OpenAI 兼容 API 基础地址"/>
             <TextBox x:Name="AiEndpoint" Style="{StaticResource ModernTextBox}" Height="40" Margin="0,8,0,16" TextChanged="Endpoint_Changed" AutomationProperties.Name="AI 整理 API 地址"/>
@@ -12,8 +12,9 @@
             <TextBox x:Name="AiModel" Style="{StaticResource ModernTextBox}" Height="40" Margin="0,8,0,16" TextChanged="Input_Changed" AutomationProperties.Name="AI 整理模型 ID"/>
             <TextBlock x:Name="KeyHint" Text="API Key（本地接口可留空）"/>
             <PasswordBox x:Name="AiKey" Height="40" Padding="8" Margin="0,8,0,16" PasswordChanged="Input_Changed" Background="{DynamicResource AppInputBg}" Foreground="{DynamicResource AppTextPrimary}" BorderBrush="{DynamicResource AppInputBorder}" AutomationProperties.Name="AI 整理 API Key"/>
-            <CheckBox x:Name="AiAutomatic" Content="新建提示词后自动整理" Style="{StaticResource ModernCheckBox}" Checked="Input_Changed" Unchecked="Input_Changed"/>
-            <TextBlock Text="开启后会将提示词前 12000 字符发送给以上服务，可能消耗服务额度。" Style="{StaticResource ProductHint}" Margin="0,8,0,16"/>
+            <CheckBox x:Name="AiAutomatic" Content="新建时同时整理标题、描述和标签" Style="{StaticResource ModernCheckBox}" Checked="Input_Changed" Unchecked="Input_Changed"/>
+            <TextBlock Text="新建提示词保存后会自动分类。此开关仅控制是否同时整理标题、描述和标签；AI 分类使用本页的服务配置。" Style="{StaticResource ProductHint}" TextWrapping="Wrap" Margin="0,6,0,0"/>
+            <TextBlock Text="自动分类及手动整理会将提示词正文和已有分类发送给以上服务，可能消耗服务额度。超出单批 60,000 字符时会提示拆分，不会截断正文。" Style="{StaticResource ProductHint}" TextWrapping="Wrap" Margin="0,8,0,16"/>
             <CheckBox x:Name="AiInsecure" Content="允许远程 HTTP 接口（API Key 未加密传输）" Style="{StaticResource ModernCheckBox}" Checked="Input_Changed" Unchecked="Input_Changed"/>
         </StackPanel>
         <WrapPanel Margin="0,20,0,0">

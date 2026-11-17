@@ -422,7 +422,8 @@ internal sealed class LanNode : IAsyncDisposable
                             catch (Exception ex) when (!receiveTimeout.IsCancellationRequested)
                             {
                                 applied = false; activity = activity with { Issue = SyncActivityStore.IssueFor(ex) };
-                                ClipboardNotice?.Invoke(this, "本次剪贴板内容未写入，连接保持可用。");
+                                NLog.LogManager.GetCurrentClassLogger().Warn("LAN clipboard apply failed: type={Type}, hresult={HResult:X8}", ex.GetType().Name, ex.HResult);
+                                ClipboardNotice?.Invoke(this, "本次剪贴板内容未能确认写入，连接保持可用。");
                             }
                         }
                         else if (!ClipboardEnabled)

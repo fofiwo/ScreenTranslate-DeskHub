@@ -5,7 +5,7 @@ namespace OverTranslate.Services.Lan;
 
 internal enum SyncKind { Clipboard, Library, Files, Connection }
 internal enum SyncState { Preparing, Waiting, Running, Completed, Rejected, Failed, Cancelled, Interrupted, Confirming }
-internal enum SyncIssue { None, Permission, FileOrDisk, InvalidContent, Timeout, Connection, Paused, Unsupported }
+internal enum SyncIssue { None, Permission, FileOrDisk, InvalidContent, Timeout, Connection, Paused, Unsupported, Clipboard }
 internal sealed record SyncActivity(string Id, SyncKind Kind, bool Incoming, string Peer, SyncState State,
     string Name = "", long Completed = 0, long Total = 0, string Folder = "", string[]? Sources = null,
     DateTimeOffset Updated = default, SyncIssue Issue = SyncIssue.None, string DeviceId = "", string ClipboardKind = "")
@@ -34,7 +34,8 @@ internal sealed record SyncActivity(string Id, SyncKind Kind, bool Incoming, str
         SyncIssue.Permission => "目录或文件没有访问权限", SyncIssue.FileOrDisk => "文件不可读写或磁盘空间不足",
         SyncIssue.InvalidContent => "内容格式、名称、完整性或大小不符合传输要求", SyncIssue.Timeout => "等待接收或传输超时",
         SyncIssue.Connection => "设备连接中断", SyncIssue.Paused => "本机未开启对应同步",
-        SyncIssue.Unsupported => "对方未使用接收确认，请将双方更新后重新配对", _ => ""
+        SyncIssue.Unsupported => "对方未使用接收确认，请将双方更新后重新配对",
+        SyncIssue.Clipboard => "本机剪贴板被占用、内容不可读写或写入后被替换，请重新复制", _ => ""
     };
     public string Display => $"{Updated.LocalDateTime:MM-dd HH:mm:ss}  {KindLabel} · {(Incoming ? "接收自" : "发送至")} {Peer}\n{StateLabel}"
         + (Issue == SyncIssue.None ? "" : $"\n原因：{IssueLabel}")
@@ -98,7 +99,8 @@ internal sealed class SyncActivityStore
     { lock (_gate) return _receivedSnapshot ??= _received.Values.OrderByDescending(x => x.Updated).ToArray(); }
     public static SyncIssue IssueFor(Exception exception) => exception switch
     {
-        UnauthorizedAccessException => SyncIssue.Permission, InvalidDataException => SyncIssue.InvalidContent,
+        System.Runtime.InteropServices.ExternalException { ErrorCode: >= unchecked((int)0x800401D0) and <= unchecked((int)0x800401D4) } => SyncIssue.Clipboard,
+        UnauthorizedAccessException => SyncIssue.Permission, InvalidDataException or System.Text.DecoderFallbackException => SyncIssue.InvalidContent,
         TimeoutException => SyncIssue.Timeout, EndOfStreamException => SyncIssue.Connection,
         IOException => SyncIssue.FileOrDisk, _ => SyncIssue.Connection
     };

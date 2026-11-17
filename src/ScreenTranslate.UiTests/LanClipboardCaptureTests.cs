@@ -12,7 +12,7 @@ using Xunit;
 namespace OverTranslate.Tests;
 
 [Collection("ScreenTranslate shell")]
-public sealed class LanClipboardCaptureTests
+public sealed partial class LanClipboardCaptureTests
 {
     private static void OnSta(Func<Task> run)
     {

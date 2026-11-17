@@ -13,13 +13,23 @@ public sealed partial class ScreenTranslateShellTests
     private sealed class SummaryFeedbackHandler : System.Net.Http.HttpMessageHandler
     {
         public TaskCompletionSource<System.Net.Http.HttpResponseMessage> Response { get; set; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private string _promptId = "";
         protected override Task<System.Net.Http.HttpResponseMessage> SendAsync(System.Net.Http.HttpRequestMessage request, CancellationToken token)
-            => Response.Task.WaitAsync(token);
+        {
+            using var payload = System.Text.Json.JsonDocument.Parse(request.Content!.ReadAsStringAsync(token).GetAwaiter().GetResult());
+            using var data = System.Text.Json.JsonDocument.Parse(payload.RootElement.GetProperty("messages")[1].GetProperty("content").GetString()!);
+            _promptId = data.RootElement.GetProperty("prompts")[0].GetProperty("id").GetString()!;
+            return Response.Task.WaitAsync(token);
+        }
         public void Complete(bool success) => Response.SetResult(new(success ? System.Net.HttpStatusCode.OK : System.Net.HttpStatusCode.ServiceUnavailable)
         {
             Content = new System.Net.Http.StringContent(System.Text.Json.JsonSerializer.Serialize(new
             {
-                choices = new[] { new { message = new { content = "{\"title\":\"整理后的标题\",\"description\":\"整理后的描述\",\"tags\":[\"测试\"]}" } } }
+                choices = new[] { new { message = new { content = System.Text.Json.JsonSerializer.Serialize(new
+                {
+                    categories = new[] { new { name = "视觉还原", description = "对照参考图检查视觉差异" } },
+                    assignments = new[] { new { id = _promptId, category = "视觉还原", reason = "fixture", title = "整理后的标题", description = "整理后的描述", tags = new[] { "测试" } } }
+                }) } } }
             }))
         });
     }

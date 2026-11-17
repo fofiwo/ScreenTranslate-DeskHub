@@ -211,6 +211,14 @@ Shell 默认窗口为 1220 × 800，最小为 1100 × 680；标题栏高 40，�
 
 `ProductNav` 是同组 RadioButton：未选中采用次级文字色和透明底；hover 为按钮悬停底；选中为 AppAccent/AppAccentFg 加 SemiBold。列表 `ProductListItem` 内边距 16，条目下间距 6；普通项使用 AppCardBg 和 AppBorder，hover 使用 AppListHoverBg，选中使用 AppListSelectedBg、AppAccent 描边及短侧标记，选中态优先于悬停。资料库和剪贴板复用此模板，以 AppListBg 区分列表槽与条目；资料库详情采用白色独立分区，保留原有左右布局。剪贴板搜索使用输入底色及聚焦描边，分类选中使用 AppAccent/AppAccentFg；资料库和设置 Tab 使用 AppListSelectedBg。不可把列表选中和导航选中误当成同一种填色。
 
+### Prompt Categories / Detail
+
+提示词页保留资料库原有主题、左右列表与详情结构。主要任务分类常显最多五个，另有“全部”“待分类”和按需出现的“更多分类”；分类栏保持单行，长名称省略并提供完整提示，空间不足时横向滚动。分类范围说明与细分标签折叠入口共用下一行，避免筛选区挤占正文。管理页原有功能说明放在标题提示中。
+
+提示词条目使用紧凑两行内容（高 50 DIP）：标题在上，分类与描述在下，缺少描述时以正文摘要补充；复制动作和次数位于右侧。单击选择只预览，按钮或 Enter 复制。详情中的主要分类下拉框和带建议名称的“查看建议”入口独立于标题滚动区；新类审阅使用独立覆盖层，展示可修改名称、收录范围与确认动作，不把确认表单塞进详情头部。
+
+详情标题与标签可滚动，为只读正文保留两行及内边距的空间（76 DIP），正文内边距为 `12,8`；底部操作保持可达。此处记录现有布局，不改变全局视觉体系；行为、兼容性与验证边界以 [提示词任务分类](docs/Prompt-Categories-2026-11-17.md) 为准。`.impeccable/review/prompt-categories-{desktop,minimum,suggestion,plan,dark}.png` 为 WPF 离屏渲染证据，不代表真实 Provider 或双机验收。
+
 ### Task Surface / Hints
 
 橙黄框选区域只保留一个明显的“开始框选”动作，并显示真实当前快捷键；右侧几何不参与命中测试。快捷键底板使用 AppSurfaceBg。Esc 提示使用暖色背景与暖色文字，状态及辅助文案使用 ProductHint。隐私说明保持可见，不用纯装饰图替代操作提示。

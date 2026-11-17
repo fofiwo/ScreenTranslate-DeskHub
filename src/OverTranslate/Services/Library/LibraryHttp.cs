@@ -8,7 +8,7 @@ using System.Text.RegularExpressions;
 
 namespace OverTranslate.Services.Library;
 
-internal sealed class LibraryHttp : IDisposable
+internal sealed partial class LibraryHttp : IDisposable
 {
     internal static string UnprotectKey(string protectedKey)
     {

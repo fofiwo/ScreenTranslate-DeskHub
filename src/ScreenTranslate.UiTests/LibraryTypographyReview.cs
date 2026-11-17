@@ -42,7 +42,7 @@ public sealed partial class ScreenTranslateShellTests
                 var detail = (FrameworkElement)window.FindName("PromptDetail");
                 var heading = Visuals<TextBlock>(detail).Single(t => t.Text == title);
                 var row = (ListBoxItem)((ListBox)window.FindName("PromptList")).ItemContainerGenerator.ContainerFromIndex(0);
-                var summary = Visuals<TextBlock>(row).Single(t => t.Text.StartsWith("第一行中文"));
+                var summary = Visuals<TextBlock>(row).Single(t => new System.Windows.Documents.TextRange(t.ContentStart, t.ContentEnd).Text.Contains("摘要应该比正文安静"));
                 Assert.True(heading.FontSize > preview.FontSize && preview.FontSize > summary.FontSize,
                     "The rendered title, body and summary must have distinct reading roles.");
                 var first = preview.GetRectFromCharacterIndex(0);

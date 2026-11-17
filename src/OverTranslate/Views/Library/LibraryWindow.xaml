@@ -99,6 +99,7 @@
    <Style.Triggers><Trigger Property="DataContext" Value="{x:Null}"><Setter Property="Visibility" Value="Collapsed"/></Trigger></Style.Triggers>
   </Style>
   <DataTemplate x:Key="DetailTag"><Border Background="{DynamicResource AppHeaderBg}" Padding="7,2" Margin="0,0,6,4" CornerRadius="3"><TextBlock Text="{Binding}" Style="{StaticResource LibraryMeta}" MaxWidth="180" TextTrimming="CharacterEllipsis" ToolTip="{Binding}"/></Border></DataTemplate>
+  <DataTemplate x:Key="CategoryChoiceTemplate"><TextBlock Text="{Binding Label}" TextTrimming="CharacterEllipsis" ToolTip="{Binding Label}"/></DataTemplate>
   <Style x:Key="FilterTag" TargetType="ListBoxItem" BasedOn="{StaticResource ProductListItem}">
    <Setter Property="Padding" Value="10,5"/><Setter Property="Margin" Value="0,0,6,6"/>
   </Style>
@@ -111,8 +112,7 @@
   <Grid x:Name="ManagementHeader" Margin="0,0,0,6">
    <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
    <StackPanel>
-    <TextBlock Text="提示词与模型资料" Style="{StaticResource LibraryTitle}" VerticalAlignment="Center"/>
-    <TextBlock Text="保存和复制资料；翻译使用的服务请在主窗口设置中配置。" FontSize="12" Margin="0,6,0,0" Foreground="{DynamicResource AppTextSecondary}" TextWrapping="Wrap"/>
+    <TextBlock Text="提示词与模型资料" Style="{StaticResource LibraryTitle}" VerticalAlignment="Center" ToolTip="保存和复制资料；翻译使用的服务请在主窗口设置中配置。"/>
    </StackPanel>
    <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Top" Margin="18,4,0,0">
     <TextBlock x:Name="ShortcutHint" VerticalAlignment="Center" Margin="0,0,10,0" Foreground="{DynamicResource AppTextSecondary}"/>
@@ -128,22 +128,32 @@
      <Grid Margin="0,0,0,8"><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
       <DockPanel VerticalAlignment="Center" Margin="0,0,12,0"><TextBlock Text="搜索" DockPanel.Dock="Left" VerticalAlignment="Center" Margin="0,0,10,0" FontSize="14" FontWeight="SemiBold" Foreground="{DynamicResource AppTextPrimary}"/><TextBox x:Name="PromptSearch" Style="{StaticResource Field}" FontSize="14" Height="36" TextChanged="PromptSearch_Changed" ToolTip="搜索标题、描述、正文和标签" AutomationProperties.Name="搜索提示词"/></DockPanel>
 
+      <Button x:Name="ClassifyAllButton" Grid.Column="1" Content="AI 分类整理" Style="{StaticResource SmallButton}" Click="ClassifyAll_Click"/>
       <Button Grid.Column="2" Content="新建提示词" Style="{StaticResource SmallButton}" Foreground="{DynamicResource AppAccent}" Click="NewPrompt_Click"/>
      </Grid>
-     <Expander Grid.Row="1" Header="按标签筛选 · 匹配任一已选标签" Margin="0,0,0,8" Foreground="{DynamicResource AppTextSecondary}">
+     <StackPanel Grid.Row="1" Margin="0,0,0,8">
+      <DockPanel Margin="0,0,0,5">
+       <Button x:Name="MoreCategoriesButton" DockPanel.Dock="Right" Content="更多分类" Style="{StaticResource QuietButton}" Click="MoreCategories_Click" Visibility="Collapsed"/>
+       <ListBox x:Name="CategoryTabs" SelectionChanged="CategoryTabs_Changed" BorderThickness="0" Background="Transparent" ItemContainerStyle="{StaticResource FilterTag}" ScrollViewer.HorizontalScrollBarVisibility="Auto" ScrollViewer.VerticalScrollBarVisibility="Disabled" AutomationProperties.Name="按主要任务分类"><ListBox.ItemTemplate><DataTemplate><TextBlock Text="{Binding Label}" MaxWidth="100" TextTrimming="CharacterEllipsis" ToolTip="{Binding Label}"/></DataTemplate></ListBox.ItemTemplate><ListBox.ItemsPanel><ItemsPanelTemplate><StackPanel Orientation="Horizontal"/></ItemsPanelTemplate></ListBox.ItemsPanel></ListBox>
+      </DockPanel>
+      <Grid><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+      <TextBlock x:Name="CategoryScope" Style="{StaticResource LibraryMeta}" TextTrimming="CharacterEllipsis" VerticalAlignment="Top" ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}" Margin="2,2,16,0"/>
+     <Expander Grid.Column="1" Header="细分标签 · 匹配任一已选标签" Foreground="{DynamicResource AppTextSecondary}" MaxWidth="460">
       <StackPanel Margin="0,8,0,0">
        <DockPanel><Button DockPanel.Dock="Right" Content="清除筛选" Style="{StaticResource QuietButton}" Click="ClearTags_Click" Margin="8,0,0,0"/><TextBox x:Name="TagSearch" Style="{StaticResource Field}" TextChanged="TagSearch_Changed" AutomationProperties.Name="搜索标签"/></DockPanel>
        <ListBox x:Name="TagFilters" MaxHeight="88" SelectionMode="Multiple" SelectionChanged="TagFilters_Changed" BorderThickness="0" Background="Transparent" Margin="0,6,0,0" ItemContainerStyle="{StaticResource FilterTag}"><ListBox.ItemsPanel><ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate></ListBox.ItemsPanel></ListBox>
       </StackPanel>
      </Expander>
+      </Grid>
+     </StackPanel>
      <Grid Grid.Row="2"><Grid.ColumnDefinitions><ColumnDefinition Width="2*" MinWidth="290"/><ColumnDefinition Width="3*"/></Grid.ColumnDefinitions>
       <Border Background="{DynamicResource AppListBg}" CornerRadius="10">
        <Grid><Grid.RowDefinitions><RowDefinition Height="30"/><RowDefinition/></Grid.RowDefinitions>
-        <Border Background="{DynamicResource AppHeaderBg}" Padding="12,0"><TextBlock x:Name="PromptCount" Style="{StaticResource LibraryMeta}" VerticalAlignment="Center"/></Border>
-        <ListBox x:Name="PromptList" Grid.Row="1" SelectionChanged="PromptList_SelectionChanged" PreviewMouseLeftButtonUp="PromptList_Click" PreviewKeyDown="PromptList_KeyDown" BorderThickness="0" Background="{DynamicResource AppListBg}" ScrollViewer.HorizontalScrollBarVisibility="Disabled" ScrollViewer.ScrollChanged="Prompts_ScrollChanged" VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling" ScrollViewer.CanContentScroll="True" ItemContainerStyle="{StaticResource LibraryRow}" HorizontalContentAlignment="Stretch" AutomationProperties.Name="提示词列表：单击复制，方向键选择，Enter 复制">
+        <Border Background="{DynamicResource AppHeaderBg}" Padding="12,0"><DockPanel><Button x:Name="SearchAllPrompts" DockPanel.Dock="Right" Content="搜索全部" Style="{StaticResource QuietButton}" Height="26" Click="SearchAllPrompts_Click" Visibility="Collapsed"/><TextBlock x:Name="PromptCount" Style="{StaticResource LibraryMeta}" VerticalAlignment="Center"/></DockPanel></Border>
+        <ListBox x:Name="PromptList" Grid.Row="1" SelectionChanged="PromptList_SelectionChanged" PreviewKeyDown="PromptList_KeyDown" BorderThickness="0" Background="{DynamicResource AppListBg}" ScrollViewer.HorizontalScrollBarVisibility="Disabled" ScrollViewer.ScrollChanged="Prompts_ScrollChanged" VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling" ScrollViewer.CanContentScroll="True" ItemContainerStyle="{StaticResource LibraryRow}" HorizontalContentAlignment="Stretch" AutomationProperties.Name="提示词列表：单击查看，方向键选择，Enter 复制">
          <ListBox.ItemTemplate><DataTemplate>
-          <Grid Height="58" Margin="12,0,8,0"><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-           <StackPanel VerticalAlignment="Center" Margin="0,0,8,0"><TextBlock Text="{Binding Title}" Style="{StaticResource LibraryListTitle}" ToolTip="{Binding Title}"/><TextBlock Text="{Binding ContentPreview}" Style="{StaticResource LibraryListSummary}" ToolTip="{Binding Content}"/></StackPanel>
+          <Grid Height="50" Margin="12,0,8,0"><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+           <StackPanel VerticalAlignment="Center" Margin="0,0,8,0"><TextBlock Text="{Binding Title}" Style="{StaticResource LibraryListTitle}" ToolTip="{Binding Title}"/><TextBlock Style="{StaticResource LibraryListSummary}" ToolTip="{Binding ListSummary}"><Run Text="{Binding CategoryLabel, Mode=OneWay}"/><Run Text=" · "/><Run Text="{Binding ListSummary, Mode=OneWay}"/></TextBlock></StackPanel>
            <StackPanel Grid.Column="1" VerticalAlignment="Center">
             <Button Content="复制" Style="{StaticResource QuietButton}" Foreground="{DynamicResource AppAccent}" Tag="{Binding}" Click="CopyPrompt_Click" ToolTip="{Binding Title, StringFormat=复制完整提示词：{0}}"/>
             <TextBlock Text="{Binding CopyCount, StringFormat=已复制 {0} 次}" Style="{StaticResource LibraryMeta}" HorizontalAlignment="Center"/>
@@ -155,7 +165,7 @@
        </Grid>
       </Border>
       <Border x:Name="PromptDetail" Grid.Column="1" DataContext="{Binding SelectedItem, ElementName=PromptList}" Style="{StaticResource SelectedDetail}">
-       <Grid SizeChanged="PromptDetail_SizeChanged"><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+       <Grid SizeChanged="PromptDetail_SizeChanged"><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
         <ScrollViewer x:Name="PromptHeader" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
          <StackPanel Margin="0,0,0,10">
          <TextBlock Text="{Binding Title}" Style="{StaticResource LibraryDetailTitle}" ToolTip="{Binding Title}"/>
@@ -163,11 +173,15 @@
           <ItemsControl ItemsSource="{Binding Tags}" ItemTemplate="{StaticResource DetailTag}"><ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate></ItemsControl.ItemsPanel></ItemsControl>
          </StackPanel>
         </ScrollViewer>
-        <TextBox x:Name="PromptPreview" Grid.Row="1" Text="{Binding Content, Mode=OneWay}" IsReadOnly="True" TextWrapping="Wrap" AcceptsReturn="True" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Padding="16,12" BorderThickness="0" Background="{DynamicResource AppHeaderBg}" Foreground="{DynamicResource AppTextPrimary}" FontFamily="{DynamicResource AppFont}" FontSize="15" FontWeight="Normal" TextBlock.LineHeight="26" TextBlock.LineStackingStrategy="BlockLineHeight" AutomationProperties.Name="完整提示词正文，可选中文字"/>
-        <Grid x:Name="PromptActions" Grid.Row="2" Margin="0,8,0,0"><Grid.RowDefinitions><RowDefinition Height="22"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
-         <TextBlock x:Name="PromptCopyFeedback" Style="{StaticResource LibraryMeta}" Text="单击左侧条目复制 · ↑↓ 选择 · Enter 复制" TextTrimming="CharacterEllipsis" ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}" AutomationProperties.LiveSetting="Polite"/>
+        <StackPanel x:Name="PromptCategoryArea" Grid.Row="1" SizeChanged="PromptDetail_SizeChanged">
+         <Grid Margin="0,0,0,6"><Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/><ColumnDefinition/></Grid.ColumnDefinitions><TextBlock Text="主要分类" Style="{StaticResource LibraryMeta}" VerticalAlignment="Center" Margin="0,0,10,0"/><ComboBox x:Name="PromptCategoryBox" Grid.Column="1" ItemTemplate="{StaticResource CategoryChoiceTemplate}" SelectionChanged="PromptCategoryBox_Changed" MaxWidth="180" HorizontalAlignment="Left" AutomationProperties.Name="主要分类"/><Button x:Name="SuggestedCategoryButton" Grid.Column="2" Content="查看新分类建议" Style="{StaticResource QuietButton}" Margin="8,0,0,0" HorizontalAlignment="Left" Visibility="Collapsed" Click="ReviewSuggestedCategory_Click" ToolTip="查看分类边界、修改名称并确认加入目录"/></Grid>
+         <TextBlock x:Name="PromptCategoryStatus" Style="{StaticResource LibraryMeta}" TextTrimming="CharacterEllipsis" ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}" Margin="0,0,0,6" AutomationProperties.LiveSetting="Polite"/>
+        </StackPanel>
+        <TextBox x:Name="PromptPreview" Grid.Row="2" Text="{Binding Content, Mode=OneWay}" IsReadOnly="True" TextWrapping="Wrap" AcceptsReturn="True" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Padding="12,8" BorderThickness="0" Background="{DynamicResource AppHeaderBg}" Foreground="{DynamicResource AppTextPrimary}" FontFamily="{DynamicResource AppFont}" FontSize="15" FontWeight="Normal" TextBlock.LineHeight="26" TextBlock.LineStackingStrategy="BlockLineHeight" AutomationProperties.Name="完整提示词正文，可选中文字"/>
+        <Grid x:Name="PromptActions" Grid.Row="3" Margin="0,8,0,0"><Grid.RowDefinitions><RowDefinition Height="22"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+         <TextBlock x:Name="PromptCopyFeedback" Style="{StaticResource LibraryMeta}" Text="单击查看 · ↑↓ 选择 · 按钮或 Enter 复制" TextTrimming="CharacterEllipsis" ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}" AutomationProperties.LiveSetting="Polite"/>
          <Grid Grid.Row="1"><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-          <StackPanel Orientation="Horizontal"><Button Content="AI 整理" Style="{StaticResource QuietButton}" Tag="{Binding}" Click="Summarize_Click" ToolTip="整理标题、描述和标签，正文不变"/><Button Content="编辑" Style="{StaticResource QuietButton}" Tag="{Binding}" Click="EditPrompt_Click"/><Button Content="删除" Style="{StaticResource DeleteButton}" Tag="{Binding}" Click="DeletePrompt_Click"/></StackPanel>
+          <StackPanel Orientation="Horizontal"><Button Content="AI 整理与分类" Style="{StaticResource QuietButton}" Tag="{Binding}" Click="Summarize_Click" ToolTip="整理标题、描述、标签并分类；失败可在此重试，正文不变"/><Button Content="编辑" Style="{StaticResource QuietButton}" Tag="{Binding}" Click="EditPrompt_Click"/><Button Content="删除" Style="{StaticResource DeleteButton}" Tag="{Binding}" Click="DeletePrompt_Click"/></StackPanel>
           <Button x:Name="PromptCopyButton" Grid.Column="1" Content="复制全文" Style="{StaticResource SmallButton}" Foreground="{DynamicResource AppAccent}" Tag="{Binding}" Click="CopyPrompt_Click"/>
          </Grid>
         </Grid>
@@ -236,7 +250,7 @@
    <Button x:Name="QuickCloseButton" Grid.Column="2" Width="32" Height="32" Margin="0" Content="&#xE8BB;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" Style="{StaticResource QuietButton}" Padding="0" Click="QuickClose_Click" ToolTip="关闭（Esc）" AutomationProperties.Name="关闭资料库"/>
   </Grid>
   <Border Grid.Row="3" Padding="10,5" Margin="0,8,0,0" Background="{DynamicResource AppHeaderBg}" CornerRadius="4">
-   <TextBlock x:Name="Status" Text="单击提示词复制，右侧查看全文；模型列表下拉选择即复制。" Style="{StaticResource LibraryMeta}" TextTrimming="CharacterEllipsis" ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}" MinHeight="18" AutomationProperties.LiveSetting="Polite"/>
+   <TextBlock x:Name="Status" Text="先选任务分类，单击查看详情；按钮或 Enter 复制。" Style="{StaticResource LibraryMeta}" TextTrimming="CharacterEllipsis" ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}" MinHeight="18" AutomationProperties.LiveSetting="Polite"/>
   </Border>
   <Border x:Name="SaveNotice" Grid.RowSpan="4" Panel.ZIndex="1" Visibility="Collapsed" VerticalAlignment="Top" HorizontalAlignment="Center" MaxWidth="680" Margin="24,4,24,0" Padding="16,12" Background="{DynamicResource AppSurfaceBg}" BorderBrush="{DynamicResource AppSuccess}" BorderThickness="1" CornerRadius="6">
    <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
@@ -298,6 +312,31 @@
       <StackPanel Grid.Column="1" Orientation="Horizontal"><Button x:Name="CancelEditorButton" Content="取消" Style="{StaticResource ProductSecondaryButton}" Click="CancelEditor_Click"/><Button x:Name="SaveButton" Content="保存" MinWidth="88" Style="{StaticResource ProductButton}" Click="SaveEditor_Click" Margin="12,0,0,0"/></StackPanel>
      </Grid>
     </Grid>
+   </Grid>
+  </Border>
+  <Border x:Name="SuggestedCategoryLayer" Grid.RowSpan="4" Panel.ZIndex="3" Visibility="Collapsed" Background="{DynamicResource AppSurfaceBg}" Padding="20,12" KeyboardNavigation.TabNavigation="Cycle">
+   <Grid MaxWidth="680"><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+    <TextBlock Text="确认新分类" FontSize="24" FontWeight="SemiBold" Margin="0,0,0,16"/>
+    <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto"><StackPanel Margin="0,0,12,12">
+     <TextBlock Text="分类名称" Style="{StaticResource LibraryFieldLabel}"/><TextBox x:Name="SuggestedCategoryName" Style="{StaticResource Field}" MaxLength="20" Margin="0,8,0,16" AutomationProperties.Name="建议的新分类名称"/>
+     <TextBlock Text="收录范围" Style="{StaticResource LibraryFieldLabel}"/><TextBlock Text="{Binding SuggestedCategoryDescription}" Style="{StaticResource LibraryDescription}" TextWrapping="Wrap" Margin="0,8,0,16"/>
+     <TextBlock Text="{Binding CategoryNote}" Style="{StaticResource LibraryMeta}" TextWrapping="Wrap"/><TextBlock Text="确认后加入目录；后续创建提示词时会优先复用。可调整名称，或返回选择已有分类。" Style="{StaticResource LibraryDescription}" TextWrapping="Wrap" Margin="0,16,0,0"/>
+     <TextBlock x:Name="SuggestedCategoryStatus" Foreground="{DynamicResource AppError}" TextWrapping="Wrap" Margin="0,12,0,0" AutomationProperties.LiveSetting="Polite"/>
+    </StackPanel></ScrollViewer>
+    <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,16,0,0"><Button Content="返回资料库" Style="{StaticResource ProductSecondaryButton}" Click="CloseSuggestedCategory_Click"/><Button x:Name="ApproveCategoryButton" Content="确认新分类" Style="{StaticResource ProductButton}" Click="ApproveCategory_Click" Margin="12,0,0,0"/></StackPanel>
+   </Grid>
+  </Border>
+  <Border x:Name="CategoryPlanLayer" Grid.RowSpan="4" Panel.ZIndex="3" Visibility="Collapsed" Background="{DynamicResource AppSurfaceBg}" Padding="20,12" KeyboardNavigation.TabNavigation="Cycle">
+   <Grid><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+    <DockPanel Margin="0,0,0,12"><Button DockPanel.Dock="Right" Content="返回资料库" Style="{StaticResource QuietButton}" Click="CategoryPlanClose_Click"/><TextBlock Text="检查分类建议" FontSize="24" FontWeight="SemiBold"/></DockPanel>
+    <StackPanel Grid.Row="1" Margin="0,0,0,12"><TextBlock Text="按主要任务整理；正文、标题与描述保持原样。应用建议即确认新增目录，人工分类保留。" Style="{StaticResource LibraryDescription}" TextWrapping="Wrap"/><TextBlock x:Name="CategoryPlanStatus" Style="{StaticResource LibraryMeta}" TextWrapping="Wrap" Margin="0,6,0,0" AutomationProperties.LiveSetting="Polite"/></StackPanel>
+    <ListBox x:Name="CategoryPlanList" Grid.Row="2" BorderThickness="0" Background="{DynamicResource AppListBg}" ScrollViewer.HorizontalScrollBarVisibility="Disabled" HorizontalContentAlignment="Stretch" VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling" AutomationProperties.Name="待应用的分类建议">
+     <ListBox.ItemTemplate><DataTemplate><Grid Margin="12,10"><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="190"/></Grid.ColumnDefinitions>
+      <StackPanel Margin="0,0,16,0"><TextBlock Text="{Binding Expected.Title}" Style="{StaticResource LibraryListTitle}" TextWrapping="Wrap"/><TextBlock Text="{Binding Result.Reason}" Style="{StaticResource LibraryMeta}" TextWrapping="Wrap" Margin="0,4,0,0"/><TextBlock Text="{Binding Result.CategoryDescription}" Style="{StaticResource LibraryMeta}" TextWrapping="Wrap" Margin="0,3,0,0"/></StackPanel>
+      <ComboBox Grid.Column="1" ItemsSource="{Binding Choices}" ItemTemplate="{StaticResource CategoryChoiceTemplate}" SelectedValuePath="Value" SelectedValue="{Binding SelectedCategory, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" VerticalAlignment="Center" AutomationProperties.Name="建议分类"/>
+     </Grid></DataTemplate></ListBox.ItemTemplate>
+    </ListBox>
+    <Grid Grid.Row="3" Margin="0,14,0,0"><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><TextBlock Text="未确认的建议不会更改资料。可先取消请求，再应用已完成的部分。" Style="{StaticResource LibraryMeta}" TextWrapping="Wrap" VerticalAlignment="Center" Margin="0,0,12,0"/><StackPanel Grid.Column="1" Orientation="Horizontal"><Button x:Name="CancelCategoryPlanButton" Content="取消请求" Style="{StaticResource ProductSecondaryButton}" Click="CancelCategoryPlan_Click"/><Button x:Name="ApplyCategoryPlanButton" Content="应用分类建议" Style="{StaticResource ProductButton}" Margin="12,0,0,0" Click="ApplyCategoryPlan_Click" IsEnabled="False"/></StackPanel></Grid>
    </Grid>
   </Border>
   <Popup x:Name="CopyToast" Placement="Top" StaysOpen="True" AllowsTransparency="True" Focusable="False" IsHitTestVisible="False" HorizontalOffset="8" VerticalOffset="-6" PopupAnimation="None">

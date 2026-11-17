@@ -38,7 +38,7 @@ internal sealed class LibrarySyncSnapshot
 {
     internal const int MaxBytes = 8 * 1024 * 1024 - 28;
 
-    public int Protocol { get; set; } = 2;
+    public int Protocol { get; set; } = 3;
     public List<LibrarySyncItem> Items { get; set; } = [];
 }
 
@@ -206,8 +206,8 @@ internal static class LibrarySyncMerge
 
     internal static void Validate(LibrarySyncSnapshot snapshot)
     {
-        if (snapshot.Protocol != 2 || snapshot.Items is null || snapshot.Items.Count > 10000)
-            throw new InvalidDataException("同步版本或资料数量不受支持。");
+        if (snapshot.Protocol != 3 || snapshot.Items is null || snapshot.Items.Count > 10000)
+            throw new InvalidDataException("资料同步版本或数量不受支持。分类功能需要两台设备都更新到支持分类的版本。");
         var ids = new HashSet<string>(StringComparer.Ordinal);
         foreach (var item in snapshot.Items)
         {
@@ -245,7 +245,7 @@ internal static class LibrarySyncMerge
                 if (item.Connection is not null || item.ApiKey.Length != 0 || p is null || p.Id != item.Id[2..]
                     || p.Title is null || p.Description is null || string.IsNullOrWhiteSpace(p.Content)
                     || p.Tags is null || p.Tags.Count > 128 || p.Tags.Any(t => t is null) || p.CopyCount != 0
-                    || !ValidCounts(p.CopyCounts))
+                    || !ValidCounts(p.CopyCounts) || !PromptCategories.ValidFields(p))
                     throw new InvalidDataException("同步提示词格式无效。");
             }
             else
@@ -382,7 +382,9 @@ internal sealed partial class LibraryStore
     private IReadOnlyDictionary<string, string>? _syncVersions;
 
     private static bool SamePromptContent(LibraryPrompt a, LibraryPrompt b) =>
-        a.Title == b.Title && a.Content == b.Content && a.Description == b.Description && a.Tags.SequenceEqual(b.Tags);
+        a.Title == b.Title && a.Content == b.Content && a.Description == b.Description && a.Tags.SequenceEqual(b.Tags)
+        && a.Category == b.Category && a.CategoryDescription == b.CategoryDescription && a.CategoryManual == b.CategoryManual
+        && a.SuggestedCategory == b.SuggestedCategory && a.SuggestedCategoryDescription == b.SuggestedCategoryDescription && a.CategoryNote == b.CategoryNote;
 
     public LibrarySyncSnapshot ExportSync()
     {

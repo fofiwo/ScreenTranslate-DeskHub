@@ -242,6 +242,10 @@ public partial class LibraryWindow : Window
         if (EditorLayer.Visibility == Visibility.Visible && e.Key == Key.Enter && Keyboard.Modifiers == ModifierKeys.Control)
         { SaveEditor_Click(sender, e); e.Handled = true; return; }
         if (e.Key != Key.Escape) return;
+        if (SuggestedCategoryLayer.Visibility == Visibility.Visible)
+        { CloseSuggestedCategory_Click(sender, e); e.Handled = true; return; }
+        if (CategoryPlanLayer.Visibility == Visibility.Visible)
+        { CategoryPlanClose_Click(sender, e); e.Handled = true; return; }
         if (EditorLayer.Visibility == Visibility.Visible) CancelEditor_Click(sender, e); else Hide();
         e.Handled = true;
     }
@@ -320,11 +324,11 @@ public partial class LibraryWindow : Window
             _copySourceContent = null;
         }
         PromptCopyButton.Content = "复制全文";
-        PromptCopyFeedback.Text = "单击左侧条目复制 · ↑↓ 选择 · Enter 复制";
+        PromptCopyFeedback.Text = "单击查看 · ↑↓ 选择 · 按钮或 Enter 复制";
         PromptCopyFeedback.SetResourceReference(TextBlock.ForegroundProperty, "AppTextSecondary");
         if (_copyNoticeActive)
         {
-            Status.Text = Tabs.SelectedIndex == 0 ? "单击提示词复制，右侧查看全文；↑↓ 选择，Enter 复制。" : "选择连接查看详情，模型列表下拉选择即复制。";
+            Status.Text = Tabs.SelectedIndex == 0 ? "单击查看详情；↑↓ 选择，按钮或 Enter 复制。" : "选择连接查看详情，模型列表下拉选择即复制。";
             Status.SetResourceReference(TextBlock.ForegroundProperty, "AppTextSecondary");
             _copyNoticeActive = false;
         }
@@ -407,7 +411,10 @@ public partial class LibraryWindow : Window
         && a.Prompts.Zip(b.Prompts).All(p => p.First.Id == p.Second.Id && p.First.Title == p.Second.Title
             && p.First.Description == p.Second.Description && p.First.Content == p.Second.Content
             && p.First.CopyCount == p.Second.CopyCount && p.First.CreatedAt == p.Second.CreatedAt
-            && p.First.UpdatedAt == p.Second.UpdatedAt && p.First.Tags.SequenceEqual(p.Second.Tags))
+            && p.First.UpdatedAt == p.Second.UpdatedAt && p.First.Tags.SequenceEqual(p.Second.Tags)
+            && p.First.Category == p.Second.Category && p.First.CategoryDescription == p.Second.CategoryDescription
+            && p.First.CategoryManual == p.Second.CategoryManual && p.First.SuggestedCategory == p.Second.SuggestedCategory
+            && p.First.SuggestedCategoryDescription == p.Second.SuggestedCategoryDescription && p.First.CategoryNote == p.Second.CategoryNote)
         && a.Connections.Zip(b.Connections).All(p => p.First.Id == p.Second.Id && p.First.Platform == p.Second.Platform
             && p.First.ModelType == p.Second.ModelType && p.First.Endpoint == p.Second.Endpoint
             && p.First.AllowInsecureEndpoint == p.Second.AllowInsecureEndpoint && p.First.ApiKeyProtected == p.Second.ApiKeyProtected
@@ -452,23 +459,26 @@ public partial class LibraryWindow : Window
         {
             // 搜索、筛选和追加列表只使用界面快照，写入完成及同步通知才重新读盘。
             var state = _viewState;
+            RefreshCategoryTabs();
             _promptOrder = state.Prompts.Select((p, index) => (p.Id, index))
                 .GroupBy(p => p.Id).ToDictionary(g => g.Key, g => g.First().index);
             var promptId = (PromptList.SelectedItem as LibraryPrompt)?.Id;
-            var tags = state.Prompts.SelectMany(p => p.Tags).Distinct().Order(StringComparer.CurrentCulture).ToList();
+            var tags = state.Prompts.Where(p => _activeCategory is null || p.Category == _activeCategory).SelectMany(p => p.Tags).Distinct().Order(StringComparer.CurrentCulture).ToList();
             _selectedTags.IntersectWith(tags);
             TagFilters.ItemsSource = tags.Where(t => t.Contains(TagSearch.Text, StringComparison.OrdinalIgnoreCase)).ToList();
             foreach (var tag in _selectedTags) if (TagFilters.Items.Contains(tag)) TagFilters.SelectedItems.Add(tag);
-            var filtered = LibraryStore.FilterPrompts(state, PromptSearch.Text, _selectedTags).ToList();
+            var filtered = LibraryStore.FilterPrompts(state, PromptSearch.Text, _selectedTags, _activeCategory).ToList();
             if (!_appendPrompts) _promptItems.Clear();
             var known = _promptItems.Select(p => p.Id).ToHashSet();
             foreach (var p in filtered.Take(_visiblePrompts)) if (known.Add(p.Id)) _promptItems.Add(p);
             PromptList.SelectedItem = _promptItems.FirstOrDefault(p => p.Id == promptId) ?? _promptItems.FirstOrDefault();
-            PromptCount.Text = $"{filtered.Count} / {state.Prompts.Count} 条提示词";
+            var total = state.Prompts.Count(p => _activeCategory is null || p.Category == _activeCategory);
+            PromptCount.Text = $"{filtered.Count} / {total} 条提示词";
+            SearchAllPrompts.Visibility = filtered.Count == 0 && _activeCategory is not null ? Visibility.Visible : Visibility.Collapsed;
             PromptEmpty.Visibility = filtered.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
             PromptEmpty.Text = state.Prompts.Count == 0 ? "还没有提示词，点击右上角新建。" : "没有匹配的提示词，请调整搜索或标签。";
         }
-        finally { _loading = false; _appendPrompts = false; }
+        finally { _loading = false; _appendPrompts = false; RefreshCategoryDetail(); }
     }
 
     private void RefreshModelViews()
@@ -557,8 +567,8 @@ public partial class LibraryWindow : Window
     private void PromptDetail_SizeChanged(object sender, SizeChangedEventArgs e)
     {
         if (PromptHeader is null || PromptActions is null) return;
-        // 长标题、摘要与标签滚动查看；紧凑布局至少保留一行标题。
-        PromptHeader.MaxHeight = Math.Max(34, e.NewSize.Height - PromptActions.DesiredSize.Height - 96);
+        // 标题区滚动查看，为正文保留两行及内边距。
+        PromptHeader.MaxHeight = Math.Max(0, ((Grid)PromptHeader.Parent).ActualHeight - PromptActions.DesiredSize.Height - (PromptCategoryArea?.ActualHeight ?? 0) - 76);
     }
 
     private void PromptList_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -568,23 +578,11 @@ public partial class LibraryWindow : Window
         ResetCopyFeedback();
         PromptHeader?.ScrollToHome();
         PromptPreview?.ScrollToHome();
+        RefreshCategoryDetail();
     }
 
     private void ModelList_SelectionChanged(object sender, SelectionChangedEventArgs e)
     { if (ReferenceEquals(e.Source, ModelList)) { CancelPendingCopy(); ResetCopyFeedback(); ModelDetailScroll?.ScrollToHome(); } }
-
-    private void PromptList_Click(object sender, MouseButtonEventArgs e)
-    {
-        if (e.OriginalSource is not DependencyObject source) return;
-        for (var node = source; node is not null && !ReferenceEquals(node, PromptList);
-            node = node is Visual or System.Windows.Media.Media3D.Visual3D ? VisualTreeHelper.GetParent(node) : LogicalTreeHelper.GetParent(node))
-        {
-            // 行内按钮自行复制；滚动条和列表空白不触发。
-            if (node is Button) return;
-            if (node is ListBoxItem row && row.DataContext is LibraryPrompt item)
-            { CopyPrompt(item, row); return; }
-        }
-    }
 
     private void PromptList_KeyDown(object sender, KeyEventArgs e)
     {
@@ -642,40 +640,8 @@ public partial class LibraryWindow : Window
 
     private async void Summarize_Click(object sender, RoutedEventArgs e)
     { if (((Button)sender).Tag is LibraryPrompt p) await Summarize(p); }
-    private async Task Summarize(LibraryPrompt item, bool afterSave = false)
-    {
-        if (!_summarizing.Add(item.Id)) { Notice("这条提示词正在整理，请稍候。"); return; }
-        var saved = afterSave ? "提示词已保存，" : "";
-        var label = $"《{FeedbackLabel(item.Title)}》";
-        var noticeVersion = ShowSaveFeedback($"{saved}AI 正在整理{label}的标题、描述和标签…", busy: true);
-        try
-        {
-            var version = item.UpdatedAt; var content = item.Content;
-            var title = item.Title; var description = item.Description; var tags = item.Tags.ToArray();
-            var ai = await Task.Run(() => _store.Read().Ai);
-            if (_shutdown) return;
-            var summary = await _http.SummarizeAsync(ai, item, _lifetime.Token);
-            var save = Task.Run(() => _store.Update(s =>
-            {
-                var current = s.Prompts.FirstOrDefault(p => p.Id == item.Id);
-                if (current is null || current.UpdatedAt != version || current.Content != content || current.Title != title || current.Description != description || !current.Tags.SequenceEqual(tags))
-                    throw new InvalidOperationException("提示词已更改，本次 AI 整理未写入。");
-                current.Title = summary.Title; current.Description = summary.Description; current.Tags = summary.Tags;
-                current.UpdatedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-            }));
-            _summaryWrites = Task.WhenAll(_summaryWrites, save);
-            await save;
-            await ReloadViewsAsync();
-            if (!_shutdown && noticeVersion == _saveNoticeVersion)
-                ShowSaveFeedback($"AI 整理完成：{label}。已更新标题、描述和标签，正文保持原样。");
-        }
-        catch (Exception ex)
-        {
-            if (!_shutdown && noticeVersion == _saveNoticeVersion)
-                ShowSaveFeedback($"{saved}AI 整理失败：{label}。{Error(ex)}", error: true);
-        }
-        finally { _summarizing.Remove(item.Id); }
-    }
+    private Task Summarize(LibraryPrompt item, bool afterSave = false)
+        => ClassifyPromptAsync(item, afterSave);
 
     public static void OpenAiSettings()
         => OverTranslate.Views.Shell.ShellWindow.ShowOrActivate(OverTranslate.Views.Shell.ShellPage.Settings).ShowAiSettings();
@@ -900,7 +866,8 @@ public partial class LibraryWindow : Window
     {
         if (_savingEditor || EditorLayer.Visibility != Visibility.Visible) return;
         var persisted = false;
-        LibraryPrompt? summarize = null;
+        LibraryPrompt? classify = null;
+        var summarizeMetadata = false;
         SetEditorSaving(true);
         try
         {
@@ -915,12 +882,14 @@ public partial class LibraryWindow : Window
                 var expected = _editingPromptWasSaved ? item : null;
                 var draft = new LibraryPrompt { Id = item.Id, CreatedAt = item.CreatedAt, Title = PromptTitle.Text,
                     Description = PromptDescription.Text, Content = PromptBody.Text,
-                    Tags = PromptTags.Text.Split([',', '，'], StringSplitOptions.RemoveEmptyEntries).ToList() };
+                    Tags = PromptTags.Text.Split([',', '，'], StringSplitOptions.RemoveEmptyEntries).ToList(),
+                    Category = item.Category, CategoryDescription = item.CategoryDescription, CategoryManual = item.CategoryManual,
+                    SuggestedCategory = item.SuggestedCategory, SuggestedCategoryDescription = item.SuggestedCategoryDescription, CategoryNote = item.CategoryNote };
                 var save = Task.Run(() =>
                 {
                     var state = _store.Read();
                     var isNew = state.Prompts.All(p => p.Id != item.Id);
-                    return (Saved: _store.SavePrompt(draft, expected), AutoSummarize: isNew && state.Ai.AutoSummarize && state.Ai.Model.Length > 0);
+                    return (Saved: _store.SavePrompt(draft, expected), IsNew: isNew, AutoSummarize: state.Ai.AutoSummarize);
                 });
                 _editorSaveTask = save;
                 var result = await save;
@@ -932,14 +901,14 @@ public partial class LibraryWindow : Window
                 // 筛选或分页隐藏了刚保存的条目时，恢复完整列表并定位到它。
                 if (_promptItems.All(p => p.Id != result.Saved.Id))
                 {
-                    _selectedTags.Clear(); TagFilters.UnselectAll(); PromptSearch.Clear();
+                    _activeCategory = null; _selectedTags.Clear(); TagFilters.UnselectAll(); PromptSearch.Clear();
                     _visiblePrompts = Math.Max(30, LibraryStore.FilterPrompts(_viewState, "", []).ToList().FindIndex(p => p.Id == result.Saved.Id) + 1);
                     RefreshViews();
                 }
                 PromptList.SelectedItem = _promptItems.FirstOrDefault(p => p.Id == result.Saved.Id);
                 if (PromptList.SelectedItem is not null) PromptList.ScrollIntoView(PromptList.SelectedItem);
                 ShowSaveSuccess($"提示词已保存：《{FeedbackLabel(result.Saved.Title)}》。");
-                if (result.AutoSummarize) summarize = result.Saved;
+                if (result.IsNew) { classify = result.Saved; summarizeMetadata = result.AutoSummarize; }
             }
             else if (_editorKind == "model")
             {
@@ -968,7 +937,7 @@ public partial class LibraryWindow : Window
                     : "保存失败：" + Error(ex) + " 输入内容已保留，可修改后重新保存。", true);
         }
         finally { SetEditorSaving(false); }
-        if (summarize is not null && !_shutdown) await Summarize(summarize, afterSave: true);
+        if (classify is not null && !_shutdown) await ClassifyPromptAsync(classify, afterSave: true, summarizeMetadata);
     }
 
     private void AiSettings_Click(object sender, RoutedEventArgs e) => OpenAiSettings();

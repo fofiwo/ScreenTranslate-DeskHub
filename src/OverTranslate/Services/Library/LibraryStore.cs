@@ -16,6 +16,7 @@ internal sealed class LibraryPrompt : INotifyPropertyChanged
     public string Description { get; set; } = "";
     public string Content { get; set; } = "";
     [JsonIgnore] public string ContentPreview => Content.ReplaceLineEndings(" ").Replace('\t', ' ');
+    [JsonIgnore] public string ListSummary => string.IsNullOrWhiteSpace(Description) ? ContentPreview : Description;
     public long CopyCount
     {
         get => _copyCount;
@@ -23,6 +24,13 @@ internal sealed class LibraryPrompt : INotifyPropertyChanged
     }
     public Dictionary<string, long> CopyCounts { get; set; } = [];
     public List<string> Tags { get; set; } = [];
+    public string Category { get; set; } = "";
+    public string CategoryDescription { get; set; } = "";
+    public bool CategoryManual { get; set; }
+    public string SuggestedCategory { get; set; } = "";
+    public string SuggestedCategoryDescription { get; set; } = "";
+    public string CategoryNote { get; set; } = "";
+    [JsonIgnore] public string CategoryLabel => Category.Length > 0 ? Category : SuggestedCategory.Length > 0 ? "新分类待确认" : "待分类";
     public long CreatedAt { get; set; } = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
     public long UpdatedAt { get; set; } = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
 }
@@ -120,7 +128,7 @@ internal sealed partial class LibraryStore
         var state = JsonSerializer.Deserialize<LibraryState>(stream, Json)
             ?? throw new InvalidDataException("资料文件为空，未覆盖原文件。");
         if (state.SchemaVersion != 1 || state.Prompts is null || state.Connections is null || state.Ai is null || state.ImportedSources is null
-            || state.Prompts.Any(p => p is null || p.Id is null || p.Title is null || p.Content is null || p.Description is null || p.Tags is null || p.Tags.Any(t => t is null))
+            || state.Prompts.Any(p => p is null || p.Id is null || p.Title is null || p.Content is null || p.Description is null || p.Tags is null || p.Tags.Any(t => t is null) || !PromptCategories.ValidFields(p))
             || state.Connections.Any(c => c is null || c.Id is null || c.Platform is null || c.ModelType is null || c.Endpoint is null || c.Model is null || c.LastCopiedModelId is null || c.ApiKeyProtected is null || c.Note is null || c.RemainingBalance is null || c.ModelIds is null || c.ModelIds.Any(id => id is null))
             || state.Ai.Endpoint is null || state.Ai.Model is null || state.Ai.ApiKeyProtected is null)
             throw new InvalidDataException("资料格式不受支持，未覆盖原文件。请保留文件并检查版本。");
@@ -196,6 +204,7 @@ internal sealed partial class LibraryStore
         var item = Clone(draft);
         item.Title = string.IsNullOrWhiteSpace(item.Title) ? new string(item.Content.ReplaceLineEndings(" ").Take(36).ToArray()) : item.Title.Trim();
         item.Tags = item.Tags.Select(t => t.Trim()).Where(t => t.Length > 0).Distinct().Take(12).ToList();
+        if (!PromptCategories.ValidFields(item)) throw new InvalidOperationException("提示词分类格式无效。");
         item.UpdatedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
         Update(s =>
         {
@@ -309,12 +318,12 @@ internal sealed partial class LibraryStore
         });
     }
 
-    public static IEnumerable<LibraryPrompt> FilterPrompts(LibraryState state, string query, IEnumerable<string> tags)
+    public static IEnumerable<LibraryPrompt> FilterPrompts(LibraryState state, string query, IEnumerable<string> tags, string? category = null)
     {
         var selected = tags.ToHashSet();
         var search = query.Trim();
-        return state.Prompts.Where(p => (selected.Count == 0 || p.Tags.Any(selected.Contains)) &&
-            (search.Length == 0 || string.Join(' ', new[] { p.Title, p.Description, p.Content }.Concat(p.Tags)).Contains(search, StringComparison.OrdinalIgnoreCase)))
+        return state.Prompts.Where(p => (category is null || p.Category == category) && (selected.Count == 0 || p.Tags.Any(selected.Contains)) &&
+            (search.Length == 0 || string.Join(' ', new[] { p.Title, p.Description, p.Content }.Concat(p.Tags).Append(p.Category)).Contains(search, StringComparison.OrdinalIgnoreCase)))
             .OrderByDescending(p => p.CopyCount);
     }
 }

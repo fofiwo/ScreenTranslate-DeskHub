@@ -276,7 +276,7 @@
         <Image.ToolTip>
          <ToolTip Placement="Mouse" Opened="ImagePreview_Opened" Closed="ImagePreview_Closed" Padding="8"
           Background="{DynamicResource AppCardBg}" BorderBrush="{DynamicResource AppBorder}" HasDropShadow="True">
-          <Image Stretch="Uniform" MaxWidth="640" MaxHeight="480"/>
+          <Image Stretch="Uniform" MaxWidth="1280" MaxHeight="960"/>
          </ToolTip>
         </Image.ToolTip>
         </Image>

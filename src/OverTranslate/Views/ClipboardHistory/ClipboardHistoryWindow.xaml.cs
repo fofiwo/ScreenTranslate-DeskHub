@@ -189,7 +189,7 @@ public partial class ClipboardHistoryWindow : Window
         _store.Changed += Store_Changed;
         ClipboardHistoryRuntime.StatusChanged += Store_Changed;
         _timeTimer.Tick += (_, _) => RefreshVisibleTimes(HistoryList);
-        Loaded += (_, _) => SearchBox.Focus();
+        Loaded += (_, _) => FocusSearch();
         MouseEnter += (_, _) => Dispatcher.BeginInvoke(DispatcherPriority.Input, () =>
         {
             if (!_closed && IsVisible && IsEnabled && IsMouseOver) KeyboardForeground.Activate(this);
@@ -262,8 +262,11 @@ public partial class ClipboardHistoryWindow : Window
         if (WindowState == WindowState.Minimized) WindowState = WindowState.Normal;
         if (_managePosition && !_relocating) PositionWindow();
         if (Topmost) AlwaysOnTop.Reassert(this);
-        KeyboardForeground.Activate(this); SearchBox.Focus();
+        KeyboardForeground.Activate(this); FocusSearch();
     }
+
+    // UIElement.Focus 会主动唤起触摸输入面板；其重入 IME 请求曾在原生指针转换处崩溃。
+    private void FocusSearch() => Keyboard.Focus(SearchBox);
 
     internal void ToggleVisibility()
     {
@@ -442,7 +445,7 @@ public partial class ClipboardHistoryWindow : Window
         if (HistoryList is not null) { _filterPending = true; HistoryList.IsEnabled = false; }
         RefreshViews(debounce: ReferenceEquals(sender, SearchBox));
     }
-    private void ClearSearch_Click(object sender, RoutedEventArgs e) { SearchBox.Clear(); SearchBox.Focus(); }
+    private void ClearSearch_Click(object sender, RoutedEventArgs e) { SearchBox.Clear(); FocusSearch(); }
     private void Hide_Click(object sender, RoutedEventArgs e) => Dismiss();
 
     internal async Task CopySelectedAsync(bool paste = false)
@@ -614,7 +617,7 @@ public partial class ClipboardHistoryWindow : Window
         if (sender is ToolTip { Content: System.Windows.Controls.Image image } tip) { tip.Tag = null; image.Source = null; }
     }
     private void ClosePreview_Click(object sender, RoutedEventArgs e) => ClosePreview();
-    private void ClosePreview() { ++_previewVersion; PreviewPanel.Visibility = Visibility.Collapsed; PreviewImage.Source = null; PreviewText.Clear(); SearchBox.Focus(); }
+    private void ClosePreview() { ++_previewVersion; PreviewPanel.Visibility = Visibility.Collapsed; PreviewImage.Source = null; PreviewText.Clear(); FocusSearch(); }
 
     internal void SetWindowPinned(bool pinned)
     {

@@ -47,6 +47,11 @@ public sealed partial class ScreenTranslateShellTests
                     Source = new Uri("pack://application:,,,/ScreenTranslate;component/Resources/Strings.zh-Hans.xaml", UriKind.Absolute)
                 };
                 ApplyTheme(app, "Light");
+                if (Environment.GetEnvironmentVariable("SCREEN_TRANSLATE_PROMPT_CATEGORIES_ONLY") == "1")
+                {
+                    VerifyPromptCategories(libraryDirectory);
+                    return;
+                }
                 if (Environment.GetEnvironmentVariable("SCREEN_TRANSLATE_SNIP_COPY_ONLY") == "1")
                 {
                     VerifySnipCopyResponsiveness();
@@ -761,6 +766,9 @@ public sealed partial class ScreenTranslateShellTests
             var row = (ListBoxItem)list.ItemContainerGenerator.ContainerFromIndex(0);
             var title = Visuals<TextBlock>(row).First(x => x.Text == "开发助手");
             list.RaiseEvent(new System.Windows.Input.MouseButtonEventArgs(System.Windows.Input.Mouse.PrimaryDevice, 0, System.Windows.Input.MouseButton.Left) { RoutedEvent = UIElement.PreviewMouseLeftButtonUpEvent, Source = title });
+            Assert.Empty(copied);
+            Assert.True(window.IsVisible);
+            ((System.Windows.Controls.Button)window.FindName("PromptCopyButton")).RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Button.ClickEvent));
             PumpUntil(() => !window.IsCopyPending);
             Assert.Equal("请检查这段 WPF 代码。\n保留完整换行。", copied.Last());
             Assert.False(window.IsVisible);
@@ -1023,13 +1031,14 @@ public sealed partial class ScreenTranslateShellTests
             var button = (System.Windows.Controls.Button)window.FindName("PromptCopyButton");
             var popup = (System.Windows.Controls.Primitives.Popup)window.FindName("CopyToast");
             var feedback = (TextBlock)window.FindName("PromptCopyFeedback");
-            Assert.True(list.ActualHeight / 59 >= 7, "The default viewport must show at least seven compact rows.");
             Assert.Equal(30, list.Items.Count);
             var initialRow = (ListBoxItem)list.ItemContainerGenerator.ContainerFromIndex(0);
+            var promptRowHeight = initialRow.ActualHeight + initialRow.Margin.Top + initialRow.Margin.Bottom;
+            Assert.True(list.ActualHeight / promptRowHeight >= 7, $"The default viewport must show at least seven compact rows: viewport={list.ActualHeight}, row={promptRowHeight}.");
             Assert.Contains(Visuals<TextBlock>(initialRow), t => t.Text == "已复制 0 次");
-            var bodyPreview = Visuals<TextBlock>(initialRow).Single(t => t.Text.StartsWith("第 1 条提示词完整正文。"));
-            Assert.DoesNotContain('\n', bodyPreview.Text);
-            Assert.DoesNotContain(Visuals<TextBlock>(initialRow), t => t.Text.StartsWith("快速查找常用提示词"));
+            var rowText = string.Join(" ", Visuals<TextBlock>(initialRow).Select(t => new System.Windows.Documents.TextRange(t.ContentStart, t.ContentEnd).Text));
+            Assert.Contains("快速查找常用提示词", rowText);
+            Assert.DoesNotContain("第 1 条提示词完整正文。", rowText);
             Assert.Empty(copied);
             list.SelectedIndex = 1;
             var secondPrompt = (LibraryPrompt)list.SelectedItem;
@@ -1056,6 +1065,9 @@ public sealed partial class ScreenTranslateShellTests
             var row = (ListBoxItem)list.ItemContainerGenerator.ContainerFromIndex(2);
             var rowTitle = Visuals<TextBlock>(row).First(t => t.Text.StartsWith("03 ·"));
             list.RaiseEvent(new System.Windows.Input.MouseButtonEventArgs(System.Windows.Input.Mouse.PrimaryDevice, 0, System.Windows.Input.MouseButton.Left) { RoutedEvent = UIElement.PreviewMouseLeftButtonUpEvent, Source = rowTitle });
+            Assert.Single(copied);
+            Assert.True(window.IsVisible);
+            Visuals<System.Windows.Controls.Button>(row).Single().RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Button.ClickEvent));
             PumpUntil(() => !window.IsCopyPending);
             Assert.Equal(2, copied.Count);
             Assert.StartsWith("第 3 条", copied.Last());
@@ -1090,7 +1102,7 @@ public sealed partial class ScreenTranslateShellTests
             Assert.Contains("失败", ((TextBlock)window.FindName("CopyToastText")).Text);
             Assert.Equal(((SolidColorBrush)window.FindResource("AppError")).Color, ((SolidColorBrush)feedback.Foreground).Color);
             Render(window, "compact-copy-failed-minimum", 880, 580);
-            Assert.True(list.ActualHeight / 59 >= 4, "The minimum viewport must show at least four compact rows.");
+            Assert.True(list.ActualHeight / promptRowHeight >= 4, $"The minimum viewport must show at least four compact rows: viewport={list.ActualHeight}, row={promptRowHeight}.");
             failCopy = false;
             button.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Button.ClickEvent));
             PumpUntil(() => !window.IsCopyPending);
