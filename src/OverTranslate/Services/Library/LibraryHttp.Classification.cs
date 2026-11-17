@@ -36,7 +36,7 @@ internal sealed partial class LibraryHttp
         request.Content = new StringContent(JsonSerializer.Serialize(new { model = settings.Model.Trim(), temperature = 0.2,
             messages = new[] { new { role = "system", content = system }, new { role = "user", content = data } } }), Encoding.UTF8, "application/json");
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(token);
-        deadline.CancelAfter(TimeSpan.FromSeconds(20));
+        deadline.CancelAfter(TimeSpan.FromMinutes(5));
         using var response = await SendAsync(request, deadline.Token);
         try
         {

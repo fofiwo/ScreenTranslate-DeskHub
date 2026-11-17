@@ -23,9 +23,9 @@ internal sealed partial class LibraryHttp : IDisposable
     private readonly HttpClient _local;
     public LibraryHttp(HttpMessageHandler? testHandler = null)
     {
-        if (testHandler is not null) { _remote = _local = new(testHandler) { Timeout = TimeSpan.FromSeconds(30) }; return; }
-        _remote = new(NetworkProxyService.CreateHandler(OverTranslate.Models.NetworkFeature.Library, allowAutoRedirect: false)) { Timeout = TimeSpan.FromSeconds(30) };
-        _local = new(new HttpClientHandler { AllowAutoRedirect = false, UseProxy = false }) { Timeout = TimeSpan.FromSeconds(30) };
+        if (testHandler is not null) { _remote = _local = new(testHandler) { Timeout = TimeSpan.FromMinutes(5) }; return; }
+        _remote = new(NetworkProxyService.CreateHandler(OverTranslate.Models.NetworkFeature.Library, allowAutoRedirect: false)) { Timeout = TimeSpan.FromMinutes(5) };
+        _local = new(new HttpClientHandler { AllowAutoRedirect = false, UseProxy = false }) { Timeout = TimeSpan.FromMinutes(5) };
     }
 
     internal static Uri ValidateEndpoint(string endpoint, bool allowInsecure = false)
