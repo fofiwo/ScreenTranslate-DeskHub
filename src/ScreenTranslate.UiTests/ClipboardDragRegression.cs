@@ -180,7 +180,7 @@ public sealed partial class ScreenTranslateShellTests
                 window.ShowPanel(); PumpUntil(() => !window.IsRefreshing && window.IsActive);
                 body = Select(text); Press(body); Move(body, 24);
                 PumpUntil(() => drags == 3 && !window.IsBusy);
-                Assert.Equal(text.Text.Replace("\n", "\r\n"), input.Text);
+                Assert.Equal(text.Text, input.Text);
                 Assert.False(window.IsVisible); Assert.Equal(1, copies);
 
                 window.ShowPanel(); PumpUntil(() => !window.IsRefreshing && window.IsActive);
