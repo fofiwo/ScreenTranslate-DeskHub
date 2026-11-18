@@ -155,6 +155,8 @@ public sealed partial class ScreenTranslateShellTests
             Assert.False(window.IsVisible);
         }
         finally { other.Close(); }
+        ((ListBox)window.FindName("TypeFilter")).SelectedIndex = 0;
+        PumpUntil(() => !window.IsRefreshing);
         window.Show(); window.UpdateLayout();
     }
 

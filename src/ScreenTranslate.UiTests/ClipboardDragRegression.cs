@@ -26,6 +26,8 @@ public sealed partial class ScreenTranslateShellTests
         var filePath = Path.Combine(folder, "source.txt"); File.WriteAllText(filePath, "保留原文件");
         var files = store.Add(new() { Files = [filePath, folder] });
         var copies = 0;
+        var saved = 0;
+        store.Changed += (_, _) => Interlocked.Increment(ref saved);
         var drags = 0;
         var native = Environment.GetEnvironmentVariable("SCREEN_TRANSLATE_CLIPBOARD_DRAG_NATIVE") == "1";
         var result = DragDropEffects.Copy;
@@ -108,14 +110,15 @@ public sealed partial class ScreenTranslateShellTests
                 body.RaiseEvent(new MouseButtonEventArgs(Mouse.PrimaryDevice, 0, MouseButton.Left) { RoutedEvent = Mouse.PreviewMouseDownEvent });
                 body.RaiseEvent(new MouseEventArgs(Mouse.PrimaryDevice, 0) { RoutedEvent = Mouse.PreviewMouseMoveEvent });
                 body.RaiseEvent(new MouseButtonEventArgs(Mouse.PrimaryDevice, 0, MouseButton.Left) { RoutedEvent = Mouse.PreviewMouseUpEvent });
-                PumpUntil(() => copies == 1 && !window.IsBusy);
+                // IsBusy 只覆盖剪贴板操作；等待复制时间落盘后才能删除夹具目录。
+                PumpUntil(() => copies == 1 && !window.IsBusy && Volatile.Read(ref saved) == 1);
                 Assert.Equal(0, drags); Assert.False(window.IsVisible);
                 return;
             }
             Press(body); Move(body, 1);
             window.Dispatcher.Invoke(() => { }, System.Windows.Threading.DispatcherPriority.Background);
             Assert.Equal(0, drags); Release();
-            PumpUntil(() => copies == 1); Assert.False(window.IsVisible);
+            PumpUntil(() => copies == 1 && Volatile.Read(ref saved) == 1); Assert.False(window.IsVisible);
 
             window.ShowPanel(); PumpUntil(() => !window.IsRefreshing && window.IsActive); window.UpdateLayout();
             body = Select(text); Press(body); Move(body, 24); PumpUntil(() => drags == 1); Release();
