@@ -243,6 +243,7 @@ public partial class ScreenCaptureWindow : Window
         _startPoint  = e.GetPosition(this);
         _isDragging  = true;
         HintHost.Visibility      = Visibility.Collapsed;
+        if (_snipWelcome is not null) _snipWelcome.Visibility = Visibility.Collapsed;
         SelectionRect.StrokeDashArray = PreviewDashes;
         SetFrameVisibility(true);
         CaptureMouse();
@@ -408,6 +409,11 @@ public partial class ScreenCaptureWindow : Window
         _selectionWpfRect = r;
         PlaceFrame(r);
         UpdateDimLayer();
+        if (_snipSizeBadge is null || ScreenshotImage.Source is not BitmapSource desktop) return;
+        if (r.Width > 0 && r.Height > 0)
+            ShowSnipSize(GetSnipCropRect(GetPhysicalSelection(), desktop));
+        else
+            _snipSizeBadge.Visibility = Visibility.Collapsed;
     }
 
     // The tint and the edge are two elements — see the XAML — and are always given the same box.
@@ -456,13 +462,15 @@ public partial class ScreenCaptureWindow : Window
         DimPath.Data = group;
     }
 
-    private void UpdateSelectionMetadata()
+    private void UpdateSelectionMetadata() => Selection = GetPhysicalSelection();
+
+    private Rect GetPhysicalSelection()
     {
         double absPhysX = _physBounds.Left + _selectionWpfRect.X * _dpiX;
         double absPhysY = _physBounds.Top  + _selectionWpfRect.Y * _dpiY;
         int bmpW = Math.Max(1, (int)(_selectionWpfRect.Width  * _dpiX));
         int bmpH = Math.Max(1, (int)(_selectionWpfRect.Height * _dpiY));
-        Selection = new Rect(absPhysX, absPhysY, bmpW, bmpH);
+        return new Rect(absPhysX, absPhysY, bmpW, bmpH);
     }
 
     private bool TryCreateCroppedBitmap()

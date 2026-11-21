@@ -103,25 +103,52 @@ public partial class ScreenCaptureWindow
         if (_snipCanvas is null || _snipSurface is null) return;
         if (_hasSelection && ScreenshotImage.Source is BitmapSource desktop)
         {
-            var x = Math.Clamp((int)(Selection.X - _physBounds.Left), 0, desktop.PixelWidth - 1);
-            var y = Math.Clamp((int)(Selection.Y - _physBounds.Top), 0, desktop.PixelHeight - 1);
-            var width = Math.Min((int)Selection.Width, desktop.PixelWidth - x);
-            var height = Math.Min((int)Selection.Height, desktop.PixelHeight - y);
-            _snipSource = new CroppedBitmap(desktop, new Int32Rect(x, y, Math.Max(1, width), Math.Max(1, height)));
+            var crop = GetSnipCropRect(Selection, desktop);
+            _snipSource = new CroppedBitmap(desktop, crop);
             _snipSource.Freeze();
             _snipSurface.Source = _snipSource;
             _snipSurface.Width = _selectionWpfRect.Width; _snipSurface.Height = _selectionWpfRect.Height;
             Canvas.SetLeft(_snipSurface, _selectionWpfRect.Left); Canvas.SetTop(_snipSurface, _selectionWpfRect.Top);
             _snipSurface.Visibility = Visibility.Visible;
-            _snipSize!.Text = $"{width} × {height}";
+            ShowSnipSize(crop);
         }
+        else
+            _snipSizeBadge!.Visibility = Visibility.Collapsed;
         var drawing = _hasSelection && _snipTool is not SnipTool.Select and not SnipTool.Picker;
         _snipOptions!.Visibility = drawing ? Visibility.Visible : Visibility.Collapsed;
         _snipToolbar!.Visibility = _hasSelection || _snipTool == SnipTool.Picker ? Visibility.Visible : Visibility.Collapsed;
         _snipWelcome!.Visibility = !_hasSelection && _snipTool != SnipTool.Picker ? Visibility.Visible : Visibility.Collapsed;
-        _snipSizeBadge!.Visibility = _hasSelection ? Visibility.Visible : Visibility.Collapsed;
         RefreshSnipDrawing(); LayoutSnipToolbar();
         if (_snipColorHud?.Visibility == Visibility.Visible) UpdateSnipColor(Mouse.GetPosition(this));
+    }
+
+    private Int32Rect GetSnipCropRect(Rect selection, BitmapSource desktop)
+    {
+        var x = Math.Clamp((int)(selection.X - _physBounds.Left), 0, desktop.PixelWidth - 1);
+        var y = Math.Clamp((int)(selection.Y - _physBounds.Top), 0, desktop.PixelHeight - 1);
+        var width = Math.Clamp((int)selection.Width, 1, desktop.PixelWidth - x);
+        var height = Math.Clamp((int)selection.Height, 1, desktop.PixelHeight - y);
+        return new Int32Rect(x, y, width, height);
+    }
+
+    private void ShowSnipSize(Int32Rect crop)
+    {
+        var badge = _snipSizeBadge!;
+        _snipSize!.Text = $"{crop.Width} × {crop.Height} px";
+        badge.Visibility = Visibility.Visible;
+        badge.Measure(new System.Windows.Size(double.PositiveInfinity, double.PositiveInfinity));
+        var anchor = new System.Drawing.Point(_physBounds.Left + crop.X, _physBounds.Top + crop.Y);
+        var screen = System.Windows.Forms.Screen.FromPoint(anchor).Bounds;
+        var bounds = System.Drawing.Rectangle.Intersect(screen, _physBounds);
+        if (bounds.IsEmpty) bounds = _physBounds;
+        var left = (bounds.Left - _physBounds.Left) / _dpiX;
+        var right = (bounds.Right - _physBounds.Left) / _dpiX;
+        var top = (bounds.Top - _physBounds.Top) / _dpiY;
+        var bottom = (bounds.Bottom - _physBounds.Top) / _dpiY;
+        var above = _selectionWpfRect.Top - badge.DesiredSize.Height - 8;
+        Canvas.SetLeft(badge, Math.Clamp(_selectionWpfRect.Left, left, Math.Max(left, right - badge.DesiredSize.Width)));
+        var y = above >= top ? above : _selectionWpfRect.Top + 8;
+        Canvas.SetTop(badge, Math.Clamp(y, top, Math.Max(top, bottom - badge.DesiredSize.Height)));
     }
 
     private void SetSnipWriting(bool writing)
@@ -166,8 +193,6 @@ public partial class ScreenCaptureWindow
         _snipWelcome!.Measure(new System.Windows.Size(Math.Max(80, width - 24), double.PositiveInfinity));
         Canvas.SetLeft(_snipWelcome, left + (width - _snipWelcome.DesiredSize.Width) / 2);
         Canvas.SetTop(_snipWelcome, top + 28);
-        Canvas.SetLeft(_snipSizeBadge!, _selectionWpfRect.Left);
-        Canvas.SetTop(_snipSizeBadge!, _selectionWpfRect.Top >= top + 32 ? _selectionWpfRect.Top - 30 : _selectionWpfRect.Top + 8);
     }
 
     private Point SnipPoint(MouseEventArgs e)

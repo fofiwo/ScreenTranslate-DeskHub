@@ -71,6 +71,8 @@
 
 保留约束：截图/取色/贴图真实写入继续串行、可取消、有界重试；成功须读回核对可见 RGB，分块比较以控制附加分配。读回仅被占用时只重读，避免再次发布通知。失败保留选区和标注并允许重试。合成预热不占用真实写入互斥锁。
 
+拖拽框选时复用尺寸标签，按最终截图的像素裁剪规则计算宽高。初次拖拽只更新选框和标签，松开鼠标后才创建裁剪位图。尺寸、反向拖拽和屏幕边缘布局由 [SnippingRegression](../src/ScreenTranslate.UiTests/SnippingRegression.cs) 覆盖。
+
 适用边界：进入系统同步调用后不能被令牌强行中止；线程迁移不等于它有固定完成时间。不能为提速删掉核对，也不能用每次重写剪贴板解决读回占用。`CF_BITMAP` 的 GDI 所有权须交给系统，发布窗口、工作线程甚至进程退出后其他进程仍须能读取；本机原型曾暴露直接转交 DIB section 的跨进程失效，最终使用独立 DDB 并保留跨进程回归。图片按截图既有契约核对可见 RGB，不承诺透明图编辑格式；低色深/RDP 桌面及其他程序持续抢占仍需单独验证。取色和贴图复制沿用原路径及共享写入互斥。
 
 实现：[ScreenCaptureWindow.Snip / SnipClipboard](../src/OverTranslate/Views/Capture/ScreenCaptureWindow.Snip.cs)、[ScreenshotClipboardImage](../src/OverTranslate/Services/ScreenshotClipboardImage.cs)。回归：[SnipClipboardTests](../src/OverTranslate.Tests/SnipClipboardTests.cs)、[SnipCopyPerformanceRegression](../src/ScreenTranslate.UiTests/SnipCopyPerformanceRegression.cs)、[SnipImagePublicationRegression](../src/ScreenTranslate.UiTests/SnipImagePublicationRegression.cs)。
