@@ -70,6 +70,32 @@ public sealed partial class ScreenTranslateShellTests
             Invoke("UpdateSelectionMetadata"); Invoke("UpdateSelectionVisuals");
             Assert.Equal("600 × 300 px", sizeText.Text);
             var document = (SnipDocument)Get("_snipDocument")!;
+            document.Add(new SnipMark(SnipTool.Pen, Colors.Red, 3, [new(20, 20)]));
+            document.Undo();
+            var firstSelection = capture.Selection;
+            Rect? adjustedSelection = null;
+            capture.SelectionAdjusted += (_, selection) => adjustedSelection = selection;
+            var outside = new Point(800 / scaleX, 500 / scaleY);
+            Invoke("BeginSelection", outside);
+            Assert.True((bool)Get("_isDragging")!);
+            Assert.Equal(Visibility.Collapsed, ((FrameworkElement)Get("_snipSurface")!).Visibility);
+            Invoke("EndSelection", outside);
+            Assert.Equal(firstSelection, capture.Selection);
+            Assert.Null(adjustedSelection);
+            Assert.True(document.CanRedo);
+
+            document.Redo();
+            Invoke("BeginSelection", outside);
+            Invoke("EndSelection", new Point(600 / scaleX, 400 / scaleY));
+            Assert.Equal("200 × 100 px", sizeText.Text);
+            Assert.Equal(capture.Selection, adjustedSelection);
+            Assert.Empty(document.Marks);
+            Assert.False(document.CanRedo);
+            Assert.Equal(200, ((BitmapSource)Get("_snipSource")!).PixelWidth);
+            Invoke("BeginSelection", new Point(100 / scaleX, 100 / scaleY));
+            Invoke("EndSelection", new Point(700 / scaleX, 400 / scaleY));
+            Assert.Equal(firstSelection, capture.Selection);
+
             document.Add(new SnipMark(SnipTool.Rectangle, Colors.Red, 3, [new(20, 20), new(430, 105)]));
             document.Add(new SnipMark(SnipTool.Arrow, Colors.DodgerBlue, 5, [new(120, 220), new(350, 130)]));
             document.Add(new SnipMark(SnipTool.Text, Colors.Red, 3, [new(430, 150)], "文字标注"));

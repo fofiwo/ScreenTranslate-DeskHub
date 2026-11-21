@@ -91,7 +91,7 @@ public partial class ScreenCaptureWindow
         foreach (var (kind, button) in _snipTools) button.IsChecked = kind == tool;
         RefreshSnipSelection();
         SetSnipStatus(tool switch {
-            SnipTool.Select => "拖动移动选区，边框或四角调整大小 · 双击 / Enter 复制 · C 复制色值",
+            SnipTool.Select => "框外拖动重选 · 框内移动 · 边角缩放 · 双击 / Enter 复制 · C 取色",
             SnipTool.Picker => "移动鼠标实时取色 · C / 单击复制色值 · Shift 切换 HEX/RGB · 双击选区复制截图",
             SnipTool.Text => "在选区单击输入文字 · Enter 确认 · Shift+Enter 换行",
             _ => "在选区拖动标注 · Ctrl+Z 撤销 · Ctrl+Y 重做" });
@@ -101,7 +101,8 @@ public partial class ScreenCaptureWindow
     private void RefreshSnipSelection()
     {
         if (_snipCanvas is null || _snipSurface is null) return;
-        if (_hasSelection && ScreenshotImage.Source is BitmapSource desktop)
+        var showSelection = _hasSelection && !_isDragging;
+        if (showSelection && ScreenshotImage.Source is BitmapSource desktop)
         {
             var crop = GetSnipCropRect(Selection, desktop);
             _snipSource = new CroppedBitmap(desktop, crop);
@@ -110,14 +111,17 @@ public partial class ScreenCaptureWindow
             _snipSurface.Width = _selectionWpfRect.Width; _snipSurface.Height = _selectionWpfRect.Height;
             Canvas.SetLeft(_snipSurface, _selectionWpfRect.Left); Canvas.SetTop(_snipSurface, _selectionWpfRect.Top);
             _snipSurface.Visibility = Visibility.Visible;
-            ShowSnipSize(crop);
+            ShowSnipSize(crop, _selectionWpfRect);
         }
         else
+        {
+            _snipSurface.Visibility = Visibility.Collapsed;
             _snipSizeBadge!.Visibility = Visibility.Collapsed;
-        var drawing = _hasSelection && _snipTool is not SnipTool.Select and not SnipTool.Picker;
+        }
+        var drawing = showSelection && _snipTool is not SnipTool.Select and not SnipTool.Picker;
         _snipOptions!.Visibility = drawing ? Visibility.Visible : Visibility.Collapsed;
-        _snipToolbar!.Visibility = _hasSelection || _snipTool == SnipTool.Picker ? Visibility.Visible : Visibility.Collapsed;
-        _snipWelcome!.Visibility = !_hasSelection && _snipTool != SnipTool.Picker ? Visibility.Visible : Visibility.Collapsed;
+        _snipToolbar!.Visibility = showSelection || _snipTool == SnipTool.Picker ? Visibility.Visible : Visibility.Collapsed;
+        _snipWelcome!.Visibility = !_isDragging && !_hasSelection && _snipTool != SnipTool.Picker ? Visibility.Visible : Visibility.Collapsed;
         RefreshSnipDrawing(); LayoutSnipToolbar();
         if (_snipColorHud?.Visibility == Visibility.Visible) UpdateSnipColor(Mouse.GetPosition(this));
     }
@@ -131,7 +135,7 @@ public partial class ScreenCaptureWindow
         return new Int32Rect(x, y, width, height);
     }
 
-    private void ShowSnipSize(Int32Rect crop)
+    private void ShowSnipSize(Int32Rect crop, Rect selection)
     {
         var badge = _snipSizeBadge!;
         _snipSize!.Text = $"{crop.Width} × {crop.Height} px";
@@ -145,9 +149,9 @@ public partial class ScreenCaptureWindow
         var right = (bounds.Right - _physBounds.Left) / _dpiX;
         var top = (bounds.Top - _physBounds.Top) / _dpiY;
         var bottom = (bounds.Bottom - _physBounds.Top) / _dpiY;
-        var above = _selectionWpfRect.Top - badge.DesiredSize.Height - 8;
-        Canvas.SetLeft(badge, Math.Clamp(_selectionWpfRect.Left, left, Math.Max(left, right - badge.DesiredSize.Width)));
-        var y = above >= top ? above : _selectionWpfRect.Top + 8;
+        var above = selection.Top - badge.DesiredSize.Height - 8;
+        Canvas.SetLeft(badge, Math.Clamp(selection.Left, left, Math.Max(left, right - badge.DesiredSize.Width)));
+        var y = above >= top ? above : selection.Top + 8;
         Canvas.SetTop(badge, Math.Clamp(y, top, Math.Max(top, bottom - badge.DesiredSize.Height)));
     }
 
@@ -159,7 +163,7 @@ public partial class ScreenCaptureWindow
 
     private void RefreshSnipInteraction()
     {
-        var editing = !_snipWriting;
+        var editing = !_snipWriting && !_isDragging;
         _snipSurface!.IsHitTestVisible = editing && _hasSelection && _snipTool is not SnipTool.Select and not SnipTool.Picker;
         SelectionBody.IsHitTestVisible = editing && _snipTool == SnipTool.Select;
         SetHandlesVisibility(editing && _hasSelection && _snipTool == SnipTool.Select);
@@ -445,7 +449,7 @@ public partial class ScreenCaptureWindow
     {
         if (_snipCanvas is null || e.Handled || Keyboard.FocusedElement is TextBox) return false;
         var key = e.Key == Key.ImeProcessed ? e.ImeProcessedKey : e.Key;
-        if (_snipWriting)
+        if (_snipWriting || _isDragging)
         {
             if (key is Key.Enter or Key.C or Key.P or Key.Z or Key.Y) { e.Handled = true; return true; }
             return false;

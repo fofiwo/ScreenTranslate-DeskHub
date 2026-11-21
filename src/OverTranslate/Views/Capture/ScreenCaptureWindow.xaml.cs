@@ -238,12 +238,19 @@ public partial class ScreenCaptureWindow : Window
     protected override void OnMouseLeftButtonDown(MouseButtonEventArgs e)
     {
         if (_snipCanvas is not null && IsSnipToolbarTarget(e.OriginalSource as DependencyObject)) return;
-        if (_processingStarted || _hasSelection || _snipWriting) return;
         base.OnMouseLeftButtonDown(e);
-        _startPoint  = e.GetPosition(this);
+        BeginSelection(e.GetPosition(this));
+    }
+
+    private void BeginSelection(WPoint point)
+    {
+        if (_processingStarted || _isDragging || _snipWriting || (_hasSelection && _selectionWpfRect.Contains(point))) return;
+        CommitSnipText();
+        _startPoint  = point;
         _isDragging  = true;
         HintHost.Visibility      = Visibility.Collapsed;
-        if (_snipWelcome is not null) _snipWelcome.Visibility = Visibility.Collapsed;
+        SetHandlesVisibility(false);
+        RefreshSnipSelection();
         SelectionRect.StrokeDashArray = PreviewDashes;
         SetFrameVisibility(true);
         CaptureMouse();
@@ -266,29 +273,38 @@ public partial class ScreenCaptureWindow : Window
     protected override void OnMouseLeftButtonUp(MouseButtonEventArgs e)
     {
         base.OnMouseLeftButtonUp(e);
-        if (!_isDragging) return;
+        if (_isDragging) EndSelection(e.GetPosition(this));
+    }
+
+    protected override void OnLostMouseCapture(MouseEventArgs e)
+    {
+        base.OnLostMouseCapture(e);
+        if (_isDragging && ReferenceEquals(e.OriginalSource, this)) EndSelection(_startPoint);
+    }
+
+    private void EndSelection(WPoint point)
+    {
         _isDragging = false;
         ReleaseMouseCapture();
 
-        var rect = Normalize(_startPoint, e.GetPosition(this));
-        _selectionWpfRect = rect;
+        var rect = Normalize(_startPoint, point);
+        SelectionRect.StrokeDashArray = null;
         if (rect.Width < 4 || rect.Height < 4)
         {
-            _hasSelection = false;
-            SetFrameVisibility(false);
-            SetHandlesVisibility(false);
-            UpdateDimLayer();
-            HintHost.Visibility = _snipCanvas is null ? Visibility.Visible : Visibility.Collapsed;
-            RefreshSnipSelection();
+            HintHost.Visibility = !_hasSelection && _snipCanvas is null ? Visibility.Visible : Visibility.Collapsed;
+            UpdateSelectionVisuals();
             return;
         }
 
+        var replacing = _hasSelection;
+        if (replacing) _snipDocument.Clear();
+        _selectionWpfRect = rect;
         _hasSelection = true;
-        SelectionRect.StrokeDashArray = null;
         UpdateSelectionMetadata();
         UpdateSelectionVisuals();
 
-        _selectionTcs.TrySetResult(true);
+        if (replacing) SelectionAdjusted?.Invoke(this, Selection);
+        else _selectionTcs.TrySetResult(true);
     }
 
     /// <summary>
@@ -311,7 +327,7 @@ public partial class ScreenCaptureWindow : Window
     public bool PrepareForProcessing(out bool lockedByThisCall)
     {
         lockedByThisCall = false;
-        if (!_hasSelection) return false;
+        if (!_hasSelection || _isDragging) return false;
 
         if (_processingStarted)
             return CroppedBitmap != null;
@@ -406,12 +422,11 @@ public partial class ScreenCaptureWindow : Window
     private void DrawRect(WPoint p1, WPoint p2)
     {
         var r = Normalize(p1, p2);
-        _selectionWpfRect = r;
         PlaceFrame(r);
-        UpdateDimLayer();
+        UpdateDimLayer(r);
         if (_snipSizeBadge is null || ScreenshotImage.Source is not BitmapSource desktop) return;
         if (r.Width > 0 && r.Height > 0)
-            ShowSnipSize(GetSnipCropRect(GetPhysicalSelection(), desktop));
+            ShowSnipSize(GetSnipCropRect(GetPhysicalSelection(r), desktop), r);
         else
             _snipSizeBadge.Visibility = Visibility.Collapsed;
     }
@@ -446,7 +461,7 @@ public partial class ScreenCaptureWindow : Window
     /// Rebuilt on every move of the pointer, which is two rectangles and a group — cheap next to the
     /// full-screen screenshot this window is already compositing on each frame.
     /// </remarks>
-    private void UpdateDimLayer()
+    private void UpdateDimLayer(Rect? preview = null)
     {
         var outer = new RectangleGeometry(new Rect(0, 0, ActualWidth, ActualHeight));
 
@@ -458,18 +473,18 @@ public partial class ScreenCaptureWindow : Window
 
         var group = new GeometryGroup { FillRule = FillRule.EvenOdd };
         group.Children.Add(outer);
-        group.Children.Add(new RectangleGeometry(_selectionWpfRect, FrameCorner, FrameCorner));
+        group.Children.Add(new RectangleGeometry(preview ?? _selectionWpfRect, FrameCorner, FrameCorner));
         DimPath.Data = group;
     }
 
-    private void UpdateSelectionMetadata() => Selection = GetPhysicalSelection();
+    private void UpdateSelectionMetadata() => Selection = GetPhysicalSelection(_selectionWpfRect);
 
-    private Rect GetPhysicalSelection()
+    private Rect GetPhysicalSelection(Rect selection)
     {
-        double absPhysX = _physBounds.Left + _selectionWpfRect.X * _dpiX;
-        double absPhysY = _physBounds.Top  + _selectionWpfRect.Y * _dpiY;
-        int bmpW = Math.Max(1, (int)(_selectionWpfRect.Width  * _dpiX));
-        int bmpH = Math.Max(1, (int)(_selectionWpfRect.Height * _dpiY));
+        double absPhysX = _physBounds.Left + selection.X * _dpiX;
+        double absPhysY = _physBounds.Top  + selection.Y * _dpiY;
+        int bmpW = Math.Max(1, (int)(selection.Width  * _dpiX));
+        int bmpH = Math.Max(1, (int)(selection.Height * _dpiY));
         return new Rect(absPhysX, absPhysY, bmpW, bmpH);
     }
 

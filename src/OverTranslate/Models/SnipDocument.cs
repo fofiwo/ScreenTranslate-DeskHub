@@ -21,6 +21,12 @@ public sealed class SnipDocument
     public bool CanUndo => _marks.Count > 0;
     public bool CanRedo => _redo.Count > 0;
 
+    internal void Clear()
+    {
+        _marks.Clear();
+        _redo.Clear();
+    }
+
     public void Add(SnipMark mark)
     {
         if (mark.Points.Count == 0) return;
