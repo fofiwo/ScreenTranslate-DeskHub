@@ -58,9 +58,12 @@ public sealed partial class ScreenTranslateShellTests
             var longOrigin = "fixture-" + new string('x', 72);
             store.Add(captured.Record with { Source = "来自 " + longOrigin, CopiedAt = DateTimeOffset.UtcNow.AddSeconds(1) });
             ((TextBox)window.FindName("SearchBox")).Text = longOrigin;
-            PumpUntil(() => list.Items.Count == 1 && Visuals<TextBlock>(list).Any(t => t.Text == "来自 " + longOrigin));
+            PumpUntil(() => list.Items.Count == 1 && Visuals<TextBlock>(list).Any(t => Equals(t.ToolTip, "来自 " + longOrigin)));
             window.Width = 460; window.Height = 400; window.UpdateLayout();
-            var longSource = Visuals<TextBlock>(list).Single(t => t.Text == "来自 " + longOrigin);
+            var longSource = Visuals<TextBlock>(list).Single(t => Equals(t.ToolTip, "来自 " + longOrigin));
+            var runs = longSource.Inlines.OfType<System.Windows.Documents.Run>().ToArray();
+            Assert.Equal("来自 " + longOrigin, string.Concat(runs.Select(run => run.Text)));
+            Assert.Contains(runs, run => run.Text == longOrigin && run.Background is not null);
             AssertInside((FrameworkElement)window.Content, longSource);
             Assert.Equal(TextTrimming.CharacterEllipsis, longSource.TextTrimming);
             ApplyTheme(System.Windows.Application.Current, "Dark");

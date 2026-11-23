@@ -73,16 +73,16 @@ public static class HighlightedText
 
     internal static void ShowMatches(TextBlock block, string text, string query)
     {
-        if (query.Length == 0)
+        var firstHit = query.Length == 0 ? -1 : text.IndexOf(query, StringComparison.OrdinalIgnoreCase);
+        block.Inlines.Clear();
+        if (firstHit < 0)
         {
-            block.Inlines.Clear();
             block.Text = text;
             return;
         }
 
-        block.Inlines.Clear();
         var start = 0;
-        for (var hit = text.IndexOf(query, StringComparison.OrdinalIgnoreCase); hit >= 0;
+        for (var hit = firstHit; hit >= 0;
             hit = text.IndexOf(query, start, StringComparison.OrdinalIgnoreCase))
         {
             if (hit > start) block.Inlines.Add(new Run(text[start..hit]));

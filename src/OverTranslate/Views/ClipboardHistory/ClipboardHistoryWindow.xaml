@@ -284,8 +284,7 @@
          </ToolTip>
         </Image.ToolTip>
         </Image>
-        <TextBlock controls:HighlightedText.Match="{Binding SourceMatch}" FontSize="11"
-         MouseEnter="HoverTarget_Enter" MouseLeave="HoverArea_Leave"
+        <TextBlock controls:HighlightedText.Match="{Binding SourceMatch}" ToolTip="{Binding Record.SourceLabel}" FontSize="11"
          Foreground="{DynamicResource AppTextSecondary}" TextTrimming="CharacterEllipsis" Margin="0,5,0,0">
          <TextBlock.Style><Style TargetType="TextBlock"><Style.Triggers>
           <DataTrigger Binding="{Binding Record.SourceLabel}" Value=""><Setter Property="Visibility" Value="Collapsed"/></DataTrigger>
