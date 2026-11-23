@@ -99,6 +99,81 @@ public sealed partial class ScreenTranslateShellTests
         }
     }
 
+    private static void VerifyClipboardSearchPreview()
+    {
+        var folder = Path.Combine(Path.GetTempPath(), "clipboard-search-preview-" + Guid.NewGuid().ToString("N"));
+        var store = new ClipboardHistoryStore(folder);
+        var text = string.Concat(Enumerable.Repeat("第一段正文\n", 120)) + "关键词 carry-over KEYWORD\n全文结束";
+        store.Add(new() { Text = text });
+        store.Add(new() { Text = "富文本示例", Html = "<a href='https://example.test/keyword'>富文本示例</a>" });
+        var window = new ClipboardHistoryWindow(store, _ => throw new InvalidOperationException("悬停不应复制"),
+            settings: new AppSettings(), saveSettings: () => true,
+            syncActivities: new OverTranslate.Services.Lan.SyncActivityStore(Path.Combine(folder, "activity.json")))
+        { Left = 80, Top = 80, ShowActivated = false };
+        var search = (TextBox)window.FindName("SearchBox");
+        InputMethod.SetIsInputMethodEnabled(search, false);
+        var list = (ListBox)window.FindName("HistoryList");
+        var popup = (System.Windows.Controls.Primitives.Popup)window.FindName("HoverPreview");
+        var preview = (TextBlock)window.FindName("HoverPreviewText");
+        var scroll = (ScrollViewer)window.FindName("HoverPreviewScroll");
+        Assert.True(HoverGetCursorPos(out var cursor));
+        try
+        {
+            Assert.True(HoverSetCursorPos(10, 10));
+            window.SetWindowPinned(true);
+            window.ShowPanel();
+            NativePasteShowWindow(new System.Windows.Interop.WindowInteropHelper(window).Handle, 5);
+            search.Text = "keyword";
+            PumpUntil(() => !window.IsRefreshing && list.Items.Count == 2);
+            window.UpdateLayout();
+
+            static string InlineText(TextBlock block) =>
+                string.Concat(block.Inlines.OfType<System.Windows.Documents.Run>().Select(run => run.Text));
+
+            var html = Visuals<TextBlock>(list).Single(block => InlineText(block).Contains("example.test/keyword"));
+            var htmlHit = Assert.Single(html.Inlines.OfType<System.Windows.Documents.Run>().Where(run => run.Background is not null));
+            Assert.Equal("keyword", htmlHit.Text);
+
+            var card = Visuals<TextBlock>(list).Single(block => InlineText(block).Contains("carry-over"));
+            var hit = Assert.Single(card.Inlines.OfType<System.Windows.Documents.Run>().Where(run => run.Background is not null));
+            Assert.Equal("KEYWORD", hit.Text);
+            if (!SystemParameters.HighContrast)
+                Assert.Equal(System.Windows.Media.Color.FromRgb(139, 248, 155),
+                    Assert.IsType<System.Windows.Media.SolidColorBrush>(hit.Background).Color);
+
+            var point = card.PointToScreen(new Point(card.ActualWidth / 2, card.ActualHeight / 2));
+            Assert.True(HoverSetCursorPos((int)point.X, (int)point.Y));
+            PumpUntil(() => popup.IsOpen && scroll.ScrollableHeight > 0);
+            Assert.Equal(text, InlineText(preview));
+            Assert.Contains(preview.Inlines.OfType<System.Windows.Documents.Run>(), run => run.Text == "KEYWORD" && run.Background is not null);
+
+            point = scroll.PointToScreen(new Point(20, 20));
+            Assert.True(HoverSetCursorPos((int)point.X, (int)point.Y));
+            PumpUntil(() => scroll.IsMouseOver);
+            var handle = Assert.IsType<System.Windows.Interop.HwndSource>(PresentationSource.FromVisual(scroll)).Handle;
+            var coordinates = ((int)point.X & 0xffff) | (((int)point.Y & 0xffff) << 16);
+            Assert.True(HoverPostMessage(handle, 0x020A, new IntPtr(-120 << 16), new IntPtr(coordinates)));
+            PumpUntil(() => scroll.VerticalOffset > 0);
+            scroll.ScrollToEnd();
+            PumpUntil(() => scroll.VerticalOffset == scroll.ScrollableHeight);
+            Assert.True(popup.IsOpen);
+
+            Assert.True(HoverSetCursorPos(10, 10));
+            PumpUntil(() => !popup.IsOpen);
+            search.Clear();
+            PumpUntil(() => !window.IsRefreshing);
+            window.UpdateLayout();
+            Assert.DoesNotContain(Visuals<TextBlock>(list).SelectMany(block => block.Inlines.OfType<System.Windows.Documents.Run>()),
+                run => run.Background is not null);
+        }
+        finally
+        {
+            window.Close();
+            HoverSetCursorPos(cursor.X, cursor.Y);
+            Directory.Delete(folder, true);
+        }
+    }
+
     [DllImport("user32.dll", EntryPoint = "SetCursorPos")]
     private static extern bool HoverSetCursorPos(int x, int y);
     [DllImport("user32.dll", EntryPoint = "GetCursorPos")]

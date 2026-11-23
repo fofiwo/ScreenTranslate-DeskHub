@@ -298,31 +298,16 @@ public sealed partial class ScreenTranslateShellTests
             Assert.InRange(Canvas.GetTop(hud), 100 / sy, 400 / sy - hud.ActualHeight);
             AssertInside((FrameworkElement)capture.Content, hud);
             Render(capture, "snip-live-color", (int)(1000 / sx), (int)(700 / sy), sx);
-            string? hex = null;
-            Complete(capture.CopySnipColorAsync(outside, value => hex = value));
-            Assert.Equal("#0C2238", hex);
-            capture.Focus();
-            void ShiftFormat() {
-                var shift = new KeyEventArgs(Keyboard.PrimaryDevice, PresentationSource.FromVisual(capture), Environment.TickCount, Key.LeftShift) { RoutedEvent = Keyboard.PreviewKeyDownEvent };
-                Invoke("HandleSnipKey", shift); Assert.True(shift.Handled);
-            }
-            ShiftFormat();
-            Complete(capture.CopySnipColorAsync(outside, value => hex = value));
-            Assert.Equal("RGB(12, 34, 56)", hex);
-            capture.UpdateSnipColor(outside);
-            Assert.StartsWith("RGB(12, 34, 56)", ((TextBlock)Get("_snipColorLabel")!).Text);
-            ShiftFormat();
-            Complete(capture.CopySnipColorAsync(outside, value => hex = value));
-            Assert.Equal("#0C2238", hex);
+            Complete(capture.CopySnipColorAsync(inside, _ => throw new InvalidOperationException("fixture")));
             Assert.False((bool)Get("_snipClosed")!);
             Assert.True(capture.HasSelection);
-            Complete(capture.CopySnipColorAsync(inside, _ => throw new InvalidOperationException("fixture")));
             Assert.Contains("颜色复制失败", ((TextBlock)Get("_snipStatus")!).Text);
             capture.UpdateSnipColor(outside);
             Assert.Contains("颜色复制失败", ((TextBlock)Get("_snipStatus")!).Text); // 移动不覆盖失败反馈。
             var outsideColorWritten = false;
             Complete(capture.CopySnipColorAsync(new Point(-1, -1), _ => outsideColorWritten = true));
             Assert.False(outsideColorWritten);
+            Invoke("ApplySnipColor", Color.FromRgb(12, 34, 56));
 
             foreach (var source in new DependencyObject[] { (DependencyObject)Get("_snipToolbar")!, new TextBox(), (DependencyObject)capture.FindName("TopLeftHandle") })
             {
@@ -350,6 +335,34 @@ public sealed partial class ScreenTranslateShellTests
             Assert.Equal(Color.FromRgb(12, 34, 56), SnipDocument.Sample(copied, 50, 50));
         }
         finally { capture.Close(); }
+
+        foreach (var expected in new[] { "#0C2238", "RGB(12, 34, 56)" })
+        {
+            var picker = new ScreenCaptureWindow((System.Drawing.Bitmap)pixels.Clone(),
+                new System.Drawing.Rectangle(0, 0, 1000, 700), snippingTools: true);
+            try
+            {
+                var closed = false;
+                picker.Closed += (_, _) => closed = true;
+                picker.Show();
+                picker.UpdateLayout();
+                if (expected.StartsWith("RGB", StringComparison.Ordinal))
+                {
+                    var shift = new KeyEventArgs(Keyboard.PrimaryDevice, PresentationSource.FromVisual(picker),
+                        Environment.TickCount, Key.LeftShift) { RoutedEvent = Keyboard.PreviewKeyDownEvent };
+                    typeof(ScreenCaptureWindow).GetMethod("HandleSnipKey", flags)!.Invoke(picker, [shift]);
+                    Assert.True(shift.Handled);
+                    picker.UpdateSnipColor(new Point(1, 1));
+                    Assert.StartsWith(expected, ((TextBlock)typeof(ScreenCaptureWindow).GetField("_snipColorLabel", flags)!.GetValue(picker)!).Text);
+                }
+                string? copied = null;
+                Complete(picker.CopySnipColorAsync(new Point(1, 1), value => copied = value));
+                Assert.Equal(expected, copied);
+                Assert.True(closed);
+                Assert.False(picker.IsVisible);
+            }
+            finally { picker.Close(); }
+        }
 
         foreach (var size in new[] { (1, 1), (3, 2), (600, 300), (5000, 3000) })
         {
@@ -422,6 +435,8 @@ public sealed partial class ScreenTranslateShellTests
                     points.Add(new Point(100, 100));
                     var colorCopy = capture.CopySnipColorAsync(new Point(150 / sx, 150 / sy), _ => { });
                     PumpUntil(() => colorCopy.IsCompleted); colorCopy.GetAwaiter().GetResult();
+                    Assert.False(capture.IsVisible);
+                    Assert.True((bool)Get("_snipClosed")!);
                     Invoke("FinishSnipStroke");
                     Assert.Equal(Colors.Red, Assert.Single(document.Marks).Color);
                 }

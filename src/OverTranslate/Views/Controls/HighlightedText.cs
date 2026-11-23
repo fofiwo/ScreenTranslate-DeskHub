@@ -1,6 +1,10 @@
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Documents;
+using System.Windows.Media;
+using Brushes = System.Windows.Media.Brushes;
+using Color = System.Windows.Media.Color;
+using SystemColors = System.Windows.SystemColors;
 
 namespace OverTranslate.Views.Controls;
 
@@ -43,6 +47,61 @@ public static class HighlightedText
     /// the way every other accented thing on the page does.
     /// </remarks>
     public const string HighlightBrushKey = "AppAccent";
+
+    public static readonly DependencyProperty MatchProperty = DependencyProperty.RegisterAttached(
+        "Match", typeof((string, string)), typeof(HighlightedText),
+        new PropertyMetadata(default((string, string)), (element, args) =>
+        {
+            if (element is TextBlock block && args.NewValue is ValueTuple<string, string> match)
+                ShowMatches(block, match.Item1 ?? "", match.Item2 ?? "");
+        }));
+
+    public static void SetMatch(DependencyObject element, (string Text, string Query) value) =>
+        element.SetValue(MatchProperty, value);
+
+    public static (string Text, string Query) GetMatch(DependencyObject element) =>
+        ((string, string))element.GetValue(MatchProperty);
+
+    private static readonly SolidColorBrush MatchBackground = CreateMatchBackground();
+
+    private static SolidColorBrush CreateMatchBackground()
+    {
+        var brush = new SolidColorBrush(Color.FromRgb(139, 248, 155));
+        brush.Freeze();
+        return brush;
+    }
+
+    internal static void ShowMatches(TextBlock block, string text, string query)
+    {
+        if (query.Length == 0)
+        {
+            block.Inlines.Clear();
+            block.Text = text;
+            return;
+        }
+
+        block.Inlines.Clear();
+        var start = 0;
+        for (var hit = text.IndexOf(query, StringComparison.OrdinalIgnoreCase); hit >= 0;
+            hit = text.IndexOf(query, start, StringComparison.OrdinalIgnoreCase))
+        {
+            if (hit > start) block.Inlines.Add(new Run(text[start..hit]));
+            start = hit + query.Length;
+            var run = new Run(text[hit..start]);
+            if (SystemParameters.HighContrast)
+            {
+                run.SetResourceReference(TextElement.BackgroundProperty, SystemColors.HighlightBrushKey);
+                run.SetResourceReference(TextElement.ForegroundProperty, SystemColors.HighlightTextBrushKey);
+            }
+            else
+            {
+                run.Background = MatchBackground;
+                run.Foreground = Brushes.Black;
+            }
+            block.Inlines.Add(run);
+        }
+        if (start < text.Length) block.Inlines.Add(new Run(text[start..]));
+    }
 
     public static readonly DependencyProperty SourceProperty =
         DependencyProperty.RegisterAttached(

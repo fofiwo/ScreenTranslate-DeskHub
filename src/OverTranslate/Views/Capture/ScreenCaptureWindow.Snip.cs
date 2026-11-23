@@ -347,7 +347,7 @@ public partial class ScreenCaptureWindow
             await SnipClipboard.WriteAsync(() => {
                 if (write is not null) write(value); else System.Windows.Clipboard.SetDataObject(value, true);
             }, _snipCancellation.Token);
-            if (!_snipClosed) { ApplySnipColor(color); SetSnipStatus($"已复制 {value} · Shift 切换 HEX/RGB"); }
+            if (!_snipClosed) Close();
         }
         catch (OperationCanceledException) { }
         catch (Exception) { if (!_snipClosed) SetSnipStatus("颜色复制失败，请重试；可按 Esc 取消。"); }

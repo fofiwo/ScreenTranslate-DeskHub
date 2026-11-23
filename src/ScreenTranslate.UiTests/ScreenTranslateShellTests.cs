@@ -165,6 +165,7 @@ public sealed partial class ScreenTranslateShellTests
                 }
                 if (Environment.GetEnvironmentVariable("SCREEN_TRANSLATE_CLIPBOARD_HOVER_ONLY") == "1")
                 {
+                    VerifyClipboardSearchPreview();
                     VerifyClipboardPointerActivation();
                     return;
                 }

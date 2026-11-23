@@ -24,7 +24,7 @@ using Brushes = System.Windows.Media.Brushes;
 
 namespace OverTranslate.Views.ClipboardHistory;
 
-internal sealed class ClipboardRecordView(ClipboardRecord record, ClipboardHistoryStore store) : INotifyPropertyChanged
+internal sealed class ClipboardRecordView(ClipboardRecord record, ClipboardHistoryStore store, string query = "") : INotifyPropertyChanged
 {
     public event PropertyChangedEventHandler? PropertyChanged;
     private static readonly SemaphoreSlim ImageReads = new(2);
@@ -38,10 +38,34 @@ internal sealed class ClipboardRecordView(ClipboardRecord record, ClipboardHisto
     public string FilePaths => string.Join("\n", Record.Files);
     public string TimeLabel => Record.TimeLabel;
     internal void RefreshTime() => PropertyChanged?.Invoke(this, new(nameof(TimeLabel)));
+    public string Query { get; } = query;
+    public (string Text, string Query) PreviewMatch => (Preview, Query);
+    public (string Text, string Query) SourceMatch => (Record.SourceLabel, Query);
     public string Preview
     {
-        get { if (Record.HasImage && Record.Text.Length == 0) return ""; var text = Record.DisplayText; return text[..Math.Min(600, text.Length)]; }
+        get
+        {
+            var text = Record.HasImage && Record.Text.Length == 0 && !HasFiles ? "" : Record.DisplayText;
+            if (Query.Length == 0) return text[..Math.Min(600, text.Length)];
+
+            var hit = text.IndexOf(Query, StringComparison.OrdinalIgnoreCase);
+            if (hit < 0 && !Record.SourceLabel.Contains(Query, StringComparison.OrdinalIgnoreCase))
+            {
+                var matchedPath = Record.Files.FirstOrDefault(path => path.Contains(Query, StringComparison.OrdinalIgnoreCase));
+                var matchText = matchedPath ?? (HiddenHtmlMatch ? Record.Html : Record.Source);
+                hit = matchText.IndexOf(Query, StringComparison.OrdinalIgnoreCase);
+                if (hit >= 0) text = matchText;
+            }
+            var contextLength = Math.Clamp(hit, 0, 24);
+            var start = contextLength == 0 ? 0 : Math.Max(hit - contextLength, text.LastIndexOfAny(['\r', '\n'], hit - 1, contextLength) + 1);
+            var length = Math.Min(text.Length - start, Math.Max(600, hit - start + Query.Length));
+            return (start == 0 ? "" : "…") + text.Substring(start, length);
+        }
     }
+
+    public bool HiddenHtmlMatch => Query.Length > 0
+        && Record.Html.Contains(Query, StringComparison.OrdinalIgnoreCase)
+        && !Record.DisplayText.Contains(Query, StringComparison.OrdinalIgnoreCase);
     public string Glyph => HasFolders ? "\uE8B7" : "";
     private WeakReference<ImageSource>? _thumbnail;
     private bool _imageRead;
@@ -144,6 +168,7 @@ public partial class ClipboardHistoryWindow : Window
     private readonly ISystemClipboardHistory _systemHistory;
     private readonly CancellationTokenSource _lifetime = new();
     private readonly DispatcherTimer _timeTimer = new() { Interval = TimeSpan.FromMinutes(1) };
+    private readonly DispatcherTimer _hoverPreviewTimer = new() { Interval = TimeSpan.FromMilliseconds(350) };
     private string? _revealCopiedId;
     private int _previewVersion;
     private bool _filterPending;
@@ -198,6 +223,7 @@ public partial class ClipboardHistoryWindow : Window
         _store.Changed += Store_Changed;
         ClipboardHistoryRuntime.StatusChanged += Store_Changed;
         _timeTimer.Tick += (_, _) => RefreshVisibleTimes(HistoryList);
+        _hoverPreviewTimer.Tick += HoverPreviewTimer_Tick;
         Loaded += (_, _) => FocusSearch();
         MouseEnter += (_, _) => Dispatcher.BeginInvoke(DispatcherPriority.Input, () =>
         {
@@ -206,16 +232,16 @@ public partial class ClipboardHistoryWindow : Window
         IsVisibleChanged += (_, _) =>
         {
             if (IsVisible) { _timeTimer.Start(); RefreshVisibleTimes(HistoryList); RefreshViews(); }
-            else { ++_previewVersion; ++_historyDragVersion; _historyDragCandidate = null; _timeTimer.Stop(); PreviewPanel.Visibility = Visibility.Collapsed; PreviewImage.Source = null; PreviewText.Clear(); }
+            else { CloseHoverPreview(); ++_previewVersion; ++_historyDragVersion; _historyDragCandidate = null; _timeTimer.Stop(); PreviewPanel.Visibility = Visibility.Collapsed; PreviewImage.Source = null; PreviewText.Clear(); }
         };
         Activated += (_, _) => RefreshStorageStatus();
-        Deactivated += (_, _) => { Topmost = KeepOpenOnDeactivate; ScheduleDismiss(); };
+        Deactivated += (_, _) => { CloseHoverPreview(); Topmost = KeepOpenOnDeactivate; ScheduleDismiss(); };
         MenuButton.ContextMenu.Closed += (_, _) => ScheduleDismiss();
         HistoryList.ContextMenu.Closed += (_, _) => ScheduleDismiss();
         Closing += Window_Closing;
         Closed += (_, _) =>
         {
-            _closed = true; _lifetime.Cancel(); _timeTimer.Stop(); _store.Changed -= Store_Changed;
+            _closed = true; CloseHoverPreview(); _lifetime.Cancel(); _timeTimer.Stop(); _store.Changed -= Store_Changed;
             ClipboardHistoryRuntime.StatusChanged -= Store_Changed;
             foreach (var card in IncomingRequestsPanel.Children.OfType<FileReceiveCard>()) card.Reject();
             _placementSource?.RemoveHook(PlacementMessage); _placementSource = null;
@@ -379,8 +405,8 @@ public partial class ClipboardHistoryWindow : Window
                     {
                         if (_lifetime.IsCancellationRequested || version != Volatile.Read(ref _refreshVersion)) break;
                         if (record.Matches(category, query))
-                            items.Add(previous.TryGetValue(record.Id, out var view) && ReferenceEquals(view.Record, record)
-                                ? view : new ClipboardRecordView(record, _store));
+                            items.Add(previous.TryGetValue(record.Id, out var view) && ReferenceEquals(view.Record, record) && view.Query == query
+                                ? view : new ClipboardRecordView(record, _store, query));
                     }
                     return (all, items);
                 });
@@ -389,6 +415,7 @@ public partial class ClipboardHistoryWindow : Window
                 if (result.items is { } items)
                 {
                     var id = SelectedRecord?.Id;
+                    CloseHoverPreview();
                     _views = items.ToDictionary(v => v.Record.Id);
                     HistoryList.ItemsSource = items;
                     HistoryList.SelectedItem = items.FirstOrDefault(r => r.Record.Id == id) ?? items.FirstOrDefault();
@@ -453,8 +480,9 @@ public partial class ClipboardHistoryWindow : Window
             SyncPanel.Visibility = syncing ? Visibility.Visible : Visibility.Collapsed;
             StatusText.Visibility = syncing ? Visibility.Collapsed : Visibility.Visible;
             SearchPanel.Visibility = HistoryPanel.Visibility = HistoryFooter.Visibility = syncing ? Visibility.Collapsed : Visibility.Visible;
-            if (syncing) { ClosePreview(); RefreshSendRecipients(); return; }
+            if (syncing) { CloseHoverPreview(); ClosePreview(); RefreshSendRecipients(); return; }
         }
+        CloseHoverPreview();
         if (HistoryList is not null) { _filterPending = true; HistoryList.IsEnabled = false; }
         RefreshViews(debounce: ReferenceEquals(sender, SearchBox));
     }
@@ -508,6 +536,7 @@ public partial class ClipboardHistoryWindow : Window
 
     private void History_MouseDown(object sender, MouseButtonEventArgs e)
     {
+        CloseHoverPreview();
         ++_historyDragVersion; _historyDragCandidate = null; _suppressHistoryClick = false;
         if (_busy || _filterPending || e.OriginalSource is not DependencyObject source || InsideAction(source)) return;
         if (ItemsControl.ContainerFromElement(HistoryList, source) is not ListBoxItem { DataContext: ClipboardRecordView view }) return;
@@ -632,18 +661,9 @@ public partial class ClipboardHistoryWindow : Window
     internal async void ShowPreview()
     {
         if (_filterPending || SelectedRecord is not { } record) return;
+        CloseHoverPreview();
         var version = ++_previewVersion;
-        PreviewText.Text = record.Files.Length > 0 ? string.Join("\n", record.Files) : record.DisplayText;
-        if (record.Text.Length == 0 && record.Rtf.Length > 0)
-        {
-            try
-            {
-                var document = new FlowDocument(); var range = new TextRange(document.ContentStart, document.ContentEnd);
-                using var stream = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(record.Rtf));
-                range.Load(stream, System.Windows.DataFormats.Rtf); PreviewText.Text = range.Text;
-            }
-            catch (Exception) { PreviewText.Text = record.Rtf; StatusText.Text = "富文本无法排版，预览显示原始内容；复制仍保留原格式。"; }
-        }
+        PreviewText.Text = ReadPreviewText(record);
         PreviewImage.Source = null;
         DetailHint.Text = record.Category + " · " + record.TimeLabel;
         DetailSource.Text = record.SourceLabel;
@@ -658,6 +678,92 @@ public partial class ClipboardHistoryWindow : Window
             }
             catch (Exception) { if (!_closed && version == _previewVersion) StatusText.Text = "图片附件无法预览，原记录已保留。"; }
         }
+    }
+
+    private string ReadPreviewText(ClipboardRecord record)
+    {
+        if (record.Files.Length > 0) return string.Join("\n", record.Files);
+        if (record.Text.Length > 0 || record.Rtf.Length == 0) return record.DisplayText;
+        try
+        {
+            var document = new FlowDocument();
+            var range = new TextRange(document.ContentStart, document.ContentEnd);
+            using var stream = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(record.Rtf));
+            range.Load(stream, System.Windows.DataFormats.Rtf);
+            return range.Text;
+        }
+        catch (Exception)
+        {
+            StatusText.Text = "富文本无法排版，预览显示原始内容；复制仍保留原格式。";
+            return record.Rtf;
+        }
+    }
+
+    private void HoverTarget_Enter(object sender, System.Windows.Input.MouseEventArgs e)
+    {
+        if (sender is not TextBlock { Inlines.Count: > 0 } target || _busy || _filterPending
+            || Mouse.LeftButton == MouseButtonState.Pressed || HoverPreview?.PlacementTarget == target) return;
+        CloseHoverPreview();
+        HoverPreview!.PlacementTarget = target;
+        _hoverPreviewTimer.Interval = TimeSpan.FromMilliseconds(350);
+        _hoverPreviewTimer.Start();
+    }
+
+    private void HoverArea_Leave(object sender, System.Windows.Input.MouseEventArgs e)
+    {
+        if (HoverPreview?.PlacementTarget is null) return;
+        if (!HoverPreview.IsOpen)
+        {
+            CloseHoverPreview();
+            return;
+        }
+        // 给指针留出从卡片移进弹层的时间。
+        _hoverPreviewTimer.Stop();
+        _hoverPreviewTimer.Interval = TimeSpan.FromMilliseconds(300);
+        _hoverPreviewTimer.Start();
+    }
+
+    private void HoverPreviewTimer_Tick(object? sender, EventArgs e)
+    {
+        _hoverPreviewTimer.Stop();
+        if (HoverPreview.IsOpen && HoverPreviewSurface.IsMouseOver) return;
+        if (_closed || !IsVisible || _busy || _filterPending || !HistoryList.IsVisible
+            || HoverPreview.PlacementTarget is not TextBlock { IsVisible: true, IsMouseOver: true, DataContext: ClipboardRecordView view })
+        {
+            CloseHoverPreview();
+            return;
+        }
+        if (HoverPreview.IsOpen) return;
+        var text = ReadPreviewText(view.Record);
+        var source = view.Record.SourceLabel;
+        if (view.Query.Length > 0 && !source.Contains(view.Query, StringComparison.OrdinalIgnoreCase)
+            && view.Record.Source.Contains(view.Query, StringComparison.OrdinalIgnoreCase))
+            source = view.Record.Source;
+        HighlightedText.ShowMatches(HoverPreviewSource, source, view.Query);
+        HighlightedText.ShowMatches(HoverPreviewText, text, view.Query);
+        var showHtml = view.HiddenHtmlMatch;
+        HighlightedText.ShowMatches(HoverPreviewHtml, showHtml ? "HTML\n" + view.Record.Html : "", view.Query);
+        HoverPreviewSource.Visibility = source.Length == 0 ? Visibility.Collapsed : Visibility.Visible;
+        HoverPreviewHtml.Visibility = showHtml ? Visibility.Visible : Visibility.Collapsed;
+        HoverPreviewScroll.Width = Math.Clamp(ActualWidth - 48, 280, 540);
+        HoverPreviewScroll.ScrollToTop();
+        HoverPreview.IsOpen = true;
+    }
+
+    private void History_ScrollChanged(object sender, ScrollChangedEventArgs e)
+    {
+        if (e.VerticalChange != 0 || e.HorizontalChange != 0) CloseHoverPreview();
+    }
+
+    private void CloseHoverPreview()
+    {
+        _hoverPreviewTimer.Stop();
+        if (HoverPreview?.PlacementTarget is null) return;
+        HoverPreview.IsOpen = false;
+        HoverPreview.PlacementTarget = null;
+        HoverPreviewSource.Inlines.Clear();
+        HoverPreviewText.Inlines.Clear();
+        HoverPreviewHtml.Inlines.Clear();
     }
 
     private async void ImagePreview_Opened(object sender, RoutedEventArgs e)
@@ -842,7 +948,12 @@ public partial class ClipboardHistoryWindow : Window
     {
         if (e.Key is Key.Enter or Key.Up or Key.Down && e.OriginalSource is DependencyObject source && InsideAction(source)) return;
         if (e.Key == Key.Escape)
-        { e.Handled = true; if (PreviewPanel.Visibility == Visibility.Visible) ClosePreview(); else Dismiss(); }
+        {
+            e.Handled = true;
+            if (HoverPreview.IsOpen) CloseHoverPreview();
+            else if (PreviewPanel.Visibility == Visibility.Visible) ClosePreview();
+            else Dismiss();
+        }
         else if (SyncTab.IsSelected) return;
         else if (PreviewPanel.Visibility != Visibility.Visible && e.Key is Key.Up or Key.Down && !TypeFilter.IsKeyboardFocusWithin)
         {
